@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+data/synthetic/
+data/cache/
+data/annotations/
+data/smoke/
+.cache/
+notebooks/.ipynb_checkpoints/
+reports/
+*.pt
+*.npz
