@@ -18,7 +18,7 @@ def test_generate_then_classify(tmp_path: Path, capsys):
 
 def test_unimplemented_command_exits_2(tmp_path: Path):
     with pytest.raises(SystemExit) as e:
-        main(["compare", "--data", str(tmp_path)])
+        main(["serve"])
     assert e.value.code == 2
 
 
@@ -46,3 +46,25 @@ def test_report_command_writes_summary(tmp_path: Path):
     out = tmp_path / "summary.md"
     assert main(["report", "--data", str(data), "--out", str(out)]) == 0
     assert "F1" in out.read_text(encoding="utf-8")
+
+
+def test_compare_command_writes_table(tmp_path: Path):
+    data = tmp_path / "data"
+    out = tmp_path / "compare.md"
+    assert main(["generate", "--n", "4", "--seed", "5", "--out", str(data)]) == 0
+    assert (
+        main(
+            [
+                "compare",
+                "--data",
+                str(data),
+                "--out",
+                str(out),
+                "--detectors",
+                "iqr,mad",
+            ]
+        )
+        == 0
+    )
+    text = out.read_text(encoding="utf-8")
+    assert "F1" in text

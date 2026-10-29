@@ -37,3 +37,10 @@
 - **`trend_strength` 改为 |Spearman ρ|**：OLS 斜率显著性会被异常段抬高残差方差，导致趋势型与阶梯型混淆。
 - **周期检测收紧**：周期候选需满足 `n // p >= 3`；ACF 峰前需有明显低谷，且在 2 倍周期处仍保留相关性（排除单调衰减造成的伪峰）。
 - **UCR 在线下载**：单序列 URL 仍未校准；在线路径需通过 `ANOMALY_LAB_UCR_SERIES_URL`（含 `{name}`）显式提供模板，否则只读缓存。
+
+## Chunk 3 环境记录
+
+- **torch 已安装成功**：`download.pytorch.org/whl/cpu` 实测可达，安装 `torch 2.15.0+cpu`（cp312），未使用系统 Python 3.14 的 CUDA 版。
+- **chronos 未安装**：`chronos-forecasting` 与本地权重均缺失，`compare` 中 Chronos 行记录 `ChronosUnavailable` 并跳过，不阻塞统计 + 自训深度两方对比。
+- **深度模型训练数据**：CLI 默认用前 24 条合成序列训练 TCN/LSTM，模型缓存到 `data/cache/models/`。
+- **compare 对照**：61 行（统计 8 个检测器 + TCN/LSTM + Chronos 跳过行）；STL 单次检测约 31ms，其余统计检测器 <1ms，深度模型约 1.8ms/条。

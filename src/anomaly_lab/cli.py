@@ -24,12 +24,12 @@ from anomaly_lab.detectors.statistical import (
     ZScoreDetector,
 )
 from anomaly_lab.evaluation.backtest import BacktestRow, _mask_to_intervals
+from anomaly_lab.evaluation.compare import CompareRow, compare_detectors
 from anomaly_lab.evaluation.metrics import precision_recall_f1, range_based_prf
 from anomaly_lab.evaluation.report import build_report
 from anomaly_lab.evaluation.thresholds import search_threshold
 
 _UNIMPLEMENTED = {
-    "compare": "Chunk 3",
     "serve": "Chunk 4",
 }
 
@@ -112,6 +112,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("compare", help="多检测器对照")
     p.add_argument("--data", type=Path, default=None)
     p.add_argument("--out", type=Path, default=None)
+    p.add_argument("--detectors", default=None, help="逗号分隔，默认全部可用检测器")
+    p.add_argument("--epochs", type=int, default=3)
 
     p = sub.add_parser("report", help="汇总检测结果")
     p.add_argument("--data", type=Path, default=None)
@@ -219,6 +221,95 @@ def _cmd_evaluate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _ensure_deep_models(series_list, epochs: int) -> dict[str, object]:
+    import importlib.util
+
+    if importlib.util.find_spec("torch") is None:
+        return {}
+    from anomaly_lab.detectors.deep import LSTMDetector, TCNDetector, train_lstm, train_tcn
+
+    model_dir = CONFIG.data_dir / "cache" / "models"
+    tcn_path = model_dir / "tcn.pt"
+    lstm_path = model_dir / "lstm.pt"
+    if not tcn_path.exists():
+        train_tcn(series_list[:24], epochs=epochs, seed=CONFIG.seed, out_path=tcn_path)
+    if not lstm_path.exists():
+        train_lstm(series_list[:24], epochs=epochs, seed=CONFIG.seed, out_path=lstm_path)
+    return {
+        "TCN": lambda: TCNDetector(model_path=tcn_path),
+        "LSTM": lambda: LSTMDetector(model_path=lstm_path),
+    }
+
+
+def _compare_markdown(rows: list[CompareRow]) -> str:
+    lines = [
+        "# 检测器对照",
+        "",
+        "| 检测器 | 形态 | score_type | Precision | Recall | F1 | Range-F1 | 延迟(ms) | 参数量 | 跳过原因 |",
+        "|---|---|---|---:|---:|---:|---:|---:|---:|---|",
+    ]
+    for row in rows:
+        lines.append(
+            f"| {row.detector} | {row.metric_class} | {row.score_type or '-'} | "
+            f"{row.precision:.3f} | {row.recall:.3f} | {row.f1:.3f} | "
+            f"{row.range_f1:.3f} | {row.mean_elapsed_ms:.2f} | "
+            f"{'-' if row.params is None else row.params} | {row.skipped_reason or '-'} |"
+        )
+    return "\n".join(lines) + "\n"
+
+
+def _cmd_compare(args: argparse.Namespace) -> int:
+    data_dir = args.data or CONFIG.synthetic_dir
+    series_list = load_dataset(data_dir)
+    if not series_list:
+        print(f"没有可加载的数据：{data_dir}", file=sys.stderr)
+        return 1
+
+    specs = [
+        ("IQR", "anomaly_lab.detectors.statistical", "IQRDetector"),
+        ("MAD", "anomaly_lab.detectors.statistical", "MADDetector"),
+        ("ZScore", "anomaly_lab.detectors.statistical", "ZScoreDetector"),
+        ("Seasonal", "anomaly_lab.detectors.statistical", "SeasonalDetector"),
+        ("STLResidual", "anomaly_lab.detectors.statistical", "STLResidualDetector"),
+        (
+            "DeseasonalizedIQR",
+            "anomaly_lab.detectors.statistical",
+            "DeseasonalizedIQRDetector",
+        ),
+        ("ChangePoint", "anomaly_lab.detectors.statistical", "ChangePointDetector"),
+        ("EventCount", "anomaly_lab.detectors.statistical", "EventCountDetector"),
+        ("TCN", "anomaly_lab.detectors.deep", "TCNDetector"),
+        ("LSTM", "anomaly_lab.detectors.deep", "LSTMDetector"),
+        ("Chronos", "anomaly_lab.detectors.chronos", "ChronosDetector"),
+    ]
+    if args.detectors:
+        wanted = {name.strip().lower() for name in args.detectors.split(",") if name.strip()}
+        specs = [spec for spec in specs if spec[0].lower() in wanted]
+        if not specs:
+            print("没有匹配的检测器", file=sys.stderr)
+            return 1
+
+    factories: dict[str, object] = {}
+    if any(spec[0] in {"TCN", "LSTM"} for spec in specs):
+        try:
+            factories.update(_ensure_deep_models(series_list, args.epochs))
+        except Exception as exc:
+            print(f"深度模型训练失败，将记录为跳过：{exc}", file=sys.stderr)
+
+    # 带构造参数的检测器用工厂覆盖默认无参构造
+    factories.setdefault("Seasonal", lambda: SeasonalDetector(period=24))
+    factories.setdefault("STLResidual", lambda: STLResidualDetector(period=24))
+
+    rows = compare_detectors(series_list, specs, factories=factories)
+    out = Path(args.out or (CONFIG.reports_dir / "compare.md"))
+    if out.suffix != ".md":
+        out = out / "compare.md"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(_compare_markdown(rows), encoding="utf-8")
+    print(f"对照表已写入：{out}（{len(rows)} 行）")
+    return 0
+
+
 def _cmd_report(args: argparse.Namespace) -> int:
     data_dir = args.data or CONFIG.synthetic_dir
     rows = _load_rows(data_dir)
@@ -279,6 +370,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_evaluate(args)
     if args.command == "report":
         return _cmd_report(args)
+    if args.command == "compare":
+        return _cmd_compare(args)
     if args.command == "compliance-check":
         return _cmd_compliance(args)
     if args.command in _UNIMPLEMENTED:
