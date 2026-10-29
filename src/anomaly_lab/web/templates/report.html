@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}评估 - anomaly-lab{% endblock %}
+{% block content %}
+<h1>评估报告</h1>
+<p>数据来自最近一次 <code>reports/latest/report.json</code>；点击表格行可查看该序列的 Bad Case。</p>
+<div id="summary"></div>
+<div id="detail" class="chart"></div>
+{% endblock %}
+{% block scripts %}
+<script src="/static/report.js"></script>
+{% endblock %}

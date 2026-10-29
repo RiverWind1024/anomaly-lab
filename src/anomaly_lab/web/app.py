@@ -15,7 +15,9 @@ from pydantic import BaseModel
 from starlette.requests import Request
 
 from anomaly_lab.config import CONFIG
+from anomaly_lab.contracts import DetectionResult
 from anomaly_lab.data.loader import load_dataset
+from anomaly_lab.evaluation.badcases import attribute_badcases
 
 _WEB_DIR = Path(__file__).parent
 _TEMPLATES = Jinja2Templates(directory=str(_WEB_DIR / "templates"))
@@ -39,6 +41,14 @@ class AnnotationInterval(BaseModel):
 
 class AnnotationPayload(BaseModel):
     intervals: list[AnnotationInterval]
+
+
+def _report_path() -> Path:
+    return CONFIG.reports_dir / "latest" / "report.json"
+
+
+def _detections_root() -> Path:
+    return _data_root() / "cache" / "detections"
 
 
 def _annotations_path(series_id: str) -> Path:
@@ -108,6 +118,58 @@ def create_app() -> FastAPI:
                 if line.strip():
                     records.append(json.loads(line))
         return {"series_id": series_id, "intervals": records}
+
+    @app.get("/report", response_class=HTMLResponse)
+    def report_page(request: Request):
+        return _TEMPLATES.TemplateResponse(request, "report.html", {})
+
+    @app.get("/api/summary")
+    def summary() -> dict:
+        path = _report_path()
+        if not path.exists():
+            return {"generated_at": None, "title": "", "summary": {}, "rows": []}
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    @app.get("/api/badcases")
+    def badcases(series_id: str) -> dict:
+        series = _series_map().get(series_id)
+        if series is None:
+            raise HTTPException(status_code=404, detail="序列不存在")
+        detection_dir = _detections_root() / "iqr"
+        path = detection_dir / f"{series_id}.npz"
+        if not path.exists():
+            raise HTTPException(status_code=404, detail="该序列还没有检测结果")
+        import numpy as np
+
+        data = np.load(path, allow_pickle=False)
+        result = DetectionResult(
+            series_id=series_id,
+            scores=data["scores"].astype(float),
+            score_type=str(data["score_type"]),
+            is_anomaly=data["is_anomaly"].astype(bool),
+            threshold=float(data["threshold"]),
+            detector=str(data["detector"]),
+            elapsed_ms=float(data["elapsed_ms"]),
+        )
+        cases = attribute_badcases(series, result)
+        return {
+            "series_id": series_id,
+            "detector": result.detector,
+            "threshold": result.threshold,
+            "score_type": result.score_type,
+            "timestamps": [str(ts) for ts in series.timestamps],
+            "values": [float(v) for v in series.values],
+            "scores": [float(v) for v in result.scores],
+            "badcases": [
+                {
+                    "kind": case.kind,
+                    "group": case.group,
+                    "reason": case.reason,
+                    "indices": case.indices,
+                }
+                for case in cases
+            ],
+        }
 
     @app.get("/api/series/{series_id}/values")
     def series_values(series_id: str) -> dict:
