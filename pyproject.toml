@@ -1,0 +1,43 @@
+[project]
+name = "anomaly-lab"
+version = "0.1.0"
+description = "时序异常检测全流程学习项目：形态分类 → 算法推荐 → 多类检测器 → 离线评测闭环"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = { text = "MIT" }
+dependencies = [
+  "numpy>=2.0",
+  "pandas>=2.2",
+  "scipy>=1.13",
+  "statsmodels>=0.14",
+  "scikit-learn>=1.5",
+  "matplotlib>=3.8",
+  "joblib>=1.4",
+  "fastapi>=0.110",
+  "uvicorn[standard]>=0.29",
+  "jinja2>=3.1",
+  "pydantic>=2.6",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-cov>=5.0", "hypothesis>=6.100", "ruff>=0.4"]
+torch = ["torch>=2.2"]
+chronos = ["chronos-forecasting>=2.3"]
+
+[project.scripts]
+anomaly-lab = "anomaly_lab.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/anomaly_lab"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
