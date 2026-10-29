@@ -208,3 +208,77 @@ def test_preview_downsamples_long_series(tmp_path, monkeypatch):
     assert len(body["values"]) <= 20
     assert body["original_n"] > 20
     assert len(body["values"]) == len(body["scores"]) == len(body["severity"])
+
+
+def test_job_with_custom_alert_rules(tmp_path):
+    """任务可以配「倍数 → 等级」规则表，判定以异常分数为准。"""
+    client, _store = _client(tmp_path)
+    source = client.post(
+        "/api/platform/sources", json={"name": "local", "path": "platform/source.db"}
+    )
+    metric = client.post(
+        "/api/platform/metrics",
+        json={
+            "source_id": source.json()["id"],
+            "name": "demo",
+            "query": "SELECT ts, host, value FROM metrics WHERE $timefilter ORDER BY ts",
+            "time_column": "ts",
+            "value_column": "value",
+            "group_column": "host",
+            "time_format": "iso_utc",
+        },
+    )
+    job = client.post(
+        "/api/platform/jobs",
+        json={
+            "metric_id": metric.json()["id"],
+            "name": "job",
+            "detector": "seasonal",
+            "alert_rules": [{"multiplier": 1.0, "level": "P2"}, {"multiplier": 3.0, "level": "P1"}],
+        },
+    )
+    assert job.status_code == 200
+    payload = job.json()
+    assert payload["alert_rules"] == [
+        {"multiplier": 1.0, "level": "P2"},
+        {"multiplier": 3.0, "level": "P1"},
+    ]
+    assert payload["alert_threshold"] == 1.0
+    assert payload["critical_threshold"] == 3.0
+
+    job_id = payload["id"]
+    run_id = client.post(f"/api/platform/jobs/{job_id}/run").json()["run_id"]
+    preview = client.get(f"/api/platform/jobs/{job_id}/preview?run_id={run_id}").json()
+    assert preview["levels"] == ["正常", "P2", "P1"]
+    assert preview["alert_rules"] == payload["alert_rules"]
+    assert set(preview["severity"]) <= {0, 1, 2}
+
+
+def test_job_rejects_invalid_alert_rules(tmp_path):
+    client, _ = _client(tmp_path)
+    source = client.post(
+        "/api/platform/sources", json={"name": "local", "path": "platform/source.db"}
+    )
+    metric = client.post(
+        "/api/platform/metrics",
+        json={
+            "source_id": source.json()["id"],
+            "name": "demo",
+            "query": "SELECT ts, host, value FROM metrics WHERE $timefilter ORDER BY ts",
+            "time_column": "ts",
+            "value_column": "value",
+            "group_column": "host",
+            "time_format": "iso_utc",
+        },
+    )
+    response = client.post(
+        "/api/platform/jobs",
+        json={
+            "metric_id": metric.json()["id"],
+            "name": "bad-job",
+            "detector": "seasonal",
+            "alert_rules": [{"multiplier": 0, "level": "P1"}],
+        },
+    )
+    assert response.status_code == 400
+    assert "multiplier" in response.json()["detail"]

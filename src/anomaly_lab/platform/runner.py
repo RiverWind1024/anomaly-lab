@@ -15,6 +15,14 @@ from pathlib import Path
 import numpy as np
 
 from anomaly_lab.detectors.bands import compute_bands
+from anomaly_lab.platform.alerts import (
+    band_multiplier,
+    default_rules,
+    level_labels,
+    parse_rules,
+    rules_to_dicts,
+    severity_from_scores,
+)
 from anomaly_lab.platform.detectors import create_detector
 from anomaly_lab.platform.sqlite_source import load_series
 from anomaly_lab.platform.store import PlatformStore
@@ -38,14 +46,12 @@ def resolve_source_path(source_path: str, data_root: Path) -> Path:
     return path if path.is_absolute() else Path(data_root) / path
 
 
-def severity_from_scores(
-    scores: np.ndarray, alert_threshold: float, critical_threshold: float
-) -> np.ndarray:
-    """0=正常，1=P1，2=P0；分数严格大于阈值才升级。"""
-    result = np.zeros(len(scores), dtype=np.int8)
-    result[scores > alert_threshold] = SEVERITY_P1
-    result[scores > critical_threshold] = SEVERITY_P0
-    return result
+def _job_rules(job) -> list:
+    """任务规则表；老数据没有规则时回落到两个阈值。"""
+    rules = parse_rules(getattr(job, "alert_rules", None) or [])
+    if rules:
+        return rules
+    return default_rules(job.alert_threshold, job.critical_threshold)
 
 
 def _file_name(series_id: str) -> str:
@@ -98,6 +104,9 @@ def _run_job(
         )
         source_path = resolve_source_path(source.path, data_root)
         series_list = load_series(metric, source_path, start_time, end_time)
+        rules = _job_rules(job)
+        band_width = band_multiplier(rules)
+        levels = level_labels(rules)
 
         target = run_dir(data_root, run.id)
         target.mkdir(parents=True, exist_ok=True)
@@ -125,11 +134,9 @@ def _run_job(
                 )
                 continue
             detector = create_detector(job.detector).fit(series)
-            result = detector.detect(series, threshold=job.alert_threshold)
-            bands = compute_bands(detector, series, job.alert_threshold)
-            severity = severity_from_scores(
-                result.scores, job.alert_threshold, job.critical_threshold
-            )
+            result = detector.detect(series, threshold=band_width)
+            bands = compute_bands(detector, series, band_width)
+            severity = severity_from_scores(result.scores, rules)
             file_name = _file_name(series.series_id)
             np.savez_compressed(
                 target / file_name,
@@ -140,8 +147,10 @@ def _run_job(
                 lower=np.asarray(bands.lower if bands else [], dtype=float),
                 upper=np.asarray(bands.upper if bands else [], dtype=float),
                 severity=severity,
-                alert_threshold=np.array(job.alert_threshold),
-                critical_threshold=np.array(job.critical_threshold),
+                alert_threshold=np.array(band_width),
+                critical_threshold=np.array(rules[-1].multiplier),
+                alert_rules=np.array(json.dumps(rules_to_dicts(rules), ensure_ascii=False)),
+                levels=np.array(json.dumps(levels, ensure_ascii=False)),
                 detector=np.array(result.detector),
                 score_type=np.array(result.score_type),
                 series_id=np.array(series.series_id),

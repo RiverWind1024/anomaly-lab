@@ -55,12 +55,14 @@
     <label>指标<select id="job-metric"></select></label>
     <label>名称<input id="job-name" placeholder="cpu-job"></label>
     <label>算法<select id="job-detector"></select></label>
-    <label>P1 阈值<input id="job-alert" type="number" step="0.1" value="2.5"></label>
-    <label>P0 阈值<input id="job-critical" type="number" step="0.1" value="3.75"></label>
     <label>窗口点数<input id="job-window" type="number" value="500"></label>
     <label>执行间隔(秒)<input id="job-interval" type="number" value="300"></label>
     <button id="job-add">新增任务</button>
   </div>
+  <label class="wide">告警规则（每行一条：<code>倍数, 等级</code>，倍数 = 偏离基线多少倍正常波动）
+    <textarea id="job-rules" rows="3" placeholder="1, P2&#10;3, P1"></textarea>
+  </label>
+  <p class="muted">留空则用默认两档（缩放因子 2.5 → P1，3.75 → P0）。命中多条时取最高档。</p>
   <table><thead><tr><th>ID</th><th>名称</th><th>指标</th><th>算法</th><th>P1/P0</th><th>间隔</th><th>状态</th><th>操作</th></tr></thead>
   <tbody id="job-rows"></tbody></table>
 </section>

@@ -5,12 +5,17 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from collections.abc import Iterator
 from contextlib import closing, contextmanager
-from dataclasses import asdict
 from pathlib import Path
 
+from anomaly_lab.platform.alerts import (
+    default_rules,
+    parse_rules,
+    rules_to_dicts,
+)
 from anomaly_lab.platform.detectors import DETECTOR_FACTORIES
 from anomaly_lab.platform.models import Job, Metric, Run, Source
 from anomaly_lab.platform.timeutil import freq_delta, to_iso, utcnow
@@ -115,6 +120,11 @@ class PlatformStore:
         if "missing_policy" not in columns:
             conn.execute(
                 "ALTER TABLE metrics ADD COLUMN missing_policy TEXT NOT NULL DEFAULT 'drop'"
+            )
+        job_columns = {row["name"] for row in conn.execute("PRAGMA table_info(jobs)")}
+        if "alert_rules" not in job_columns:
+            conn.execute(
+                "ALTER TABLE jobs ADD COLUMN alert_rules TEXT NOT NULL DEFAULT '[]'"
             )
 
     # ---------- 数据源 ----------
@@ -236,6 +246,7 @@ class PlatformStore:
         window_points: int,
         interval_seconds: int,
         enabled: bool = True,
+        alert_rules: list[dict] | None = None,
     ) -> Job:
         name = validate_name(name, "任务名称")
         if detector not in DETECTOR_FACTORIES:
@@ -244,14 +255,20 @@ class PlatformStore:
         window_points = validate_window_points(int(window_points))
         interval_seconds = validate_interval_seconds(int(interval_seconds))
         self.get_metric(metric_id)
+        rules = (
+            parse_rules(alert_rules)
+            if alert_rules
+            else default_rules(float(alert_threshold), float(critical_threshold))
+        )
+        rules_json = json.dumps(rules_to_dicts(rules), ensure_ascii=False)
         created_at = to_iso(utcnow())
         try:
             with self._conn() as conn:
                 cursor = conn.execute(
                     "INSERT INTO jobs (metric_id, name, detector, alert_threshold,"
                     " critical_threshold, window_points, interval_seconds, enabled,"
-                    " last_run_at, next_run_at, created_at)"
-                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)",
+                    " last_run_at, next_run_at, alert_rules, created_at)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)",
                     (
                         metric_id,
                         name,
@@ -262,6 +279,7 @@ class PlatformStore:
                         interval_seconds,
                         1 if enabled else 0,
                         created_at,
+                        rules_json,
                         created_at,
                     ),
                 )
@@ -275,8 +293,7 @@ class PlatformStore:
             row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
         if row is None:
             raise ValueError(f"任务不存在: {job_id}")
-        job = Job(**dict(row))
-        return Job(**{**asdict(job), "enabled": bool(job.enabled)})
+        return self._to_job(row)
 
     def list_jobs(self) -> list[Job]:
         with self._conn() as conn:
@@ -290,8 +307,10 @@ class PlatformStore:
 
     @staticmethod
     def _to_job(row: sqlite3.Row) -> Job:
-        job = Job(**dict(row))
-        return Job(**{**asdict(job), "enabled": bool(job.enabled)})
+        data = dict(row)
+        data["enabled"] = bool(data["enabled"])
+        data["alert_rules"] = rules_to_dicts(parse_rules(data.get("alert_rules") or "[]"))
+        return Job(**data)
 
     def set_job_enabled(self, job_id: int, enabled: bool) -> None:
         with self._conn() as conn:

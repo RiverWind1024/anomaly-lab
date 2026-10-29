@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
@@ -13,6 +14,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from anomaly_lab.platform import runner as runner_module
+from anomaly_lab.platform.alerts import parse_rules
 from anomaly_lab.platform.detectors import create_detector, detector_catalog
 from anomaly_lab.platform.store import PlatformStore
 
@@ -48,10 +50,18 @@ class JobIn(BaseModel):
     window_points: int = 500
     interval_seconds: int = 300
     enabled: bool = True
+    alert_rules: list[AlertRuleIn] | None = None
 
 
 class JobToggleIn(BaseModel):
     enabled: bool
+
+
+class AlertRuleIn(BaseModel):
+    """一条告警规则：偏离多少倍（缩放因子）+ 对应等级。"""
+
+    multiplier: float
+    level: str
 
 
 def _clean(values: np.ndarray) -> list[float | None]:
@@ -130,16 +140,29 @@ def build_router(
             detector = create_detector(payload.detector)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        alert = (
-            float(payload.alert_threshold)
-            if payload.alert_threshold is not None
-            else float(detector.default_threshold)
-        )
-        critical = (
-            float(payload.critical_threshold)
-            if payload.critical_threshold is not None
-            else alert * 1.5
-        )
+        try:
+            rules = (
+                parse_rules([rule.model_dump() for rule in payload.alert_rules])
+                if payload.alert_rules
+                else []
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if rules:
+            # 规则表为准：最低档/最高档倍数同步到快捷字段
+            alert = rules[0].multiplier
+            critical = rules[-1].multiplier
+        else:
+            alert = (
+                float(payload.alert_threshold)
+                if payload.alert_threshold is not None
+                else float(detector.default_threshold)
+            )
+            critical = (
+                float(payload.critical_threshold)
+                if payload.critical_threshold is not None
+                else alert * 1.5
+            )
         try:
             job = store.add_job(
                 metric_id=payload.metric_id,
@@ -150,6 +173,9 @@ def build_router(
                 window_points=payload.window_points,
                 interval_seconds=payload.interval_seconds,
                 enabled=payload.enabled,
+                alert_rules=[rule.model_dump() for rule in payload.alert_rules]
+                if payload.alert_rules
+                else None,
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -251,6 +277,8 @@ def build_router(
                 "severity": [],
                 "alert_threshold": job.alert_threshold,
                 "critical_threshold": job.critical_threshold,
+                "alert_rules": job.alert_rules,
+                "levels": ["正常"],
                 "series": entries,
             }
 
@@ -302,6 +330,8 @@ def build_router(
             "severity": [int(item) for item in severity_all],
             "alert_threshold": float(payload["alert_threshold"]),
             "critical_threshold": float(payload["critical_threshold"]),
+            "alert_rules": json.loads(str(payload["alert_rules"])),
+            "levels": json.loads(str(payload["levels"])),
             "series": entries,
         }
 

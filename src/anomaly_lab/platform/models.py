@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
@@ -42,7 +42,11 @@ class Metric:
 
 @dataclass(frozen=True)
 class Job:
-    """一个检测任务：选指标、选算法、配阈值与频率。"""
+    """一个检测任务：选指标、选算法、配告警规则与频率。
+
+    `alert_rules` 是「倍数 → 等级」的规则表，按倍数升序；判定以异常分数为准。
+    `alert_threshold` / `critical_threshold` 是规则表的快捷视图（最低档/最高档倍数）。
+    """
 
     id: int
     metric_id: int
@@ -56,6 +60,7 @@ class Job:
     last_run_at: str | None
     next_run_at: str | None
     created_at: str
+    alert_rules: list[dict] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

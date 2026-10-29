@@ -19,6 +19,32 @@ function postJson(url, payload) {
   });
 }
 
+function parseRules(text) {
+  const rules = [];
+  for (const line of String(text || '').split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const [multiplier, ...rest] = trimmed.split(',');
+    const level = rest.join(',').trim();
+    const value = Number(multiplier);
+    if (!Number.isFinite(value) || value <= 0) {
+      alert(`规则行格式不对：${trimmed}（应为「倍数, 等级」）`);
+      return null;
+    }
+    if (!level) {
+      alert(`规则行缺少等级：${trimmed}`);
+      return null;
+    }
+    rules.push({ multiplier: value, level });
+  }
+  return rules.length ? rules : null;
+}
+
+function formatRules(rules) {
+  if (!rules || !rules.length) return '-';
+  return rules.map(rule => `${rule.multiplier}×→${rule.level}`).join(' / ');
+}
+
 function fillSelect(select, items, valueKey, labelFn, keepValue) {
   const previous = keepValue ? select.value : null;
   select.innerHTML = '';
@@ -46,8 +72,7 @@ function renderTables() {
   const metricName = id => (catalog.metrics.find(m => m.id === id) || {}).name || id;
   jobRows.innerHTML = catalog.jobs.map(j =>
     `<tr><td>${j.id}</td><td>${j.name}</td><td>${metricName(j.metric_id)}</td><td>${j.detector}</td>` +
-    `<td>${j.alert_threshold} / ${j.critical_threshold}</td><td>${j.interval_seconds}s</td>` +
-    `<td>${j.enabled ? '启用' : '停用'}</td>` +
+    `<td>${formatRules(j.alert_rules)}</td><td>${j.interval_seconds}s</td><td>${j.enabled ? '启用' : '停用'}</td>` +
     `<td><button data-run="${j.id}">立即运行</button> ` +
     `<button data-toggle="${j.id}" data-enabled="${j.enabled}">${j.enabled ? '停用' : '启用'}</button></td></tr>`).join('');
 
@@ -113,7 +138,7 @@ async function loadPreview() {
     hint.textContent = `${data.series_id} · 数据不足：${data.insufficient_reason || '有效点太少'}`;
   } else {
     hint.textContent =
-      `${data.series_id} · ${data.detector} · ${data.score_type} · P1>${data.alert_threshold} · P0>${data.critical_threshold}`
+      `${data.series_id} · ${data.detector} · ${data.score_type} · 规则 ${formatRules(data.alert_rules)}`
       + (data.sampled ? ` · 点数过多，已抽样 ${data.timestamps.length}/${data.original_n}` : '');
   }
   render(data);
@@ -130,8 +155,20 @@ function render(data) {
     score: data.scores[index],
     severity: data.severity[index],
   }));
-  const p1 = points.filter(p => p.severity === 1).map(p => p.value);
-  const p0 = points.filter(p => p.severity === 2).map(p => p.value);
+  const levels = data.levels || ['正常'];
+  const colors = ['#94a3b8', '#eab308', '#f97316', '#dc2626', '#7c3aed'];
+  const alertSeries = [];
+  for (let level = 1; level < levels.length; level += 1) {
+    const items = points.filter(p => p.severity === level).map(p => p.value);
+    if (!items.length) continue;
+    alertSeries.push({
+      name: levels[level],
+      type: 'scatter',
+      symbolSize: 8 + level * 2,
+      itemStyle: { color: colors[Math.min(level, colors.length - 1)] },
+      data: items,
+    });
+  }
   const series = [{
     name: '实际值',
     type: 'line',
@@ -166,20 +203,7 @@ function render(data) {
       data: width,
     });
   }
-  series.push({
-    name: 'P1',
-    type: 'scatter',
-    symbolSize: 8,
-    itemStyle: { color: '#f59e0b' },
-    data: p1,
-  });
-  series.push({
-    name: 'P0',
-    type: 'scatter',
-    symbolSize: 10,
-    itemStyle: { color: '#dc2626' },
-    data: p0,
-  });
+  series.push(...alertSeries);
 
   chart.setOption({
     tooltip: { trigger: 'axis' },
@@ -187,7 +211,7 @@ function render(data) {
     xAxis: { type: 'category', data: data.timestamps, boundaryGap: false },
     yAxis: { type: 'value', scale: true },
     dataZoom: [{ type: 'inside' }, { type: 'slider', height: 24 }],
-    legend: { data: ['实际值', '基线', 'P1', 'P0'] },
+    legend: { data: ['实际值', '基线', ...levels.slice(1)] },
     series,
   }, true);
 }
@@ -218,14 +242,15 @@ document.getElementById('metric-add').addEventListener('click', async () => {
 });
 
 document.getElementById('job-add').addEventListener('click', async () => {
+  const rules = parseRules(document.getElementById('job-rules').value);
+  if (rules === null && String(document.getElementById('job-rules').value).trim()) return;
   await postJson('/api/platform/jobs', {
     metric_id: Number(document.getElementById('job-metric').value),
     name: document.getElementById('job-name').value,
     detector: document.getElementById('job-detector').value,
-    alert_threshold: Number(document.getElementById('job-alert').value),
-    critical_threshold: Number(document.getElementById('job-critical').value),
     window_points: Number(document.getElementById('job-window').value),
     interval_seconds: Number(document.getElementById('job-interval').value),
+    alert_rules: rules,
   });
   await refreshCatalog();
 });
@@ -233,8 +258,8 @@ document.getElementById('job-add').addEventListener('click', async () => {
 document.getElementById('job-detector').addEventListener('change', event => {
   const detector = catalog.detectors.find(d => d.name === event.target.value);
   if (!detector) return;
-  document.getElementById('job-alert').value = detector.default_threshold;
-  document.getElementById('job-critical').value = (detector.default_threshold * 1.5).toFixed(2);
+  const base = detector.default_threshold;
+  document.getElementById('job-rules').value = `${base}, P1\n${(base * 1.5).toFixed(2)}, P0`;
 });
 
 document.getElementById('preview-job').addEventListener('change', async event => {
