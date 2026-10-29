@@ -86,9 +86,43 @@ def test_severity_levels_follow_thresholds(tmp_path):
     scores = payload["scores"]
     alert = float(payload["alert_threshold"])
     critical = float(payload["critical_threshold"])
-    assert np.all(severity[scores > critical] == 2)
-    assert np.all(severity[(scores > alert) & (scores <= critical)] == 1)
-    assert np.all(severity[scores <= alert] == 0)
+    assert np.all(severity[scores >= critical] == 2)
+    assert np.all(severity[(scores >= alert) & (scores < critical)] == 1)
+    assert np.all(severity[scores < alert] == 0)
+
+
+def test_absolute_condition_raises_level_on_high_values(tmp_path):
+    """绝对值条件作为后处理并行生效：值 > 40 的点直接抬到 P1 档。"""
+    store, job, start = _seed(tmp_path)
+    absolute_job = store.add_job(
+        metric_id=job.metric_id,
+        name="abs-job",
+        detector="seasonal",
+        alert_threshold=3.0,
+        critical_threshold=3.0,
+        window_points=60,
+        interval_seconds=300,
+        alert_rules=[
+            {"multiplier": 3.0, "level": "P2"},
+            {"op": ">", "value": 40, "level": "P1"},
+        ],
+    )
+    run_id = execute_job(
+        store,
+        absolute_job.id,
+        data_root=tmp_path,
+        start=start,
+        end=start + timedelta(minutes=300),
+    )
+    index = json.loads((run_dir(tmp_path, run_id) / "index.json").read_text(encoding="utf-8"))
+    entry = next(item for item in index["series"] if item["group"] == "a")
+    payload = np.load(run_dir(tmp_path, run_id) / entry["file"])
+    severity = payload["severity"]
+    values = payload["values"]
+    # 种子数据里只有一个点（i=30）值超过 40
+    assert int((values > 40).sum()) == 1
+    assert np.all(severity[values > 40] == 2)
+    assert severity.max() == 2
 
 
 def test_execute_job_records_failure(tmp_path):

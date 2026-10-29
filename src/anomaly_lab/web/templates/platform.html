@@ -59,11 +59,15 @@
     <label>执行间隔(秒)<input id="job-interval" type="number" value="300"></label>
     <button id="job-add">新增任务</button>
   </div>
-  <label class="wide">告警规则（每行一条：<code>倍数, 等级</code>，倍数 = 偏离基线多少倍正常波动）
-    <textarea id="job-rules" rows="3" placeholder="1, P2&#10;3, P1"></textarea>
+  <label class="wide">告警规则（每行一条：<code>倍数, 等级</code> 或 <code>&gt;50, 等级</code>；倍数 = 偏离基线多少倍正常波动）
+    <textarea id="job-rules" rows="4" placeholder="1, P2&#10;3, P1&#10;&gt;50, P0"></textarea>
   </label>
-  <p class="muted">留空则用默认两档（缩放因子 2.5 → P1，3.75 → P0）。命中多条时取最高档。</p>
-  <table><thead><tr><th>ID</th><th>名称</th><th>指标</th><th>算法</th><th>P1/P0</th><th>间隔</th><th>状态</th><th>操作</th></tr></thead>
+  <p class="muted">
+    <strong>从上到下按严重程度排列</strong>（最后一行最严重），命中多条时取最高档。<br>
+    倍数条件是主判定；<code>&gt;50</code> 这类绝对值条件并行生效，只能抬高等级、不会压低分数判定。<br>
+    留空则用默认两档（缩放因子 2.5 → P1，3.75 → P0）。
+  </p>
+  <table><thead><tr><th>ID</th><th>名称</th><th>指标</th><th>算法</th><th>告警规则</th><th>间隔</th><th>状态</th><th>操作</th></tr></thead>
   <tbody id="job-rows"></tbody></table>
 </section>
 

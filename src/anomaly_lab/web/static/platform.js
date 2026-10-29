@@ -24,15 +24,22 @@ function parseRules(text) {
   for (const line of String(text || '').split('\n')) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-    const [multiplier, ...rest] = trimmed.split(',');
+    const [expr, ...rest] = trimmed.split(',');
     const level = rest.join(',').trim();
-    const value = Number(multiplier);
-    if (!Number.isFinite(value) || value <= 0) {
-      alert(`规则行格式不对：${trimmed}（应为「倍数, 等级」）`);
-      return null;
-    }
     if (!level) {
       alert(`规则行缺少等级：${trimmed}`);
+      return null;
+    }
+    const condition = expr.trim();
+    // 绝对值条件：>50 / >= 50 / <10 / <= 10
+    const absolute = condition.match(/^(>=|<=|>|<)\s*(-?\d+(?:\.\d+)?)$/);
+    if (absolute) {
+      rules.push({ op: absolute[1], value: Number(absolute[2]), level });
+      continue;
+    }
+    const value = Number(condition);
+    if (!Number.isFinite(value) || value <= 0) {
+      alert(`规则行格式不对：${trimmed}（应为「倍数, 等级」或「>50, 等级」）`);
       return null;
     }
     rules.push({ multiplier: value, level });
@@ -42,7 +49,12 @@ function parseRules(text) {
 
 function formatRules(rules) {
   if (!rules || !rules.length) return '-';
-  return rules.map(rule => `${rule.multiplier}×→${rule.level}`).join(' / ');
+  return rules.map(rule => {
+    const condition = rule.multiplier === undefined || rule.multiplier === null
+      ? `${rule.op}${rule.value}`
+      : `${rule.multiplier}×`;
+    return `${condition}→${rule.level}`;
+  }).join(' / ');
 }
 
 function fillSelect(select, items, valueKey, labelFn, keepValue) {

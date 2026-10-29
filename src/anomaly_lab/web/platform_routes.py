@@ -14,7 +14,11 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from anomaly_lab.platform import runner as runner_module
-from anomaly_lab.platform.alerts import parse_rules
+from anomaly_lab.platform.alerts import (
+    band_multiplier,
+    highest_multiplier,
+    parse_rules,
+)
 from anomaly_lab.platform.detectors import create_detector, detector_catalog
 from anomaly_lab.platform.store import PlatformStore
 
@@ -58,10 +62,16 @@ class JobToggleIn(BaseModel):
 
 
 class AlertRuleIn(BaseModel):
-    """一条告警规则：偏离多少倍（缩放因子）+ 对应等级。"""
+    """一条告警规则。
 
-    multiplier: float
+    两种条件二选一：`multiplier` 是倍数条件（缩放因子），
+    `op`+`value` 是绝对值条件（如「值 > 50 记 P1」）。
+    """
+
     level: str
+    multiplier: float | None = None
+    op: str | None = None
+    value: float | None = None
 
 
 def _clean(values: np.ndarray) -> list[float | None]:
@@ -141,28 +151,29 @@ def build_router(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         try:
-            rules = (
-                parse_rules([rule.model_dump() for rule in payload.alert_rules])
+            rule_dicts = (
+                [rule.model_dump(exclude_none=True) for rule in payload.alert_rules]
                 if payload.alert_rules
                 else []
             )
-        except ValueError as exc:
+            rules = parse_rules(rule_dicts) if rule_dicts else []
+            if rules:
+                # 规则表为准：阈值由规则推导（最低档/最高档的倍数）
+                alert = band_multiplier(rules)
+                critical = highest_multiplier(rules) or alert
+            else:
+                alert = (
+                    float(payload.alert_threshold)
+                    if payload.alert_threshold is not None
+                    else float(detector.default_threshold)
+                )
+                critical = (
+                    float(payload.critical_threshold)
+                    if payload.critical_threshold is not None
+                    else alert * 1.5
+                )
+        except (TypeError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        if rules:
-            # 规则表为准：最低档/最高档倍数同步到快捷字段
-            alert = rules[0].multiplier
-            critical = rules[-1].multiplier
-        else:
-            alert = (
-                float(payload.alert_threshold)
-                if payload.alert_threshold is not None
-                else float(detector.default_threshold)
-            )
-            critical = (
-                float(payload.critical_threshold)
-                if payload.critical_threshold is not None
-                else alert * 1.5
-            )
         try:
             job = store.add_job(
                 metric_id=payload.metric_id,
@@ -173,9 +184,7 @@ def build_router(
                 window_points=payload.window_points,
                 interval_seconds=payload.interval_seconds,
                 enabled=payload.enabled,
-                alert_rules=[rule.model_dump() for rule in payload.alert_rules]
-                if payload.alert_rules
-                else None,
+                alert_rules=rule_dicts or None,
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc

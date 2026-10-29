@@ -12,7 +12,9 @@ from contextlib import closing, contextmanager
 from pathlib import Path
 
 from anomaly_lab.platform.alerts import (
+    band_multiplier,
     default_rules,
+    highest_multiplier,
     parse_rules,
     rules_to_dicts,
 )
@@ -251,15 +253,17 @@ class PlatformStore:
         name = validate_name(name, "任务名称")
         if detector not in DETECTOR_FACTORIES:
             raise ValueError(f"不支持的检测器: {detector}")
-        validate_thresholds(float(alert_threshold), float(critical_threshold))
         window_points = validate_window_points(int(window_points))
         interval_seconds = validate_interval_seconds(int(interval_seconds))
         self.get_metric(metric_id)
-        rules = (
-            parse_rules(alert_rules)
-            if alert_rules
-            else default_rules(float(alert_threshold), float(critical_threshold))
-        )
+        if alert_rules:
+            # 规则表为准：阈值由规则推导（最低档/最高档的倍数）
+            rules = parse_rules(alert_rules)
+            alert_threshold = band_multiplier(rules)
+            critical_threshold = highest_multiplier(rules) or alert_threshold
+        else:
+            validate_thresholds(float(alert_threshold), float(critical_threshold))
+            rules = default_rules(float(alert_threshold), float(critical_threshold))
         rules_json = json.dumps(rules_to_dicts(rules), ensure_ascii=False)
         created_at = to_iso(utcnow())
         try:

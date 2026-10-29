@@ -282,3 +282,79 @@ def test_job_rejects_invalid_alert_rules(tmp_path):
     )
     assert response.status_code == 400
     assert "multiplier" in response.json()["detail"]
+
+
+def test_job_with_absolute_alert_rule(tmp_path):
+    """绝对值条件与倍数条件并行存在，规则原样往返。"""
+    client, _ = _client(tmp_path)
+    source = client.post(
+        "/api/platform/sources", json={"name": "local", "path": "platform/source.db"}
+    )
+    metric = client.post(
+        "/api/platform/metrics",
+        json={
+            "source_id": source.json()["id"],
+            "name": "demo",
+            "query": "SELECT ts, host, value FROM metrics WHERE $timefilter ORDER BY ts",
+            "time_column": "ts",
+            "value_column": "value",
+            "group_column": "host",
+            "time_format": "iso_utc",
+        },
+    )
+    rules = [
+        {"multiplier": 1.0, "level": "P2"},
+        {"op": ">", "value": 50, "level": "P1"},
+    ]
+    job = client.post(
+        "/api/platform/jobs",
+        json={
+            "metric_id": metric.json()["id"],
+            "name": "absolute-job",
+            "detector": "seasonal",
+            "alert_rules": rules,
+        },
+    )
+    assert job.status_code == 200
+    payload = job.json()
+    assert payload["alert_rules"] == rules
+    # 阈值由规则推导：最低档/最高档的倍数（这里只有一条倍数规则）
+    assert payload["alert_threshold"] == 1.0
+    assert payload["critical_threshold"] == 1.0
+
+    job_id = payload["id"]
+    run_id = client.post(f"/api/platform/jobs/{job_id}/run").json()["run_id"]
+    preview = client.get(f"/api/platform/jobs/{job_id}/preview?run_id={run_id}").json()
+    assert preview["levels"] == ["正常", "P2", "P1"]
+    assert preview["alert_rules"] == rules
+
+
+def test_job_rejects_absolute_only_alert_rules(tmp_path):
+    """纯绝对值规则无法定出上下界宽度，配置期就要拦下来。"""
+    client, _ = _client(tmp_path)
+    source = client.post(
+        "/api/platform/sources", json={"name": "local", "path": "platform/source.db"}
+    )
+    metric = client.post(
+        "/api/platform/metrics",
+        json={
+            "source_id": source.json()["id"],
+            "name": "demo",
+            "query": "SELECT ts, host, value FROM metrics WHERE $timefilter ORDER BY ts",
+            "time_column": "ts",
+            "value_column": "value",
+            "group_column": "host",
+            "time_format": "iso_utc",
+        },
+    )
+    response = client.post(
+        "/api/platform/jobs",
+        json={
+            "metric_id": metric.json()["id"],
+            "name": "absolute-only-job",
+            "detector": "seasonal",
+            "alert_rules": [{"op": ">", "value": 50, "level": "P1"}],
+        },
+    )
+    assert response.status_code == 400
+    assert "倍数规则" in response.json()["detail"]

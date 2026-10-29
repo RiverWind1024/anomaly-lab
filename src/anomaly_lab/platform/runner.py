@@ -18,10 +18,11 @@ from anomaly_lab.detectors.bands import compute_bands
 from anomaly_lab.platform.alerts import (
     band_multiplier,
     default_rules,
+    highest_multiplier,
     level_labels,
     parse_rules,
     rules_to_dicts,
-    severity_from_scores,
+    severity_from_conditions,
 )
 from anomaly_lab.platform.detectors import create_detector
 from anomaly_lab.platform.sqlite_source import load_series
@@ -107,6 +108,7 @@ def _run_job(
         rules = _job_rules(job)
         band_width = band_multiplier(rules)
         levels = level_labels(rules)
+        critical_ref = highest_multiplier(rules) or band_width
 
         target = run_dir(data_root, run.id)
         target.mkdir(parents=True, exist_ok=True)
@@ -136,7 +138,7 @@ def _run_job(
             detector = create_detector(job.detector).fit(series)
             result = detector.detect(series, threshold=band_width)
             bands = compute_bands(detector, series, band_width)
-            severity = severity_from_scores(result.scores, rules)
+            severity = severity_from_conditions(result.scores, series.values, rules)
             file_name = _file_name(series.series_id)
             np.savez_compressed(
                 target / file_name,
@@ -148,7 +150,7 @@ def _run_job(
                 upper=np.asarray(bands.upper if bands else [], dtype=float),
                 severity=severity,
                 alert_threshold=np.array(band_width),
-                critical_threshold=np.array(rules[-1].multiplier),
+                critical_threshold=np.array(critical_ref),
                 alert_rules=np.array(json.dumps(rules_to_dicts(rules), ensure_ascii=False)),
                 levels=np.array(json.dumps(levels, ensure_ascii=False)),
                 detector=np.array(result.detector),
