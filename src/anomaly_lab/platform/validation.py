@@ -1,0 +1,73 @@
+"""平台层输入校验：SQL 标识符、只读查询、阈值与频率。
+
+这些校验是安全边界的一部分：用户提供的 SQL 只能读取，不能写入。
+"""
+
+from __future__ import annotations
+
+import re
+
+import numpy as np
+
+_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_FORBIDDEN = re.compile(
+    r"\b(insert|update|delete|drop|alter|create|replace|attach|detach|pragma|vacuum|reindex)\b",
+    re.IGNORECASE,
+)
+_LITERAL = re.compile(r"'(?:''|[^'])*'")
+_TIME_FORMATS = {"iso", "epoch_s", "epoch_ms"}
+
+
+def validate_identifier(value: str, label: str) -> None:
+    if not isinstance(value, str) or not _IDENTIFIER.fullmatch(value):
+        raise ValueError(f"{label} 必须是合法 SQL 标识符：{value!r}")
+
+
+def validate_query(query: str) -> str:
+    """校验只读查询，返回去掉尾分号的查询文本。"""
+    if not isinstance(query, str) or not query.strip():
+        raise ValueError("查询不能为空")
+    text = query.strip().rstrip(";").strip()
+    if not text.lower().startswith(("select", "with")):
+        raise ValueError("查询必须以 SELECT 或 WITH 开头")
+    if ";" in text:
+        raise ValueError("查询只允许单条语句")
+    if text.count("$timefilter") != 1:
+        raise ValueError("查询必须且只能包含一个 $timefilter")
+    clean = _LITERAL.sub("''", text)
+    if _FORBIDDEN.search(clean):
+        raise ValueError("查询包含不允许的写操作关键字")
+    return text
+
+
+def validate_time_format(value: str) -> str:
+    if value not in _TIME_FORMATS:
+        raise ValueError(f"不支持的 time_format: {value!r}（可选 {sorted(_TIME_FORMATS)}）")
+    return value
+
+
+def validate_thresholds(alert: float, critical: float) -> None:
+    if not np.isfinite(alert) or not np.isfinite(critical):
+        raise ValueError("阈值必须是有限数字")
+    if critical <= alert:
+        raise ValueError("critical_threshold 必须大于 alert_threshold")
+
+
+def validate_name(value: str, label: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{label} 不能为空")
+    return value.strip()
+
+
+def validate_window_points(value: int) -> int:
+    if value < 10:
+        raise ValueError("window_points 至少为 10")
+    if value > 100_000:
+        raise ValueError("window_points 不能超过 100000")
+    return int(value)
+
+
+def validate_interval_seconds(value: int) -> int:
+    if value < 10:
+        raise ValueError("interval_seconds 至少为 10 秒")
+    return int(value)
