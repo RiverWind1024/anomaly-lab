@@ -20,7 +20,14 @@ FORBIDDEN_TERMS = [
 ]
 
 _SCAN_FILES = ["README.md"]
-_SCAN_DIRS = ["src", "tests", "notebooks"]
+_SCAN_DIRS = ["src", "tests", "notebooks", "docs"]
+# 这些文件本身在讨论“哪些内部专名不能用”，必须豁免
+_EXEMPT = {
+    "src/anomaly_lab/compliance.py",
+    "docs/RESEARCH.md",
+    "docs/DESIGN.md",
+    "docs/PLAN.md",
+}
 
 
 def scan_forbidden(text: str, terms: list[str]) -> list[tuple[str, int]]:
@@ -48,8 +55,8 @@ def scan_repo(root: Path | None = None, terms: list[str] | None = None) -> list[
     for path in targets:
         if not path.is_file():
             continue
-        # 禁词表本身必须豁免，否则自检永远命中自己
-        if path.resolve() == (root / "src" / "anomaly_lab" / "compliance.py").resolve():
+        # 禁词表与讨论禁词的设计文档必须豁免，否则自检永远命中自己
+        if path.resolve() in {(root / name).resolve() for name in _EXEMPT}:
             continue
         try:
             text = path.read_text(encoding="utf-8")
