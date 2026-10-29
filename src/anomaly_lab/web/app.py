@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -18,6 +19,8 @@ from anomaly_lab.config import CONFIG
 from anomaly_lab.contracts import DetectionResult
 from anomaly_lab.data.loader import load_dataset
 from anomaly_lab.evaluation.badcases import attribute_badcases
+from anomaly_lab.platform.store import PlatformStore
+from anomaly_lab.web.platform_routes import build_router
 
 _WEB_DIR = Path(__file__).parent
 _TEMPLATES = Jinja2Templates(directory=str(_WEB_DIR / "templates"))
@@ -62,9 +65,37 @@ def _series_map() -> dict:
         return {}
 
 
-def create_app() -> FastAPI:
-    app = FastAPI(title="anomaly-lab")
+def create_app(
+    platform_store: PlatformStore | None = None,
+    platform_data_root: Path | None = None,
+    start_scheduler: bool = False,
+) -> FastAPI:
+    data_root = Path(platform_data_root or _data_root())
+    store = platform_store
+
+    def get_store() -> PlatformStore:
+        nonlocal store
+        if store is None:
+            store = PlatformStore(data_root / "platform.db")
+        return store
+
+    scheduler = None
+    if start_scheduler:
+        from anomaly_lab.platform.scheduler import Scheduler
+
+        scheduler = Scheduler(get_store(), data_root)
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        if scheduler is not None:
+            scheduler.start()
+        yield
+        if scheduler is not None:
+            scheduler.stop()
+
+    app = FastAPI(title="anomaly-lab", lifespan=lifespan)
     app.mount("/static", StaticFiles(directory=str(_WEB_DIR / "static")), name="static")
+    app.include_router(build_router(get_store, lambda: data_root))
 
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request):

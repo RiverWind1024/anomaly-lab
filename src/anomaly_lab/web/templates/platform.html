@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}定时检测 - anomaly-lab{% endblock %}
+{% block content %}
+<h1>定时检测</h1>
+<p class="muted">配置数据源与指标，按频率拉取数据，用选定算法出基线与上下界，按分数区间分级为 P1 / P0。</p>
+
+<section class="card">
+  <h2>1. 数据源</h2>
+  <div class="form-grid">
+    <label>名称<input id="src-name" placeholder="local"></label>
+    <label>路径<input id="src-path" placeholder="platform/source.db"></label>
+    <button id="src-add">新增数据源</button>
+  </div>
+  <table><thead><tr><th>ID</th><th>名称</th><th>类型</th><th>路径</th></tr></thead>
+  <tbody id="src-rows"></tbody></table>
+</section>
+
+<section class="card">
+  <h2>2. 指标（SQL + $timefilter）</h2>
+  <div class="form-grid">
+    <label>数据源<select id="metric-source"></select></label>
+    <label>名称<input id="metric-name" placeholder="cpu"></label>
+    <label>时间列<input id="metric-time-col" value="ts"></label>
+    <label>值列<input id="metric-value-col" value="value"></label>
+    <label>分组列<input id="metric-group-col" placeholder="host（可空）"></label>
+    <label>时间格式
+      <select id="metric-time-format">
+        <option value="iso">iso</option>
+        <option value="epoch_s">epoch_s</option>
+        <option value="epoch_ms">epoch_ms</option>
+      </select>
+    </label>
+    <label>频率<input id="metric-freq" value="5min"></label>
+    <button id="metric-add">新增指标</button>
+  </div>
+  <label class="wide">查询语句
+    <textarea id="metric-query" rows="3">SELECT ts, host, value FROM metrics WHERE $timefilter ORDER BY ts</textarea>
+  </label>
+  <table><thead><tr><th>ID</th><th>名称</th><th>数据源</th><th>分组列</th><th>频率</th></tr></thead>
+  <tbody id="metric-rows"></tbody></table>
+</section>
+
+<section class="card">
+  <h2>3. 检测任务</h2>
+  <div class="form-grid">
+    <label>指标<select id="job-metric"></select></label>
+    <label>名称<input id="job-name" placeholder="cpu-job"></label>
+    <label>算法<select id="job-detector"></select></label>
+    <label>P1 阈值<input id="job-alert" type="number" step="0.1" value="2.5"></label>
+    <label>P0 阈值<input id="job-critical" type="number" step="0.1" value="3.75"></label>
+    <label>窗口点数<input id="job-window" type="number" value="500"></label>
+    <label>执行间隔(秒)<input id="job-interval" type="number" value="300"></label>
+    <button id="job-add">新增任务</button>
+  </div>
+  <table><thead><tr><th>ID</th><th>名称</th><th>指标</th><th>算法</th><th>P1/P0</th><th>间隔</th><th>状态</th><th>操作</th></tr></thead>
+  <tbody id="job-rows"></tbody></table>
+</section>
+
+<section class="card">
+  <h2>4. 预览</h2>
+  <div class="toolbar">
+    <select id="preview-job"></select>
+    <select id="preview-run"></select>
+    <select id="preview-series"></select>
+    <button id="preview-refresh">刷新</button>
+    <span id="preview-hint" class="muted"></span>
+  </div>
+  <div id="chart" class="chart"></div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script src="/static/platform.js"></script>
+{% endblock %}
