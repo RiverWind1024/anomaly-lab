@@ -4,12 +4,17 @@
 
 对每条带真值标签的序列：
 
-- 用各检测器在**各自固定的默认阈值**下算点级 F1——这是平台实际用法
-  （不是逐序列搜阈值的诊断上限，那种数字在真实部署里拿不到）；
+- 用各检测器在**各自固定的默认阈值**下算点级 F1 与 point-adjusted F1
+  ——这是平台实际用法（不是逐序列搜阈值的诊断上限，那种数字在真实部署里拿不到）；
 - 记录 auto 选中的算法、它的 F1 排名（1 = 最好）与是否回退。
 
 汇总成：各算法的平均 F1、auto 的平均排名与夺冠率、auto 相对「最好的固定算法」
 和相对「固定用某个常见算法」的差距。
+
+**为什么排名用 point-adjusted F1**：像 NAB 这类公开集的异常标注极其稀疏
+（有的序列 4032 个点只标了 1 个异常），此时点级 F1 几乎只反映误报量，
+无法区分「有没有抓到那个点」。point-adjusted 口径（窗口内命中一次即算检出）
+才对应真实告警体验。
 """
 
 from __future__ import annotations
@@ -44,11 +49,19 @@ class SeriesResult:
 
 @dataclass(frozen=True)
 class ValidationReport:
-    """整体结论。"""
+    """整体结论。
+
+    `detector_mean_f1` 是**点级** F1；`detector_mean_adjusted_f1` 是
+    **point-adjusted** F1（真值窗口内只要有一次命中就算整个窗口检出）——
+    NAB 这类稀疏点级标注的公开集适用后者：4032 个点里只标 1 个异常时，
+    点级 F1 几乎只反映误报量。
+    """
 
     rows: list[SeriesResult]
     detector_mean_f1: dict[str, float]
+    detector_mean_adjusted_f1: dict[str, float]
     auto_mean_f1: float
+    auto_mean_adjusted_f1: float
     auto_mean_rank: float
     auto_top1_rate: float
     best_fixed_detector: str
@@ -61,7 +74,9 @@ class ValidationReport:
         return {
             "n_series": len(self.rows),
             "detector_mean_f1": self.detector_mean_f1,
+            "detector_mean_adjusted_f1": self.detector_mean_adjusted_f1,
             "auto_mean_f1": self.auto_mean_f1,
+            "auto_mean_adjusted_f1": self.auto_mean_adjusted_f1,
             "auto_mean_rank": self.auto_mean_rank,
             "auto_top1_rate": self.auto_top1_rate,
             "best_fixed_detector": self.best_fixed_detector,
@@ -126,7 +141,8 @@ def validate_auto(
                 fallback=resolution.fallback,
                 f1=f1,
                 adjusted_f1=adjusted,
-                ranks=_ranks(f1),
+                # 排名按 point-adjusted F1：稀疏点级标注下点级 F1 几乎只反映误报量
+                ranks=_ranks(adjusted),
             )
         )
 
@@ -136,15 +152,21 @@ def validate_auto(
     detector_mean_f1 = {
         name: float(np.mean([row.f1[name] for row in rows])) for name in names
     }
+    detector_mean_adjusted = {
+        name: float(np.mean([row.adjusted_f1[name] for row in rows])) for name in names
+    }
     best_fixed = max(detector_mean_f1, key=lambda name: detector_mean_f1[name])
     auto_scores = [row.f1[row.auto_detector] for row in rows]
+    auto_adjusted = [row.adjusted_f1[row.auto_detector] for row in rows]
     auto_ranks = [float(row.ranks[row.auto_detector]) for row in rows]
     baseline_scores = [row.f1.get(baseline_detector, 0.0) for row in rows]
     fallback_rate = float(np.mean([1.0 if row.fallback else 0.0 for row in rows]))
     return ValidationReport(
         rows=rows,
         detector_mean_f1=detector_mean_f1,
+        detector_mean_adjusted_f1=detector_mean_adjusted,
         auto_mean_f1=float(np.mean(auto_scores)),
+        auto_mean_adjusted_f1=float(np.mean(auto_adjusted)),
         auto_mean_rank=float(np.mean(auto_ranks)),
         auto_top1_rate=float(np.mean([1.0 if rank == 1.0 else 0.0 for rank in auto_ranks])),
         best_fixed_detector=best_fixed,

@@ -373,14 +373,19 @@ def _cmd_validate_auto(args: argparse.Namespace) -> int:
     print(f"自动推荐算法验证（数据源：{source_label}，{len(report.rows)} 条序列）")
     print()
     print("各算法平均 F1（各自固定默认阈值）：")
-    for name, score in sorted(
-        report.detector_mean_f1.items(), key=lambda item: -item[1]
+    print(f"  {'算法':<22}{'点级':>8}{'窗口级':>10}")
+    for name in sorted(
+        report.detector_mean_f1, key=lambda n: -report.detector_mean_adjusted_f1[n]
     ):
         mark = " ← auto 平均选中" if name == report.best_fixed_detector else ""
-        print(f"  {name:<22}{score:.3f}{mark}")
+        print(
+            f"  {name:<22}{report.detector_mean_f1[name]:>8.3f}"
+            f"{report.detector_mean_adjusted_f1[name]:>10.3f}{mark}"
+        )
     print()
     print(
         f"auto 选中算法：平均 F1 {report.auto_mean_f1:.3f} / "
+        f"窗口级 {report.auto_mean_adjusted_f1:.3f} / "
         f"平均排名 {report.auto_mean_rank:.2f} / 夺冠率 {report.auto_top1_rate:.1%} / "
         f"回退率 {report.fallback_rate:.1%}"
     )
@@ -410,24 +415,34 @@ def _auto_validation_markdown(report, source_label: str) -> str:
         f"- 数据源：{source_label}",
         f"- 序列数：{len(report.rows)}",
         (
-            "- 判定口径：各检测器在**各自固定默认阈值**下的点级 F1"
+            "- 判定口径：各检测器在**各自固定默认阈值**下评估"
             "（不是逐序列搜阈值的诊断上限）"
+        ),
+        (
+            "- 两种 F1：**点级** = 逐点对；**窗口级** = point-adjusted"
+            "（真值窗口内命中一次即算检出）。稀疏点级标注的公开集适用后者。"
         ),
         "",
         "## 各算法平均 F1",
         "",
-        "| 算法 | 平均 F1 |",
-        "|---|---:|",
+        "| 算法 | 点级 F1 | 窗口级 F1 |",
+        "|---|---:|---:|",
     ]
-    for name, score in sorted(report.detector_mean_f1.items(), key=lambda i: -i[1]):
-        lines.append(f"| {name} | {score:.3f} |")
+    for name in sorted(
+        report.detector_mean_f1, key=lambda n: -report.detector_mean_adjusted_f1[n]
+    ):
+        lines.append(
+            f"| {name} | {report.detector_mean_f1[name]:.3f} | "
+            f"{report.detector_mean_adjusted_f1[name]:.3f} |"
+        )
     lines += [
         "",
         "## auto 的表现",
         "",
         "| 指标 | 值 |",
         "|---|---:|",
-        f"| 平均 F1 | {report.auto_mean_f1:.3f} |",
+        f"| 平均 F1（点级） | {report.auto_mean_f1:.3f} |",
+        f"| 平均 F1（窗口级） | {report.auto_mean_adjusted_f1:.3f} |",
         f"| 平均排名（1 最好） | {report.auto_mean_rank:.2f} |",
         f"| 夺冠率 | {report.auto_top1_rate:.1%} |",
         f"| 回退率 | {report.fallback_rate:.1%} |",
@@ -442,14 +457,16 @@ def _auto_validation_markdown(report, source_label: str) -> str:
         "",
         "## 逐序列明细",
         "",
-        "| 序列 | 形态 | auto 选中 | 回退 | auto F1 | auto 排名 | 最好算法 |",
-        "|---|---|---|---|---:|---:|---|",
+        "| 序列 | 形态 | auto 选中 | 回退 | 点级 F1 | 窗口级 F1 | 排名 | 最好算法 |",
+        "|---|---|---|---|---:|---:|---:|---|",
     ]
     for row in report.rows:
-        best = max(row.f1, key=lambda name: row.f1[name]) if row.f1 else "-"
+        best = max(row.adjusted_f1, key=lambda name: row.adjusted_f1[name]) if row.f1 else "-"
         lines.append(
             f"| {row.series_id} | {row.metric_class} | {row.auto_detector} | "
-            f"{'是' if row.fallback else ''} | {row.f1.get(row.auto_detector, 0.0):.3f} | "
+            f"{'是' if row.fallback else ''} | "
+            f"{row.f1.get(row.auto_detector, 0.0):.3f} | "
+            f"{row.adjusted_f1.get(row.auto_detector, 0.0):.3f} | "
             f"{row.ranks.get(row.auto_detector, 0)} | {best} |"
         )
     return "\n".join(lines) + "\n"

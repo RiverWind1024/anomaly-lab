@@ -36,9 +36,9 @@ _CSV = "timestamp,value\n2026-01-01 00:00:00,1.0\n2026-01-01 00:05:00,2.0\n2026-
 
 
 def test_load_nab_series_pairs_values_with_labels(tmp_path):
-    cache = tmp_path / "cache"
+    cache = tmp_path / "nab"
     _make_cache(
-        cache / "nab",
+        cache,
         {
             "labels/combined_labels.json": _LABELS,
             "data/realKnownValues/demo.csv": _CSV,
@@ -56,9 +56,9 @@ def test_load_nab_series_pairs_values_with_labels(tmp_path):
 
 def test_series_without_labels_are_skipped(tmp_path):
     """没有异常标签的序列无法评估，直接跳过。"""
-    cache = tmp_path / "cache"
+    cache = tmp_path / "nab"
     _make_cache(
-        cache / "nab",
+        cache,
         {
             "labels/combined_labels.json": _LABELS,
             "data/realKnownValues/demo.csv": _CSV,
@@ -71,9 +71,9 @@ def test_series_without_labels_are_skipped(tmp_path):
 
 def test_missing_value_file_is_skipped(tmp_path):
     """标签有但数据文件缺失时跳过，不报错。"""
-    cache = tmp_path / "cache"
+    cache = tmp_path / "nab"
     _make_cache(
-        cache / "nab",
+        cache,
         {"labels/combined_labels.json": _LABELS},
     )
     with pytest.raises(NabUnavailable):
@@ -81,9 +81,9 @@ def test_missing_value_file_is_skipped(tmp_path):
 
 
 def test_limit_truncates_the_result(tmp_path):
-    cache = tmp_path / "cache"
+    cache = tmp_path / "nab"
     _make_cache(
-        cache / "nab",
+        cache,
         {
             "labels/combined_labels.json": _LABELS,
             "data/realKnownValues/demo.csv": _CSV,
@@ -95,10 +95,10 @@ def test_limit_truncates_the_result(tmp_path):
 
 
 def test_availability_check(tmp_path):
-    cache = tmp_path / "cache"
+    cache = tmp_path / "nab"
     assert nab_available(cache) is False
     _make_cache(
-        cache / "nab",
+        cache,
         {
             "labels/combined_labels.json": _LABELS,
             "data/realKnownValues/demo.csv": _CSV,
@@ -108,8 +108,8 @@ def test_availability_check(tmp_path):
 
 
 def test_cache_dir_layout(tmp_path):
-    # 传入目录时直接挂在其下
-    assert nab_cache_dir(tmp_path) == tmp_path / "nab"
-    # 默认挂在公开集缓存目录下
+    # 传入目录时直接用该目录
+    assert nab_cache_dir(tmp_path) == tmp_path
+    # 默认挂在数据缓存目录下
     default = nab_cache_dir()
-    assert default.parts[-3:] == ("cache", "public", "nab")
+    assert default.parts[-3:] == ("data", "cache", "nab")

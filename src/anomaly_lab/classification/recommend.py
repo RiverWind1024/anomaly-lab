@@ -36,9 +36,15 @@ _RULES: dict[str, tuple[list[str], dict[str, dict], str]] = {
         "趋势会抬高全局方差，先去趋势再做残差阈值",
     ),
     "step": (
-        ["changepoint"],
-        {"changepoint": {"min_seg": [10, 30]}},
-        "阶梯型的关键是变点位置，均值突变检测比点级阈值更合适",
+        ["changepoint", "deseasonalized_iqr"],
+        {
+            "changepoint": {"min_seg": [10, 30]},
+            "deseasonalized_iqr": {"k": [1.5, 3.0]},
+        },
+        (
+            "阶梯型的关键是变点位置，均值突变检测比点级阈值更合适"
+            "（平台不支持变点检测，退而用去趋势后检测残差）"
+        ),
     ),
     "high_zero_ratio": (
         ["iqr"],
@@ -46,9 +52,15 @@ _RULES: dict[str, tuple[list[str], dict[str, dict], str]] = {
         "大量零值会破坏均值/标准差，用分位数法更稳；零值专门建模留待 v2",
     ),
     "sparse_event": (
-        ["event_count"],
-        {"event_count": {"window": [20, 100]}},
-        "稀疏事件应看窗口内事件计数相对泊松期望的偏离，而不是单点幅度",
+        ["event_count", "iqr"],
+        {
+            "event_count": {"window": [20, 100]},
+            "iqr": {"k": [2.0, 4.0]},
+        },
+        (
+            "稀疏事件应看窗口内事件计数相对泊松期望的偏离，而不是单点幅度"
+            "（平台不支持该检测器，退而用 IQR）"
+        ),
     ),
 }
 

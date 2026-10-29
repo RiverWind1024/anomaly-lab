@@ -63,16 +63,20 @@ def test_explicit_detector_is_used_as_is():
     assert resolution.fallback is False
 
 
-def test_auto_records_unsupported_candidates():
-    """推荐到平台不支持的算法时要说清楚，不能静默换掉。"""
+def test_auto_uses_next_candidate_when_the_best_one_is_unsupported():
+    """首选算法平台不支持时，用同类的次选——而不是无声地回退到默认算法。"""
     from anomaly_lab.classification.classifier import classify
 
     sparse = np.zeros(240)
-    sparse[::60] = 5.0  # 稀疏事件 → 推荐 event_count（平台不支持）
+    sparse[::60] = 5.0  # 稀疏事件 → 首选 event_count（平台不支持）
+    assert classify(_bundle(sparse)).recommendation.detectors == [
+        "event_count",
+        "iqr",
+    ]
     resolution = resolve_detector(AUTO_DETECTOR, _bundle(sparse))
-    assert classify(_bundle(sparse)).recommendation.detectors == ["event_count"]
-    assert resolution.detector == DEFAULT_DETECTOR
-    assert resolution.fallback is True
+    assert resolution.detector == "iqr"
+    assert resolution.fallback is False
+    # 但必须说清楚首选的算法不可用
     assert "event_count" in resolution.rationale
 
 
