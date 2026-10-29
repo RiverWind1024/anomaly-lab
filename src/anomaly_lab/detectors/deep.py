@@ -65,13 +65,16 @@ def _windows(values: np.ndarray, window: int, stride: int) -> np.ndarray:
     return np.stack([values[start : start + window] for start in starts])
 
 
-def _prepare(series_list: list[SeriesBundle], window: int) -> torch.Tensor:
+def _prepare(
+    series_list: list[SeriesBundle], window: int, channels_first: bool
+) -> torch.Tensor:
     chunks = []
     for series in series_list:
         values = _standardize(np.asarray(series.values, dtype=float))
         chunks.append(_windows(values, window, max(1, window // 2)))
     array = np.concatenate(chunks, axis=0)
-    return torch.tensor(array, dtype=torch.float32).unsqueeze(1)
+    tensor = torch.tensor(array, dtype=torch.float32)
+    return tensor.unsqueeze(1) if channels_first else tensor.unsqueeze(2)
 
 
 def _train(
@@ -81,10 +84,11 @@ def _train(
     seed: int,
     out_path: Path,
     arch: str,
+    channels_first: bool = True,
 ) -> TrainingResult:
     torch.manual_seed(seed)
     torch.set_num_threads(2)
-    data = _prepare(series_list, WINDOW)
+    data = _prepare(series_list, WINDOW, channels_first)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     loss_fn = nn.MSELoss()
     generator = torch.Generator().manual_seed(seed)
@@ -125,9 +129,38 @@ def train_tcn(
     return _train(TCN(), series, epochs, seed, out_path, arch="tcn")
 
 
+class LSTMAutoencoder(nn.Module):
+    def __init__(self, hidden: int = HIDDEN) -> None:
+        super().__init__()
+        self.lstm = nn.LSTM(input_size=1, hidden_size=hidden, num_layers=1, batch_first=True)
+        self.head = nn.Linear(hidden, 1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        out, _ = self.lstm(x)
+        return self.head(out)
+
+
+def train_lstm(
+    series: list[SeriesBundle],
+    epochs: int = 5,
+    seed: int = 42,
+    out_path: Path = Path("models/lstm.pt"),
+) -> TrainingResult:
+    return _train(
+        LSTMAutoencoder(),
+        series,
+        epochs,
+        seed,
+        out_path,
+        arch="lstm",
+        channels_first=False,
+    )
+
+
 class _DeepDetector(TimedDetector):
     score_type = "prob"
     arch = ""
+    channels_first = True
     default_threshold = 0.5
 
     def __init__(self, model_path: Path) -> None:
@@ -165,7 +198,8 @@ class _DeepDetector(TimedDetector):
         with torch.no_grad():
             for start in sorted(set(starts)):
                 chunk = values[start : start + window]
-                tensor = torch.tensor(chunk, dtype=torch.float32).view(1, 1, -1)
+                tensor = torch.tensor(chunk, dtype=torch.float32)
+                tensor = tensor.view(1, 1, -1) if self.channels_first else tensor.view(1, -1, 1)
                 reconstruction = self.model(tensor).view(-1).numpy()
                 errors[start : start + len(chunk)] += np.abs(reconstruction - chunk)
                 counts[start : start + len(chunk)] += 1
@@ -187,3 +221,12 @@ class TCNDetector(_DeepDetector):
 
     def _build_model(self) -> nn.Module:
         return TCN()
+
+
+class LSTMDetector(_DeepDetector):
+    name = "lstm"
+    arch = "lstm"
+    channels_first = False
+
+    def _build_model(self) -> nn.Module:
+        return LSTMAutoencoder()
