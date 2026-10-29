@@ -13,14 +13,79 @@ from anomaly_lab.compliance import scan_repo
 from anomaly_lab.config import CONFIG
 from anomaly_lab.data.loader import build_synthetic_dataset, load_dataset
 from anomaly_lab.data.synthetic import METRIC_CLASSES
+from anomaly_lab.detectors.statistical import (
+    ChangePointDetector,
+    DeseasonalizedIQRDetector,
+    EventCountDetector,
+    IQRDetector,
+    MADDetector,
+    SeasonalDetector,
+    STLResidualDetector,
+    ZScoreDetector,
+)
+from anomaly_lab.evaluation.backtest import BacktestRow, _mask_to_intervals
+from anomaly_lab.evaluation.metrics import precision_recall_f1, range_based_prf
+from anomaly_lab.evaluation.report import build_report
+from anomaly_lab.evaluation.thresholds import search_threshold
 
 _UNIMPLEMENTED = {
-    "detect": "Chunk 2",
-    "evaluate": "Chunk 2",
     "compare": "Chunk 3",
-    "report": "Chunk 2",
     "serve": "Chunk 4",
 }
+
+_DETECTORS = {
+    "iqr": IQRDetector,
+    "mad": MADDetector,
+    "zscore": ZScoreDetector,
+    "seasonal": lambda: SeasonalDetector(period=24),
+    "stl_residual": lambda: STLResidualDetector(period=24),
+    "deseasonalized_iqr": DeseasonalizedIQRDetector,
+    "changepoint": ChangePointDetector,
+    "event_count": EventCountDetector,
+}
+
+
+def _detections_root(data_dir: Path) -> Path:
+    # 默认 data/synthetic -> data/cache/detections；自定义目录用其父目录
+    return Path(data_dir).parent / "cache" / "detections"
+
+
+def _load_rows(data_dir: Path) -> list[BacktestRow]:
+    series_list = load_dataset(data_dir)
+    by_id = {s.series_id: s for s in series_list}
+    root = _detections_root(data_dir)
+    rows: list[BacktestRow] = []
+    for detector_dir in sorted(p for p in root.glob("*") if p.is_dir()):
+        for path in sorted(detector_dir.glob("*.npz")):
+            series = by_id.get(path.stem)
+            if series is None:
+                continue
+            data = np.load(path, allow_pickle=False)
+            truth = series.labels.astype(bool)
+            scores = data["scores"].astype(float)
+            searched = search_threshold(scores, str(data["score_type"]), truth)
+            pred = scores > searched.threshold
+            precision, recall, f1 = precision_recall_f1(pred, truth)
+            _, _, range_f1 = range_based_prf(
+                _mask_to_intervals(pred), _mask_to_intervals(truth)
+            )
+            rows.append(
+                BacktestRow(
+                    series_id=series.series_id,
+                    metric_class=str(series.meta.get("metric_class", "unknown")),
+                    detector=str(data["detector"]),
+                    score_type=str(data["score_type"]),
+                    threshold=searched.threshold,
+                    precision=precision,
+                    recall=recall,
+                    f1=f1,
+                    range_f1=range_f1,
+                    n_truth=int(truth.sum()),
+                    n_pred=int(pred.sum()),
+                    elapsed_ms=float(data["elapsed_ms"]),
+                )
+            )
+    return rows
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -49,6 +114,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--out", type=Path, default=None)
 
     p = sub.add_parser("report", help="汇总检测结果")
+    p.add_argument("--data", type=Path, default=None)
     p.add_argument("--out", type=Path, default=None)
 
     p = sub.add_parser("serve", help="启动 Web")
@@ -108,6 +174,87 @@ def _cmd_classify(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_detect(args: argparse.Namespace) -> int:
+    data_dir = args.data or CONFIG.synthetic_dir
+    if args.detector not in _DETECTORS:
+        print(f"未知检测器: {args.detector}", file=sys.stderr)
+        return 1
+    series_list = load_dataset(data_dir)
+    if not series_list:
+        print(f"没有可加载的数据：{data_dir}", file=sys.stderr)
+        return 1
+    out_dir = _detections_root(data_dir) / args.detector
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for series in series_list:
+        detector = _DETECTORS[args.detector]().fit(series)
+        result = detector.detect(series)
+        np.savez(
+            out_dir / f"{series.series_id}.npz",
+            scores=result.scores,
+            is_anomaly=result.is_anomaly,
+            threshold=np.array(result.threshold),
+            score_type=np.array(result.score_type),
+            detector=np.array(result.detector),
+            elapsed_ms=np.array(result.elapsed_ms),
+        )
+    print(f"检测完成：{len(series_list)} 条序列 -> {out_dir}")
+    return 0
+
+
+def _cmd_evaluate(args: argparse.Namespace) -> int:
+    data_dir = args.data or CONFIG.synthetic_dir
+    rows = _load_rows(data_dir)
+    if not rows:
+        print(f"没有检测结果，请先运行 detect：{_detections_root(data_dir)}", file=sys.stderr)
+        return 1
+    out_dir = args.report or (CONFIG.reports_dir / "latest")
+    summary = build_report(rows, out_dir, title="Anomaly Lab 回测")
+    overall = summary["overall"]
+    print(
+        f"F1={overall['f1']:.3f} Precision={overall['precision']:.3f} "
+        f"Recall={overall['recall']:.3f} RangeF1={overall['range_f1']:.3f} "
+        f"({overall['n_series']} 条序列)"
+    )
+    print(f"报告已写入：{Path(out_dir)}")
+    return 0
+
+
+def _cmd_report(args: argparse.Namespace) -> int:
+    data_dir = args.data or CONFIG.synthetic_dir
+    rows = _load_rows(data_dir)
+    if not rows:
+        print(f"没有检测结果，请先运行 detect：{_detections_root(data_dir)}", file=sys.stderr)
+        return 1
+    out = args.out or (CONFIG.reports_dir / "summary.md")
+    out = Path(out)
+    if out.suffix != ".md":
+        out = out / "summary.md"
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    by_detector: dict[str, list[BacktestRow]] = {}
+    for row in rows:
+        by_detector.setdefault(row.detector, []).append(row)
+    lines = [
+        "# 检测结果汇总",
+        "",
+        "| 检测器 | 序列数 | Precision | Recall | F1 | Range-F1 |",
+        "|---|---:|---:|---:|---:|---:|",
+    ]
+    for name, items in sorted(by_detector.items()):
+        count = len(items)
+        means = {
+            key: sum(getattr(r, key) for r in items) / count
+            for key in ("precision", "recall", "f1", "range_f1")
+        }
+        lines.append(
+            f"| {name} | {count} | {means['precision']:.3f} | {means['recall']:.3f} | "
+            f"{means['f1']:.3f} | {means['range_f1']:.3f} |"
+        )
+    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print(f"汇总已写入：{out}")
+    return 0
+
+
 def _cmd_compliance(args: argparse.Namespace) -> int:
     hits = scan_repo(Path.cwd())
     if hits:
@@ -126,6 +273,12 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_generate(args)
     if args.command == "classify":
         return _cmd_classify(args)
+    if args.command == "detect":
+        return _cmd_detect(args)
+    if args.command == "evaluate":
+        return _cmd_evaluate(args)
+    if args.command == "report":
+        return _cmd_report(args)
     if args.command == "compliance-check":
         return _cmd_compliance(args)
     if args.command in _UNIMPLEMENTED:
