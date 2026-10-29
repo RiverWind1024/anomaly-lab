@@ -7,13 +7,13 @@ from __future__ import annotations
 
 import sqlite3
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from dataclasses import asdict
 from pathlib import Path
 
 from anomaly_lab.platform.detectors import DETECTOR_FACTORIES
 from anomaly_lab.platform.models import Job, Metric, Run, Source
-from anomaly_lab.platform.timeutil import to_iso, utcnow
+from anomaly_lab.platform.timeutil import freq_delta, to_iso, utcnow
 from anomaly_lab.platform.validation import (
     validate_identifier,
     validate_interval_seconds,
@@ -95,6 +95,9 @@ class PlatformStore:
             conn.close()
 
     def _init_schema(self) -> None:
+        # WAL：调度线程与 Web 请求会并发读写同一个库
+        with closing(sqlite3.connect(self.db_path, timeout=30)) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
         with self._conn() as conn:
             conn.executescript(_SCHEMA)
 
@@ -153,6 +156,7 @@ class PlatformStore:
         if group_column:
             validate_identifier(group_column, "group_column")
         validate_time_format(time_format)
+        freq_delta(freq)  # 频率非法时立刻报错，而不是等到任务运行时才失败
         self.get_source(source_id)
         created_at = to_iso(utcnow())
         try:

@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import quote
@@ -66,7 +67,7 @@ def load_series(
         _time_value(end, metric.time_format),
         MAX_ROWS + 1,
     )
-    with _connect(path) as conn:
+    with closing(_connect(path)) as conn:
         cursor = conn.execute(sql, params)
         columns = [item[0] for item in cursor.description]
         rows = cursor.fetchall()

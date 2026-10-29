@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sqlite3
 from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
@@ -13,8 +12,8 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
+from anomaly_lab.platform import runner as runner_module
 from anomaly_lab.platform.detectors import create_detector, detector_catalog
-from anomaly_lab.platform.runner import execute_job, read_run_index, run_dir
 from anomaly_lab.platform.store import PlatformStore
 
 TimeFormat = Literal["iso", "epoch_s", "epoch_ms"]
@@ -159,9 +158,11 @@ def build_router(
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         try:
-            run_id = execute_job(store, job_id, data_root=get_data_root())
-        except (ValueError, FileNotFoundError, sqlite3.DatabaseError) as exc:
-            raise HTTPException(status_code=400, detail=f"{type(exc).__name__}: {exc}") from exc
+            run_id = runner_module.execute_job(store, job_id, data_root=get_data_root())
+        except Exception as exc:  # 任何失败都要把原因告诉调用方，而不是 500
+            raise HTTPException(
+                status_code=400, detail=f"{type(exc).__name__}: {exc}"
+            ) from exc
         return {"run_id": run_id, "status": store.get_run(run_id).status}
 
     @router.get("/api/platform/jobs/{job_id}/runs")
@@ -187,7 +188,16 @@ def build_router(
                 raise HTTPException(status_code=404, detail="该任务还没有运行记录")
             chosen_run = latest.id
         try:
-            index = read_run_index(get_data_root(), chosen_run)
+            run = store.get_run(chosen_run)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        if run.job_id != job.id:
+            raise HTTPException(
+                status_code=404,
+                detail=f"run_id {chosen_run} 不属于任务 {job_id}",
+            )
+        try:
+            index = runner_module.read_run_index(get_data_root(), chosen_run)
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         entries = index.get("series", [])
@@ -200,7 +210,8 @@ def build_router(
                 raise HTTPException(status_code=404, detail=f"序列不存在: {series_id}")
             entry = matched
 
-        payload = np.load(run_dir(get_data_root(), chosen_run) / entry["file"], allow_pickle=False)
+        target = runner_module.run_dir(get_data_root(), chosen_run)
+        payload = np.load(target / entry["file"], allow_pickle=False)
         timestamps = payload["timestamps"].astype("datetime64[ns]")
         baseline = payload["baseline"]
         lower = payload["lower"]

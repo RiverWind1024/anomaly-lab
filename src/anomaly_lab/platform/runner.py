@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -22,6 +23,10 @@ from anomaly_lab.platform.timeutil import freq_delta, to_iso, utcnow
 SEVERITY_NORMAL = 0
 SEVERITY_P1 = 1
 SEVERITY_P0 = 2
+
+# 正在执行的任务：job_id -> run_id。避免「手动触发」和「调度到点」重复跑同一个任务。
+_INFLIGHT: dict[int, int] = {}
+_INFLIGHT_LOCK = threading.Lock()
 
 
 def run_dir(data_root: Path, run_id: int) -> Path:
@@ -57,9 +62,33 @@ def execute_job(
     end: datetime | None = None,
     now: datetime | None = None,
 ) -> int:
-    """执行一次任务，返回 run_id；失败会记录到 runs 表后重新抛出。"""
+    """执行一次任务，返回 run_id；已在执行时直接复用那次 run。"""
     job = store.get_job(job_id)
-    run = store.create_run(job.id)
+    with _INFLIGHT_LOCK:
+        existing = _INFLIGHT.get(job.id)
+        if existing is not None:
+            return existing
+        run = store.create_run(job.id)
+        _INFLIGHT[job.id] = run.id
+    try:
+        return _run_job(
+            store, job, run, data_root=data_root, start=start, end=end, now=now
+        )
+    finally:
+        with _INFLIGHT_LOCK:
+            _INFLIGHT.pop(job.id, None)
+
+
+def _run_job(
+    store: PlatformStore,
+    job,
+    run,
+    *,
+    data_root: Path,
+    start: datetime | None = None,
+    end: datetime | None = None,
+    now: datetime | None = None,
+) -> int:
     try:
         metric = store.get_metric(job.metric_id)
         source = store.get_source(metric.source_id)
