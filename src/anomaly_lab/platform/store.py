@@ -17,10 +17,12 @@ from anomaly_lab.platform.timeutil import freq_delta, to_iso, utcnow
 from anomaly_lab.platform.validation import (
     validate_identifier,
     validate_interval_seconds,
+    validate_missing_policy,
     validate_name,
     validate_query,
     validate_thresholds,
     validate_time_format,
+    validate_timezone,
     validate_window_points,
 )
 
@@ -100,6 +102,20 @@ class PlatformStore:
             conn.execute("PRAGMA journal_mode=WAL")
         with self._conn() as conn:
             conn.executescript(_SCHEMA)
+            self._migrate(conn)
+
+    @staticmethod
+    def _migrate(conn: sqlite3.Connection) -> None:
+        """给老库补上新列，避免升级后配置丢失。"""
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(metrics)")}
+        if "source_timezone" not in columns:
+            conn.execute(
+                "ALTER TABLE metrics ADD COLUMN source_timezone TEXT NOT NULL DEFAULT 'UTC'"
+            )
+        if "missing_policy" not in columns:
+            conn.execute(
+                "ALTER TABLE metrics ADD COLUMN missing_policy TEXT NOT NULL DEFAULT 'drop'"
+            )
 
     # ---------- 数据源 ----------
 
@@ -146,8 +162,10 @@ class PlatformStore:
         time_column: str,
         value_column: str,
         group_column: str | None = None,
-        time_format: str = "iso",
+        time_format: str = "iso_utc",
         freq: str = "5min",
+        source_timezone: str = "UTC",
+        missing_policy: str = "drop",
     ) -> Metric:
         name = validate_name(name, "指标名称")
         query = validate_query(query)
@@ -156,6 +174,8 @@ class PlatformStore:
         if group_column:
             validate_identifier(group_column, "group_column")
         validate_time_format(time_format)
+        validate_missing_policy(missing_policy)
+        validate_timezone(source_timezone)
         freq_delta(freq)  # 频率非法时立刻报错，而不是等到任务运行时才失败
         self.get_source(source_id)
         created_at = to_iso(utcnow())
@@ -163,8 +183,8 @@ class PlatformStore:
             with self._conn() as conn:
                 cursor = conn.execute(
                     "INSERT INTO metrics (source_id, name, query, time_column, value_column,"
-                    " group_column, time_format, freq, created_at)"
-                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    " group_column, time_format, freq, source_timezone, missing_policy, created_at)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         source_id,
                         name,
@@ -174,6 +194,8 @@ class PlatformStore:
                         group_column or None,
                         time_format,
                         freq,
+                        source_timezone,
+                        missing_policy,
                         created_at,
                     ),
                 )

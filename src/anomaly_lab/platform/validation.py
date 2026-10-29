@@ -15,7 +15,8 @@ _FORBIDDEN = re.compile(
     re.IGNORECASE,
 )
 _LITERAL = re.compile(r"'(?:''|[^'])*'")
-_TIME_FORMATS = {"iso", "epoch_s", "epoch_ms"}
+_TIME_FORMATS = {"iso_utc", "iso_naive", "epoch_s", "epoch_ms"}
+_MISSING_POLICIES = {"drop", "interpolate", "error"}
 
 
 def validate_identifier(value: str, label: str) -> None:
@@ -42,7 +43,29 @@ def validate_query(query: str) -> str:
 
 def validate_time_format(value: str) -> str:
     if value not in _TIME_FORMATS:
-        raise ValueError(f"不支持的 time_format: {value!r}（可选 {sorted(_TIME_FORMATS)}）")
+        raise ValueError(
+            f"不支持的 time_format: {value!r}（可选 {sorted(_TIME_FORMATS)}；"
+            "iso_utc=带时区或UTC的ISO时间，iso_naive=无时区墙钟时间）"
+        )
+    return value
+
+
+def validate_missing_policy(value: str) -> str:
+    if value not in _MISSING_POLICIES:
+        raise ValueError(
+            f"不支持的 missing_policy: {value!r}（可选 {sorted(_MISSING_POLICIES)}）"
+        )
+    return value
+
+
+def validate_timezone(value: str) -> str:
+    """校验 IANA 时区名；SQLite 自身不认识时区，所以必须显式声明。"""
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+    try:
+        ZoneInfo(value)
+    except (ZoneInfoNotFoundError, ValueError, KeyError) as exc:
+        raise ValueError(f"无效的时区: {value!r}（需 IANA 名称，如 UTC、Asia/Shanghai）") from exc
     return value
 
 

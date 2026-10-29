@@ -46,7 +46,7 @@ def _metric() -> Metric:
         time_column="ts",
         value_column="v",
         group_column="g",
-        time_format="iso",
+        time_format="iso_utc",
         freq="1min",
         created_at="",
     )
@@ -62,7 +62,7 @@ def _store_with_job(root: Path, db: Path, name: str = "job"):
         time_column="ts",
         value_column="v",
         group_column="g",
-        time_format="iso",
+        time_format="iso_utc",
         freq="1min",
     )
     job = store.add_job(
@@ -127,7 +127,7 @@ def test_add_metric_rejects_invalid_frequency(tmp_path):
             time_column="ts",
             value_column="v",
             group_column="g",
-            time_format="iso",
+            time_format="iso_utc",
             freq="每周",
         )
 
@@ -146,7 +146,7 @@ def test_preview_rejects_run_from_another_job(tmp_path):
         time_column="ts",
         value_column="v",
         group_column="g",
-        time_format="iso",
+        time_format="iso_utc",
         freq="1min",
     )
     job_a = store.add_job(

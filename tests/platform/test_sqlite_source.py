@@ -30,7 +30,7 @@ def _metric(**overrides):
         "time_column": "ts",
         "value_column": "value",
         "group_column": "host",
-        "time_format": "iso",
+        "time_format": "iso_utc",
         "freq": "1min",
         "created_at": "",
     }

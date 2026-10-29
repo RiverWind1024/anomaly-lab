@@ -103,8 +103,27 @@ def _run_job(
         target.mkdir(parents=True, exist_ok=True)
         entries: list[dict] = []
         total_alerts = 0
+        n_insufficient = 0
 
         for series in series_list:
+            sufficient = bool(series.meta.get("sufficient", True))
+            if not sufficient:
+                # 有效点太少：明确标记「数据不足」，绝不能当成「一切正常」
+                n_insufficient += 1
+                entries.append(
+                    {
+                        "series_id": series.series_id,
+                        "group": series.meta.get("group"),
+                        "n": int(series.n),
+                        "n_valid": int(series.meta.get("n_valid", series.n)),
+                        "n_missing": int(series.meta.get("n_missing", 0)),
+                        "n_alerts": 0,
+                        "n_p0": 0,
+                        "sufficient": False,
+                        "file": None,
+                    }
+                )
+                continue
             detector = create_detector(job.detector).fit(series)
             result = detector.detect(series, threshold=job.alert_threshold)
             bands = compute_bands(detector, series, job.alert_threshold)
@@ -135,8 +154,11 @@ def _run_job(
                     "series_id": series.series_id,
                     "group": series.meta.get("group"),
                     "n": int(series.n),
+                    "n_valid": int(series.meta.get("n_valid", series.n)),
+                    "n_missing": int(series.meta.get("n_missing", 0)),
                     "n_alerts": n_alerts,
                     "n_p0": int((severity == SEVERITY_P0).sum()),
+                    "sufficient": True,
                     "file": file_name,
                 }
             )
@@ -146,13 +168,15 @@ def _run_job(
             "job_id": job.id,
             "detector": job.detector,
             "generated_at": to_iso(utcnow()),
+            "n_insufficient": n_insufficient,
             "series": entries,
         }
         (target / "index.json").write_text(
             json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8"
         )
+        status = "insufficient_data" if entries and n_insufficient == len(entries) else "success"
         store.finish_run(
-            run.id, "success", n_series=len(entries), n_alerts=total_alerts
+            run.id, status, n_series=len(entries), n_alerts=total_alerts
         )
         return run.id
     except Exception as exc:

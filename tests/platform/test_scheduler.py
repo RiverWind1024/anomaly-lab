@@ -14,7 +14,7 @@ def _job(store, name="job"):
         time_column="ts",
         value_column="value",
         group_column=None,
-        time_format="iso",
+        time_format="iso_utc",
         freq="5min",
     )
     return store.add_job(

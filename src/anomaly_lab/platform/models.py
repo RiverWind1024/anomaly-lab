@@ -18,7 +18,13 @@ class Source:
 
 @dataclass(frozen=True)
 class Metric:
-    """一条指标定义：SQL + 时间列/值列/分组列 + 采样频率。"""
+    """一条指标定义：SQL + 时间列/值列/分组列 + 采样频率。
+
+    时间语义必须显式声明，不能猜：
+    - `time_format` 说明时间列的存储形式；
+    - `source_timezone` 说明无时区时间戳按哪个时区解释（对应 CloudWatch 的 MetricTimezone）；
+    - `missing_policy` 说明缺失值怎么处理。
+    """
 
     id: int
     source_id: int
@@ -30,6 +36,8 @@ class Metric:
     time_format: str
     freq: str
     created_at: str
+    source_timezone: str = "UTC"
+    missing_policy: str = "drop"
 
 
 @dataclass(frozen=True)

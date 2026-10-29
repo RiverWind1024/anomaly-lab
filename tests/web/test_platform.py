@@ -44,7 +44,7 @@ def test_create_source_metric_job_run_and_preview(tmp_path):
             "time_column": "ts",
             "value_column": "value",
             "group_column": "host",
-            "time_format": "iso",
+            "time_format": "iso_utc",
             "freq": "5min",
         },
     )

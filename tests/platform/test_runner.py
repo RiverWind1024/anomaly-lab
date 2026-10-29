@@ -31,7 +31,7 @@ def _seed(tmp_path):
         time_column="ts",
         value_column="value",
         group_column="host",
-        time_format="iso",
+        time_format="iso_utc",
         freq="5min",
     )
     job = store.add_job(

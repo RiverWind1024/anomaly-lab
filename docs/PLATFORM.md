@@ -20,10 +20,34 @@ make platform-smoke         # 跑一次任务并断言：2 条序列、有告警
 | 概念 | 存哪 | 关键字段 |
 |---|---|---|
 | 数据源 Source | `data/platform.db` 的 `sources` | 名称、类型（当前只有 `sqlite`）、路径（相对数据根目录或绝对路径） |
-| 指标 Metric | `metrics` | 数据源、SQL、时间列、值列、分组列、时间格式、采样频率 |
+| 指标 Metric | `metrics` | 数据源、SQL、时间列、值列、分组列、时间格式、源时区、缺失值策略、采样频率 |
 | 检测任务 Job | `jobs` | 指标、算法、P1/P0 阈值、窗口点数、执行间隔、启用状态 |
 
 运行记录在 `runs`，详细数组在 `data/cache/platform/runs/<run_id>/`（`index.json` + 每条序列一个 npz）。
+
+## 时间语义：不猜，必须声明
+
+时间列的存储形式与时区是**数据源的属性**，平台不做猜测（对应 CloudWatch 的 `MetricTimezone`）：
+
+| `time_format` | 含义 | 例子 |
+|---|---|---|
+| `iso_utc` | ISO8601，自带时区或本身就是 UTC | `2026-01-01T12:00:00+08:00`、`2026-01-01T12:00:00Z` |
+| `iso_naive` | 无时区墙钟时间，按 `source_timezone` 解释 | `2026-01-01 20:00:00` + `source_timezone=Asia/Shanghai` |
+| `epoch_s` / `epoch_ms` | Unix 时间戳 | `1767268800` |
+
+比较用 SQLite 内置的 `julianday()` 归一化，避开 ISO 字符串字典序比较的坑；`iso_naive` 会把查询边界换算成源时区的墙钟再比。
+
+**声明错了的后果**：取不到数据 → 该序列标记为「数据不足」，而不是悄悄取错区间。
+
+## 缺失值：自动兜底 + 可覆盖 + 绝不静默
+
+| `missing_policy` | 行为 |
+|---|---|
+| `drop`（默认） | 丢弃缺失点，并记录丢弃了多少个 |
+| `interpolate` | 按时间线性插值（适合采集抖动造成的空洞） |
+| `error` | 严格模式：有缺失就判任务失败 |
+
+**关键**：不管哪种策略，有效点少于 10 个的序列会被标记为 **数据不足（`insufficient_data`）**——既不算异常，也**绝不显示成「一切正常」**。这一条是硬约束：检测没跑起来不能长得像没异常。
 
 ## `$timefilter` 与 group by
 
@@ -45,7 +69,7 @@ SELECT * FROM (SELECT ts, host, value FROM metrics
 - `group_column` 非空时，**在加载层就拆成独立序列**：序列 ID 为 `{指标名}:{分组值}`，检测器永远只面对一条序列。
 - 单次查询上限 10 万行，超出要求缩小窗口或加聚合。
 
-支持的时间格式：`iso`（ISO8601 字符串）、`epoch_s`、`epoch_ms`。
+时间范围用参数绑定，时间列用 `julianday()` 比较（见上节）。
 
 ## 基线与告警分级
 

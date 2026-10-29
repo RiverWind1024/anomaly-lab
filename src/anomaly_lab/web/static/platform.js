@@ -91,7 +91,8 @@ async function toggleJob(button) {
 async function loadRuns(jobId) {
   const data = await api(`/api/platform/jobs/${jobId}/runs`);
   fillSelect(document.getElementById('preview-run'), data.runs, 'id',
-    r => `#${r.id} ${r.status} (${r.n_series} 序列 / ${r.n_alerts} 告警)`, true);
+    r => `#${r.id} ${r.status} (${r.n_series} 序列 / ${r.n_alerts} 告警)`
+       + (r.error ? ` · ${r.error.slice(0, 40)}` : ''), true);
   await loadPreview();
 }
 
@@ -106,14 +107,23 @@ async function loadPreview() {
   const data = await api(`/api/platform/jobs/${jobId}/preview?${params.toString()}`);
 
   fillSelect(document.getElementById('preview-series'), data.series, 'series_id',
-    s => `${s.series_id} (${s.n_alerts} 告警)`, true);
-  document.getElementById('preview-hint').textContent =
-    `${data.series_id} · ${data.detector} · ${data.score_type} · P1>${data.alert_threshold} · P0>${data.critical_threshold}`;
+    s => `${s.series_id} (${s.sufficient === false ? '数据不足' : `${s.n_alerts} 告警`})`, true);
+  const hint = document.getElementById('preview-hint');
+  if (data.sufficient === false) {
+    hint.textContent = `${data.series_id} · 数据不足：${data.insufficient_reason || '有效点太少'}`;
+  } else {
+    hint.textContent =
+      `${data.series_id} · ${data.detector} · ${data.score_type} · P1>${data.alert_threshold} · P0>${data.critical_threshold}`;
+  }
   render(data);
 }
 
 function render(data) {
   if (!chart) chart = echarts.init(document.getElementById('chart'));
+  if (!data.values.length) {
+    chart.clear();
+    return;
+  }
   const points = data.values.map((value, index) => ({
     value: [index, value],
     score: data.scores[index],
@@ -199,6 +209,8 @@ document.getElementById('metric-add').addEventListener('click', async () => {
     value_column: document.getElementById('metric-value-col').value,
     group_column: group || null,
     time_format: document.getElementById('metric-time-format').value,
+    source_timezone: document.getElementById('metric-timezone').value.trim() || 'UTC',
+    missing_policy: document.getElementById('metric-missing').value,
     freq: document.getElementById('metric-freq').value,
   });
   await refreshCatalog();

@@ -25,9 +25,18 @@
     <label>分组列<input id="metric-group-col" placeholder="host（可空）"></label>
     <label>时间格式
       <select id="metric-time-format">
-        <option value="iso">iso</option>
+        <option value="iso_utc">iso_utc（带时区或UTC）</option>
+        <option value="iso_naive">iso_naive（无时区墙钟）</option>
         <option value="epoch_s">epoch_s</option>
         <option value="epoch_ms">epoch_ms</option>
+      </select>
+    </label>
+    <label>源时区<input id="metric-timezone" value="UTC" placeholder="Asia/Shanghai"></label>
+    <label>缺失值策略
+      <select id="metric-missing">
+        <option value="drop">drop（丢弃并计数）</option>
+        <option value="interpolate">interpolate（线性插值）</option>
+        <option value="error">error（直接失败）</option>
       </select>
     </label>
     <label>频率<input id="metric-freq" value="5min"></label>

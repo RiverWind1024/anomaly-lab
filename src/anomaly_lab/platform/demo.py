@@ -69,8 +69,10 @@ def seed_demo(data_root: Path) -> dict:
             time_column="ts",
             value_column="value",
             group_column="series",
-            time_format="iso",
+            time_format="iso_utc",
             freq=FREQ,
+            source_timezone="UTC",
+            missing_policy="drop",
         )
 
     job = store.find_job_by_name(JOB_NAME)

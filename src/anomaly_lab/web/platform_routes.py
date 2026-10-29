@@ -16,7 +16,8 @@ from anomaly_lab.platform import runner as runner_module
 from anomaly_lab.platform.detectors import create_detector, detector_catalog
 from anomaly_lab.platform.store import PlatformStore
 
-TimeFormat = Literal["iso", "epoch_s", "epoch_ms"]
+TimeFormat = Literal["iso_utc", "iso_naive", "epoch_s", "epoch_ms"]
+MissingPolicy = Literal["drop", "interpolate", "error"]
 
 
 class SourceIn(BaseModel):
@@ -32,8 +33,10 @@ class MetricIn(BaseModel):
     time_column: str
     value_column: str
     group_column: str | None = None
-    time_format: TimeFormat = "iso"
+    time_format: TimeFormat = "iso_utc"
     freq: str = "5min"
+    source_timezone: str = "UTC"
+    missing_policy: MissingPolicy = "drop"
 
 
 class JobIn(BaseModel):
@@ -103,6 +106,8 @@ def build_router(
                 group_column=payload.group_column,
                 time_format=payload.time_format,
                 freq=payload.freq,
+                source_timezone=payload.source_timezone,
+                missing_policy=payload.missing_policy,
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -210,6 +215,35 @@ def build_router(
                 raise HTTPException(status_code=404, detail=f"序列不存在: {series_id}")
             entry = matched
 
+        if entry.get("file") is None:
+            # 数据不足的序列没有检测结果：明确说明，绝不返回「一切正常」的错觉
+            n_valid = int(entry.get("n_valid", 0))
+            return {
+                "run_id": chosen_run,
+                "job_id": job.id,
+                "detector": job.detector,
+                "score_type": "",
+                "series_id": entry["series_id"],
+                "group": entry.get("group"),
+                "n": int(entry.get("n", 0)),
+                "n_valid": n_valid,
+                "n_missing": int(entry.get("n_missing", 0)),
+                "n_alerts": 0,
+                "n_p0": 0,
+                "sufficient": False,
+                "insufficient_reason": f"有效点仅 {n_valid} 个，不足以做检测",
+                "timestamps": [],
+                "values": [],
+                "scores": [],
+                "baseline": None,
+                "lower": None,
+                "upper": None,
+                "severity": [],
+                "alert_threshold": job.alert_threshold,
+                "critical_threshold": job.critical_threshold,
+                "series": entries,
+            }
+
         target = runner_module.run_dir(get_data_root(), chosen_run)
         payload = np.load(target / entry["file"], allow_pickle=False)
         timestamps = payload["timestamps"].astype("datetime64[ns]")
@@ -225,8 +259,12 @@ def build_router(
             "series_id": entry["series_id"],
             "group": entry.get("group"),
             "n": entry["n"],
+            "n_valid": int(entry.get("n_valid", entry["n"])),
+            "n_missing": int(entry.get("n_missing", 0)),
             "n_alerts": entry.get("n_alerts", 0),
             "n_p0": entry.get("n_p0", 0),
+            "sufficient": bool(entry.get("sufficient", True)),
+            "insufficient_reason": "",
             "timestamps": [str(item) for item in timestamps.astype("datetime64[s]")],
             "values": _clean(payload["values"]),
             "scores": _clean(payload["scores"]),

@@ -18,7 +18,7 @@ def _metric(store, source_id):
         time_column="ts",
         value_column="value",
         group_column="host",
-        time_format="iso",
+        time_format="iso_utc",
         freq="5min",
     )
 
@@ -49,7 +49,7 @@ def test_add_metric_rejects_query_without_timefilter(tmp_path):
             time_column="ts",
             value_column="value",
             group_column=None,
-            time_format="iso",
+            time_format="iso_utc",
             freq="5min",
         )
 
