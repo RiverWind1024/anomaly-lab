@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Iterable
+from collections.abc import Iterable
 
 import numpy as np
 
@@ -129,7 +129,7 @@ def _base_high_zero_ratio(rng: np.random.Generator, n: int) -> tuple[np.ndarray,
 
 def _base_sparse_event(rng: np.random.Generator, n: int) -> tuple[np.ndarray, dict]:
     values = np.zeros(n)
-    n_events = max(1, min(8, int(round(n * 0.005))))
+    n_events = max(1, min(8, round(n * 0.005)))
     margin = max(2, n // 50)
     positions: list[int] = []
     attempts = 0

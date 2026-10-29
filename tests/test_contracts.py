@@ -5,12 +5,12 @@ from anomaly_lab.contracts import DetectionResult, SeriesBundle
 
 
 def _bundle(**kw):
-    base = dict(
-        series_id="s1",
-        values=np.arange(10.0),
-        timestamps=np.arange(10).astype("datetime64[ns]"),
-        freq="1min",
-    )
+    base = {
+        "series_id": "s1",
+        "values": np.arange(10.0),
+        "timestamps": np.arange(10).astype("datetime64[ns]"),
+        "freq": "1min",
+    }
     base.update(kw)
     return SeriesBundle(**base)
 

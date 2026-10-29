@@ -48,8 +48,10 @@ def _classify_features(values: np.ndarray, f: FeatureVector) -> tuple[MetricClas
             "sparse_event",
             confidence,
             [
-                f"零值占比 {f.zero_ratio:.1%}（非零点 {n_nonzero} 个，"
-                f"连续段 {f.n_nonzero_runs} 个）→ 稀疏事件型"
+                (
+                    f"零值占比 {f.zero_ratio:.1%}（非零点 {n_nonzero} 个，"
+                    f"连续段 {f.n_nonzero_runs} 个）→ 稀疏事件型"
+                )
             ],
         )
 
