@@ -23,6 +23,7 @@ class FeatureVector:
     acf_peak_lag1: float
     n_samples: int
     n_nonzero: int
+    n_nonzero_runs: int
 
 
 def adf_statistic(values: np.ndarray) -> tuple[float, float]:
@@ -63,9 +64,21 @@ def dominant_period(acf_vals: np.ndarray) -> int | None:
     if len(acf_vals) < 4 or abs(acf_vals[0]) < _EPS:
         return None
     norm = acf_vals / acf_vals[0]
+    running_min = float(norm[1])
     for lag in range(2, len(norm) - 1):
-        if norm[lag] > 0.2 and norm[lag] > norm[lag - 1] and norm[lag] >= norm[lag + 1]:
+        is_peak = (
+            norm[lag] > 0.2
+            and norm[lag] > norm[lag - 1]
+            and norm[lag] >= norm[lag + 1]
+        )
+        # 真周期在峰前应有明显低谷；单调衰减的 ACF（趋势/阶梯）不算周期
+        if is_peak and norm[lag] - running_min > 0.15:
+            # 真周期应在 2 倍周期处仍保留相关性；无法验证第二个峰的孤立峰不算
+            if 2 * lag >= len(norm) or norm[2 * lag] <= 0.2:
+                running_min = min(running_min, float(norm[lag]))
+                continue
             return int(lag)
+        running_min = min(running_min, float(norm[lag]))
     return None
 
 
@@ -84,20 +97,28 @@ def sparsity(values: np.ndarray) -> float:
 
 
 def change_point_score(values: np.ndarray, min_seg: int = 20) -> float:
-    """找使组间均值差最大的切点，用 tanh 归一到 [0, 1]。"""
+    """单变点强度：变点两侧大窗口中位数的差异 / 全局稳健尺度。
+
+    用相邻大窗口（而非全体两段）避免短时异常段（drift/flatline）被误判为阶梯；
+    短异常段在 20% 长度的窗口中会被稀释。
+    """
     values = np.asarray(values, dtype=float)
     n = len(values)
-    if n < 2 * min_seg:
+    if n < 4 * min_seg:
         return 0.0
-    std = float(np.std(values))
-    if std < _EPS:
+    med = float(np.median(values))
+    scale = float(np.median(np.abs(values - med))) * 1.4826
+    if scale < _EPS:
+        scale = float(np.std(values))
+    if scale < _EPS:
         return 0.0
-    prefix = np.concatenate(([0.0], np.cumsum(values)))
-    k = np.arange(min_seg, n - min_seg + 1)
-    left_mean = prefix[k] / k
-    right_mean = (prefix[n] - prefix[k]) / (n - k)
-    max_diff = float(np.max(np.abs(left_mean - right_mean)))
-    return float(np.tanh(max_diff / std))
+    window = max(min_seg, min(n // 5, 100))
+    best = 0.0
+    for k in range(window, n - window + 1):
+        left = float(np.median(values[k - window : k]))
+        right = float(np.median(values[k : k + window]))
+        best = max(best, abs(left - right))
+    return float(np.tanh(best / scale))
 
 
 # 兼容计划里的两种命名
@@ -105,25 +126,18 @@ changepoint_score = change_point_score
 
 
 def trend_strength(values: np.ndarray) -> float:
-    """线性回归斜率显著性的归一化表示：tanh(|t| / 300)。"""
+    """趋势强度：|Spearman 秩相关|，对异常段/离群点比 OLS 斜率更稳健。"""
     values = np.asarray(values, dtype=float)
     n = len(values)
-    if n < 3:
+    if n < 3 or np.std(values) < _EPS:
         return 0.0
-    t = np.arange(n, dtype=float)
-    t_mean = t.mean()
-    x_mean = values.mean()
-    sxx = float(np.sum((t - t_mean) ** 2))
-    if sxx < _EPS:
+    try:
+        from scipy.stats import spearmanr
+
+        rho = float(spearmanr(np.arange(n), values).statistic)
+        return abs(rho) if np.isfinite(rho) else 0.0
+    except Exception:
         return 0.0
-    slope = float(np.sum((t - t_mean) * (values - x_mean)) / sxx)
-    resid = values - (x_mean + slope * (t - t_mean))
-    sigma2 = float(np.sum(resid**2) / (n - 2))
-    se = np.sqrt(sigma2 / sxx)
-    if se < _EPS:
-        return 0.0 if abs(slope) < _EPS else 1.0
-    tstat = abs(slope / se)
-    return float(np.tanh(tstat / 300.0))
 
 
 def noise_ratio(values: np.ndarray, period: int | None = None) -> float:
@@ -155,8 +169,17 @@ def extract_features(values: np.ndarray, freq: str | None = None) -> FeatureVect
     values = np.asarray(values, dtype=float)
     n = len(values)
     _, adf_p = adf_statistic(values)
-    acf_vals = acf(values)
+    if n >= 2:
+        t = np.arange(n, dtype=float)
+        detrended = values - np.polyval(np.polyfit(t, values, 1), t)
+    else:
+        detrended = values
+    acf_vals = acf(detrended)
     period = dominant_period(acf_vals)
+    nonzero_mask = values != 0
+    n_nonzero_runs = (
+        int(nonzero_mask[0]) + int(np.sum(nonzero_mask[1:] & ~nonzero_mask[:-1])) if n else 0
+    )
     return FeatureVector(
         adf_pvalue=adf_p,
         dominant_period=period,
@@ -169,5 +192,6 @@ def extract_features(values: np.ndarray, freq: str | None = None) -> FeatureVect
         std=float(np.std(values)) if n else 0.0,
         acf_peak_lag1=float(acf_vals[1]) if len(acf_vals) > 1 else 0.0,
         n_samples=n,
-        n_nonzero=int(np.sum(values != 0)),
+        n_nonzero=int(np.sum(nonzero_mask)),
+        n_nonzero_runs=n_nonzero_runs,
     )
