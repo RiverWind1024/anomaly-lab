@@ -75,3 +75,23 @@ class Run:
     n_series: int
     n_alerts: int
     error: str | None
+
+
+@dataclass(frozen=True)
+class Feedback:
+    """一条人工反馈：某段时间内检测行为对不对。
+
+    粒度对齐 CloudWatch 的告警反馈——按**时间范围**给，而不是逐点标注：
+    `missed` = 该告警但没报；`false_alarm` = 不该报却报了；`correct` = 报得对；
+    `other` = 其他原因（数据问题、已知变更等），不参与调参。
+    """
+
+    id: int
+    job_id: int
+    run_id: int | None
+    series_id: str
+    start_ts: str
+    end_ts: str
+    kind: str
+    note: str
+    created_at: str

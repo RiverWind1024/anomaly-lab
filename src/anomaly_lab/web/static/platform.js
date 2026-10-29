@@ -83,7 +83,8 @@ function renderTables() {
   const jobRows = document.getElementById('job-rows');
   const metricName = id => (catalog.metrics.find(m => m.id === id) || {}).name || id;
   jobRows.innerHTML = catalog.jobs.map(j =>
-    `<tr><td>${j.id}</td><td>${j.name}</td><td>${metricName(j.metric_id)}</td><td>${j.detector}</td>` +
+    `<tr><td>${j.id}</td><td>${j.name}</td><td>${metricName(j.metric_id)}</td>` +
+    `<td>${j.detector === 'auto' ? '自动推荐' : j.detector}</td>` +
     `<td>${formatRules(j.alert_rules)}</td><td>${j.interval_seconds}s</td><td>${j.enabled ? '启用' : '停用'}</td>` +
     `<td><button data-run="${j.id}">立即运行</button> ` +
     `<button data-toggle="${j.id}" data-enabled="${j.enabled}">${j.enabled ? '停用' : '启用'}</button></td></tr>`).join('');
@@ -103,7 +104,7 @@ function renderTables() {
 async function refreshCatalog() {
   catalog = await api('/api/platform/catalog');
   fillSelect(document.getElementById('job-detector'), catalog.detectors, 'name',
-    d => `${d.name} (${d.score_type})`);
+    d => `${d.label || d.name} (${d.score_type})`);
   renderTables();
 }
 
@@ -149,10 +150,25 @@ async function loadPreview() {
   if (data.sufficient === false) {
     hint.textContent = `${data.series_id} · 数据不足：${data.insufficient_reason || '有效点太少'}`;
   } else {
+    const auto = data.requested_detector === 'auto';
+    const shape = auto
+      ? ` · 形态 ${data.metric_class || '未判定'}${data.detector_fallback ? '（回退）' : ''}`
+      : '';
     hint.textContent =
-      `${data.series_id} · ${data.detector} · ${data.score_type} · 规则 ${formatRules(data.alert_rules)}`
+      `${data.series_id} · ${auto ? `自动 → ${data.detector}` : data.detector}`
+      + `${shape} · ${data.score_type} · 规则 ${formatRules(data.alert_rules)}`
       + (data.sampled ? ` · 点数过多，已抽样 ${data.timestamps.length}/${data.original_n}` : '');
+    if (auto && data.detector_rationale) {
+      hint.title = data.detector_rationale;
+    }
   }
+  // 预填反馈表单：序列与时间范围取当前预览
+  document.getElementById('fb-series').value = data.series_id;
+  if (data.timestamps.length) {
+    document.getElementById('fb-start').value = data.timestamps[0];
+    document.getElementById('fb-end').value = data.timestamps[data.timestamps.length - 1];
+  }
+  await loadFeedback(jobId);
   render(data);
 }
 
@@ -280,6 +296,71 @@ document.getElementById('preview-job').addEventListener('change', async event =>
 document.getElementById('preview-run').addEventListener('change', loadPreview);
 document.getElementById('preview-series').addEventListener('change', loadPreview);
 document.getElementById('preview-refresh').addEventListener('click', loadPreview);
+
+// ---------- 反馈与调参 ----------
+
+let lastSuggestion = null;
+
+async function loadFeedback(jobId) {
+  if (!jobId) return;
+  const data = await api(`/api/platform/jobs/${jobId}/feedback`);
+  const rows = document.getElementById('fb-rows');
+  rows.innerHTML = data.feedback.map(item =>
+    `<tr><td>${item.id}</td><td>${item.series_id}</td>` +
+    `<td>${item.start_ts} → ${item.end_ts}</td>` +
+    `<td>${item.kind}</td><td>${item.note || ''}</td></tr>`).join('');
+}
+
+document.getElementById('fb-add').addEventListener('click', async () => {
+  const jobId = document.getElementById('preview-job').value;
+  if (!jobId) {
+    alert('请先在预览里选择一个任务');
+    return;
+  }
+  await postJson('/api/platform/feedback', {
+    job_id: Number(jobId),
+    series_id: document.getElementById('fb-series').value.trim(),
+    start_ts: document.getElementById('fb-start').value.trim(),
+    end_ts: document.getElementById('fb-end').value.trim(),
+    kind: document.getElementById('fb-kind').value,
+    note: document.getElementById('fb-note').value.trim(),
+  });
+  await loadFeedback(jobId);
+});
+
+document.getElementById('fb-suggest').addEventListener('click', async () => {
+  const jobId = document.getElementById('preview-job').value;
+  if (!jobId) {
+    alert('请先在预览里选择一个任务');
+    return;
+  }
+  const data = await api(`/api/platform/jobs/${jobId}/feedback/suggestion`);
+  lastSuggestion = data;
+  const hint = document.getElementById('fb-suggestion');
+  if (!data.best) {
+    hint.textContent = data.reason;
+    return;
+  }
+  const best = data.best;
+  const fmt = value => (value === null || value === undefined ? '—' : value.toFixed(2));
+  hint.textContent = `${data.reason} ｜ precision ${fmt(best.precision)}`
+    + ` / recall ${fmt(best.recall)} / F1 ${fmt(best.f1)}`;
+});
+
+document.getElementById('fb-apply').addEventListener('click', async () => {
+  const jobId = document.getElementById('preview-job').value;
+  if (!lastSuggestion || !lastSuggestion.best) {
+    alert('请先点「评估并给建议」');
+    return;
+  }
+  await postJson(`/api/platform/jobs/${jobId}/apply-multiplier`, {
+    multiplier: lastSuggestion.suggested_multiplier,
+  });
+  lastSuggestion = null;
+  document.getElementById('fb-suggestion').textContent = '已应用，新的告警倍数见任务列表';
+  await refreshCatalog();
+  await loadPreview();
+});
 
 refreshCatalog().then(() => {
   const jobId = document.getElementById('preview-job').value;

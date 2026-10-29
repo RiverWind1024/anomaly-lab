@@ -1,6 +1,7 @@
 import sqlite3
 from datetime import timedelta
 
+import pytest
 from fastapi.testclient import TestClient
 
 from anomaly_lab.platform.store import PlatformStore
@@ -133,6 +134,133 @@ def test_job_defaults_thresholds_from_detector(tmp_path):
     payload = job.json()
     assert payload["alert_threshold"] == 2.5
     assert payload["critical_threshold"] == 3.75
+
+
+def test_job_defaults_to_auto_detector(tmp_path):
+    """默认算法是「自动推荐」；预览会给出推断出的形态与实际使用的检测器。"""
+    client, _ = _client(tmp_path)
+    source = client.post(
+        "/api/platform/sources", json={"name": "local", "path": "platform/source.db"}
+    )
+    metric = client.post(
+        "/api/platform/metrics",
+        json={
+            "source_id": source.json()["id"],
+            "name": "demo",
+            "query": "SELECT ts, host, value FROM metrics WHERE $timefilter ORDER BY ts",
+            "time_column": "ts",
+            "value_column": "value",
+            "group_column": "host",
+            "time_format": "iso_utc",
+        },
+    )
+    job = client.post(
+        "/api/platform/jobs",
+        json={"metric_id": metric.json()["id"], "name": "auto-job"},
+    )
+    assert job.status_code == 200
+    assert job.json()["detector"] == "auto"
+
+    job_id = job.json()["id"]
+    run_id = client.post(f"/api/platform/jobs/{job_id}/run").json()["run_id"]
+    preview = client.get(f"/api/platform/jobs/{job_id}/preview?run_id={run_id}").json()
+    assert preview["requested_detector"] == "auto"
+    # 实际用的检测器必须是平台支持的算法之一
+    assert preview["detector"] in {
+        "iqr",
+        "mad",
+        "zscore",
+        "seasonal",
+        "stl_residual",
+        "deseasonalized_iqr",
+    }
+    assert preview["detector_rationale"]
+
+
+def test_feedback_loop_suggests_and_applies_multiplier(tmp_path):
+    """闭环：提交反馈 → 拿到倍数建议 → 应用建议改写规则表。"""
+    client, _store = _client(tmp_path)
+    source = client.post(
+        "/api/platform/sources", json={"name": "local", "path": "platform/source.db"}
+    )
+    metric = client.post(
+        "/api/platform/metrics",
+        json={
+            "source_id": source.json()["id"],
+            "name": "demo",
+            "query": "SELECT ts, host, value FROM metrics WHERE $timefilter ORDER BY ts",
+            "time_column": "ts",
+            "value_column": "value",
+            "group_column": "host",
+            "time_format": "iso_utc",
+        },
+    )
+    job = client.post(
+        "/api/platform/jobs",
+        json={
+            "metric_id": metric.json()["id"],
+            "name": "job",
+            "detector": "iqr",
+            "alert_rules": [{"multiplier": 1.0, "level": "P1"}],
+        },
+    )
+    job_id = job.json()["id"]
+    assert job.json()["alert_threshold"] == 1.0
+    client.post(f"/api/platform/jobs/{job_id}/run")
+
+    # 没有反馈时不给建议
+    empty = client.get(f"/api/platform/jobs/{job_id}/feedback/suggestion").json()
+    assert empty["suggested_multiplier"] == empty["current_multiplier"] == 1.0
+    assert empty["best"] is None
+
+    # 标一段误报：覆盖序列尾部（那里有个 40 的尖峰）
+    start = utcnow() - timedelta(minutes=30)
+    feedback = client.post(
+        "/api/platform/feedback",
+        json={
+            "job_id": job_id,
+            "series_id": "demo:a",
+            "start_ts": to_iso(start),
+            "end_ts": to_iso(utcnow()),
+            "kind": "false_alarm",
+            "note": "业务上正常",
+        },
+    )
+    assert feedback.status_code == 200
+
+    listed = client.get(f"/api/platform/jobs/{job_id}/feedback").json()
+    assert len(listed["feedback"]) == 1
+    assert listed["feedback"][0]["kind"] == "false_alarm"
+
+    suggestion = client.get(f"/api/platform/jobs/{job_id}/feedback/suggestion").json()
+    assert suggestion["suggested_multiplier"] >= suggestion["current_multiplier"]
+    assert suggestion["best"] is not None
+    assert suggestion["reason"]
+
+    applied = client.post(
+        f"/api/platform/jobs/{job_id}/apply-multiplier",
+        json={"multiplier": suggestion["suggested_multiplier"]},
+    )
+    assert applied.status_code == 200
+    assert applied.json()["alert_threshold"] == pytest.approx(
+        suggestion["suggested_multiplier"], rel=1e-3
+    )
+
+
+def test_feedback_rejects_invalid_range(tmp_path):
+    client, _ = _client(tmp_path)
+    response = client.post(
+        "/api/platform/feedback",
+        json={
+            "job_id": 1,
+            "series_id": "demo:a",
+            "start_ts": to_iso(utcnow()),
+            "end_ts": to_iso(utcnow() - timedelta(hours=1)),
+            "kind": "missed",
+        },
+    )
+    assert response.status_code == 400
+    assert "结束时间" in response.json()["detail"]
 
 
 def test_runs_endpoint_lists_history(tmp_path):

@@ -19,7 +19,17 @@ from anomaly_lab.platform.alerts import (
     highest_multiplier,
     parse_rules,
 )
-from anomaly_lab.platform.detectors import create_detector, detector_catalog
+from anomaly_lab.platform.detectors import (
+    AUTO_DETECTOR,
+    DEFAULT_DETECTOR,
+    create_detector,
+    detector_catalog,
+)
+from anomaly_lab.platform.feedback import (
+    Annotation,
+    SeriesOutcome,
+    suggest_multiplier,
+)
 from anomaly_lab.platform.store import PlatformStore
 
 TimeFormat = Literal["iso_utc", "iso_naive", "epoch_s", "epoch_ms"]
@@ -48,7 +58,7 @@ class MetricIn(BaseModel):
 class JobIn(BaseModel):
     metric_id: int
     name: str
-    detector: str = "seasonal"
+    detector: str = "auto"
     alert_threshold: float | None = None
     critical_threshold: float | None = None
     window_points: int = 500
@@ -72,6 +82,24 @@ class AlertRuleIn(BaseModel):
     multiplier: float | None = None
     op: str | None = None
     value: float | None = None
+
+
+class FeedbackIn(BaseModel):
+    """一条人工反馈：某段时间内检测行为对不对（粒度对齐 CloudWatch）。"""
+
+    job_id: int
+    series_id: str
+    start_ts: str
+    end_ts: str
+    kind: Literal["correct", "false_alarm", "missed", "other"]
+    note: str = ""
+    run_id: int | None = None
+
+
+class ApplySuggestionIn(BaseModel):
+    """把告警倍数调到指定值（应用反馈建议）。"""
+
+    multiplier: float
 
 
 def _clean(values: np.ndarray) -> list[float | None]:
@@ -148,8 +176,12 @@ def build_router(
         store = _store()
         try:
             detector = create_detector(payload.detector)
+            default_threshold = float(detector.default_threshold)
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+            if payload.detector != AUTO_DETECTOR:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            # auto 没有单一默认阈值，用兜底算法的默认值
+            default_threshold = float(create_detector(DEFAULT_DETECTOR).default_threshold)
         try:
             rule_dicts = (
                 [rule.model_dump(exclude_none=True) for rule in payload.alert_rules]
@@ -165,7 +197,7 @@ def build_router(
                 alert = (
                     float(payload.alert_threshold)
                     if payload.alert_threshold is not None
-                    else float(detector.default_threshold)
+                    else default_threshold
                 )
                 critical = (
                     float(payload.critical_threshold)
@@ -267,6 +299,10 @@ def build_router(
                 "run_id": chosen_run,
                 "job_id": job.id,
                 "detector": job.detector,
+                "requested_detector": job.detector,
+                "metric_class": "",
+                "detector_rationale": "",
+                "detector_fallback": False,
                 "score_type": "",
                 "series_id": entry["series_id"],
                 "group": entry.get("group"),
@@ -318,6 +354,10 @@ def build_router(
             "run_id": chosen_run,
             "job_id": job.id,
             "detector": str(payload["detector"]),
+            "requested_detector": str(payload["requested_detector"]),
+            "metric_class": str(payload["metric_class"]),
+            "detector_rationale": str(payload["detector_rationale"]),
+            "detector_fallback": bool(entry.get("fallback", False)),
             "score_type": str(payload["score_type"]),
             "series_id": entry["series_id"],
             "group": entry.get("group"),
@@ -343,5 +383,116 @@ def build_router(
             "levels": json.loads(str(payload["levels"])),
             "series": entries,
         }
+
+    # ---------- 人工反馈与阈值建议 ----------
+
+    def _load_outcomes(run_id: int) -> list[SeriesOutcome]:
+        """读出一次运行的分数与时间，供反馈评估使用。"""
+        data_root = get_data_root()
+        index = runner_module.read_run_index(data_root, run_id)
+        target = runner_module.run_dir(data_root, run_id)
+        outcomes: list[SeriesOutcome] = []
+        for entry in index.get("series", []):
+            if not entry.get("file"):
+                continue
+            payload = np.load(target / entry["file"], allow_pickle=False)
+            outcomes.append(
+                SeriesOutcome(
+                    series_id=entry["series_id"],
+                    timestamps=payload["timestamps"].astype("datetime64[ns]"),
+                    scores=np.asarray(payload["scores"], dtype=float),
+                )
+            )
+        return outcomes
+
+    @router.post("/api/platform/feedback")
+    def create_feedback(payload: FeedbackIn) -> dict:
+        store = _store()
+        try:
+            item = store.add_feedback(
+                job_id=payload.job_id,
+                series_id=payload.series_id,
+                start_ts=payload.start_ts,
+                end_ts=payload.end_ts,
+                kind=payload.kind,
+                note=payload.note,
+                run_id=payload.run_id,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return asdict(item)
+
+    @router.get("/api/platform/jobs/{job_id}/feedback")
+    def list_feedback(job_id: int) -> dict:
+        store = _store()
+        try:
+            store.get_job(job_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return {"feedback": [asdict(item) for item in store.list_feedback(job_id)]}
+
+    @router.get("/api/platform/jobs/{job_id}/feedback/suggestion")
+    def feedback_suggestion(job_id: int, run_id: int | None = None) -> dict:
+        store = _store()
+        try:
+            job = store.get_job(job_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        chosen_run = run_id
+        if chosen_run is None:
+            latest = store.latest_run(job.id)
+            if latest is None:
+                raise HTTPException(status_code=404, detail="该任务还没有运行记录")
+            chosen_run = latest.id
+        try:
+            store.get_run(chosen_run)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        rules = parse_rules(job.alert_rules) if job.alert_rules else []
+        current = band_multiplier(rules) if rules else job.alert_threshold
+        annotations = [
+            Annotation(
+                series_id=item.series_id,
+                start_ts=item.start_ts,
+                end_ts=item.end_ts,
+                kind=item.kind,
+            )
+            for item in store.list_feedback(job.id)
+        ]
+        suggestion = suggest_multiplier(
+            _load_outcomes(chosen_run), annotations, current
+        )
+        return {"run_id": chosen_run, **suggestion.as_dict()}
+
+    @router.post("/api/platform/jobs/{job_id}/apply-multiplier")
+    def apply_multiplier(job_id: int, payload: ApplySuggestionIn) -> dict:
+        """按比例整体缩放规则表里的倍数条件（等价于调 band 宽度）。"""
+        store = _store()
+        try:
+            job = store.get_job(job_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        rules = parse_rules(job.alert_rules) if job.alert_rules else []
+        if not rules:
+            raise HTTPException(status_code=400, detail="该任务没有告警规则")
+        current = band_multiplier(rules)
+        if current <= 0:
+            raise HTTPException(status_code=400, detail="当前倍数无效")
+        ratio = float(payload.multiplier) / current
+        if ratio <= 0:
+            raise HTTPException(status_code=400, detail="倍数必须为正数")
+        scaled = []
+        for rule in rules:
+            if rule.multiplier is None:
+                scaled.append(rule.as_dict())
+            else:
+                scaled.append(
+                    {**rule.as_dict(), "multiplier": round(rule.multiplier * ratio, 6)}
+                )
+        try:
+            updated = store.update_job_rules(job.id, scaled)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return asdict(updated)
 
     return router

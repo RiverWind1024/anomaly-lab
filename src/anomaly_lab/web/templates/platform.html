@@ -82,6 +82,37 @@
   </div>
   <div id="chart" class="chart"></div>
 </section>
+
+<section class="card">
+  <h2>5. 反馈与调参</h2>
+  <p class="muted">
+    对一段时间范围给出反馈（粒度对齐 CloudWatch 的告警反馈）：<strong>漏报</strong>=该报没报，
+    <strong>误报</strong>=不该报却报了。系统用这些反馈在候选倍数上比较 precision / recall，
+    给出新的告警倍数建议——相当于 AWS 调整 band 宽度。
+  </p>
+  <div class="form-grid">
+    <label>序列<input id="fb-series" placeholder="demo:a"></label>
+    <label>开始时间<input id="fb-start" placeholder="2026-01-01T00:00:00"></label>
+    <label>结束时间<input id="fb-end" placeholder="2026-01-01T01:00:00"></label>
+    <label>类型
+      <select id="fb-kind">
+        <option value="missed">漏报（该报没报）</option>
+        <option value="false_alarm">误报（不该报却报了）</option>
+        <option value="correct">正确</option>
+        <option value="other">其他（不参与调参）</option>
+      </select>
+    </label>
+    <label>备注<input id="fb-note" placeholder="可选"></label>
+    <button id="fb-add">提交反馈</button>
+  </div>
+  <div class="toolbar">
+    <button id="fb-suggest">评估并给建议</button>
+    <span id="fb-suggestion" class="muted"></span>
+    <button id="fb-apply">应用建议倍数</button>
+  </div>
+  <table><thead><tr><th>ID</th><th>序列</th><th>时间范围</th><th>类型</th><th>备注</th></tr></thead>
+  <tbody id="fb-rows"></tbody></table>
+</section>
 {% endblock %}
 {% block scripts %}
 <script src="/static/platform.js"></script>

@@ -125,6 +125,61 @@ def test_absolute_condition_raises_level_on_high_values(tmp_path):
     assert severity.max() == 2
 
 
+def test_auto_detector_records_per_series_choice(tmp_path):
+    """auto 模式下每条序列各自推断检测器，并把选择结果记录下来。"""
+    db = tmp_path / "platform" / "source.db"
+    db.parent.mkdir(parents=True)
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE metrics (ts TEXT, host TEXT, value REAL)")
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    rng = np.random.default_rng(0)
+    rows = []
+    for i in range(240):
+        ts = (start + timedelta(minutes=5 * i)).isoformat()
+        rows.append((ts, "periodic", float(np.sin(2 * np.pi * i / 24))))
+        rows.append((ts, "steady", float(rng.normal())))
+    conn.executemany("INSERT INTO metrics VALUES (?, ?, ?)", rows)
+    conn.commit()
+    conn.close()
+
+    store = PlatformStore(tmp_path / "platform.db")
+    source = store.add_source("local", "platform/source.db")
+    metric = store.add_metric(
+        source_id=source.id,
+        name="demo",
+        query="SELECT ts, host, value FROM metrics WHERE $timefilter ORDER BY ts",
+        time_column="ts",
+        value_column="value",
+        group_column="host",
+        time_format="iso_utc",
+        freq="5min",
+    )
+    job = store.add_job(
+        metric_id=metric.id,
+        name="auto-job",
+        detector="auto",
+        alert_threshold=2.5,
+        critical_threshold=3.75,
+        window_points=240,
+        interval_seconds=300,
+    )
+    run_id = execute_job(
+        store,
+        job.id,
+        data_root=tmp_path,
+        start=start,
+        end=start + timedelta(minutes=240 * 5),
+    )
+    index = json.loads((run_dir(tmp_path, run_id) / "index.json").read_text(encoding="utf-8"))
+    chosen = {item["group"]: item["detector"] for item in index["series"]}
+    assert chosen["periodic"] == "seasonal"
+    assert chosen["steady"] in {"iqr", "mad", "zscore"}
+    # 推断依据要落盘，便于用户核对与覆盖
+    payload = np.load(run_dir(tmp_path, run_id) / index["series"][0]["file"])
+    assert str(payload["requested_detector"]) == "auto"
+    assert str(payload["metric_class"]) != ""
+
+
 def test_execute_job_records_failure(tmp_path):
     store, job, start = _seed(tmp_path)
     (tmp_path / "platform" / "source.db").unlink()

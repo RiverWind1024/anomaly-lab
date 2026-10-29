@@ -24,7 +24,7 @@ from anomaly_lab.platform.alerts import (
     rules_to_dicts,
     severity_from_conditions,
 )
-from anomaly_lab.platform.detectors import create_detector
+from anomaly_lab.platform.detectors import create_detector, resolve_detector
 from anomaly_lab.platform.sqlite_source import load_series
 from anomaly_lab.platform.store import PlatformStore
 from anomaly_lab.platform.timeutil import freq_delta, to_iso, utcnow
@@ -135,7 +135,8 @@ def _run_job(
                     }
                 )
                 continue
-            detector = create_detector(job.detector).fit(series)
+            resolution = resolve_detector(job.detector, series)
+            detector = create_detector(resolution.detector).fit(series)
             result = detector.detect(series, threshold=band_width)
             bands = compute_bands(detector, series, band_width)
             severity = severity_from_conditions(result.scores, series.values, rules)
@@ -154,6 +155,9 @@ def _run_job(
                 alert_rules=np.array(json.dumps(rules_to_dicts(rules), ensure_ascii=False)),
                 levels=np.array(json.dumps(levels, ensure_ascii=False)),
                 detector=np.array(result.detector),
+                requested_detector=np.array(job.detector),
+                metric_class=np.array(resolution.metric_class or ""),
+                detector_rationale=np.array(resolution.rationale),
                 score_type=np.array(result.score_type),
                 series_id=np.array(series.series_id),
                 group=np.array("" if series.meta.get("group") is None else str(series.meta["group"])),
@@ -170,6 +174,9 @@ def _run_job(
                     "n_alerts": n_alerts,
                     "n_p0": int((severity == SEVERITY_P0).sum()),
                     "sufficient": True,
+                    "detector": resolution.detector,
+                    "metric_class": resolution.metric_class,
+                    "fallback": resolution.fallback,
                     "file": file_name,
                 }
             )

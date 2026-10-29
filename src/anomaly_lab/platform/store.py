@@ -18,8 +18,9 @@ from anomaly_lab.platform.alerts import (
     parse_rules,
     rules_to_dicts,
 )
-from anomaly_lab.platform.detectors import DETECTOR_FACTORIES
-from anomaly_lab.platform.models import Job, Metric, Run, Source
+from anomaly_lab.platform.detectors import AUTO_DETECTOR, DETECTOR_FACTORIES
+from anomaly_lab.platform.feedback import FEEDBACK_KINDS, normalize_ts
+from anomaly_lab.platform.models import Feedback, Job, Metric, Run, Source
 from anomaly_lab.platform.timeutil import freq_delta, to_iso, utcnow
 from anomaly_lab.platform.validation import (
     validate_identifier,
@@ -77,6 +78,17 @@ CREATE TABLE IF NOT EXISTS runs (
   n_series INTEGER NOT NULL DEFAULT 0,
   n_alerts INTEGER NOT NULL DEFAULT 0,
   error TEXT
+);
+CREATE TABLE IF NOT EXISTS feedback (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+  run_id INTEGER,
+  series_id TEXT NOT NULL,
+  start_ts TEXT NOT NULL,
+  end_ts TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  note TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
 );
 """
 
@@ -251,7 +263,7 @@ class PlatformStore:
         alert_rules: list[dict] | None = None,
     ) -> Job:
         name = validate_name(name, "任务名称")
-        if detector not in DETECTOR_FACTORIES:
+        if detector != AUTO_DETECTOR and detector not in DETECTOR_FACTORIES:
             raise ValueError(f"不支持的检测器: {detector}")
         window_points = validate_window_points(int(window_points))
         interval_seconds = validate_interval_seconds(int(interval_seconds))
@@ -400,3 +412,76 @@ class PlatformStore:
     def latest_run(self, job_id: int) -> Run | None:
         runs = self.list_runs(job_id, limit=1)
         return runs[0] if runs else None
+
+    # ---------- 人工反馈 ----------
+
+    def add_feedback(
+        self,
+        *,
+        job_id: int,
+        series_id: str,
+        start_ts: str,
+        end_ts: str,
+        kind: str,
+        note: str = "",
+        run_id: int | None = None,
+    ) -> Feedback:
+        if kind not in FEEDBACK_KINDS:
+            raise ValueError(
+                f"不支持的反馈类型: {kind!r}（可选 {sorted(FEEDBACK_KINDS)}）"
+            )
+        if not series_id.strip():
+            raise ValueError("反馈必须指明序列")
+        start_ts = normalize_ts(start_ts)
+        end_ts = normalize_ts(end_ts)
+        if start_ts >= end_ts:
+            raise ValueError("反馈的结束时间必须晚于开始时间")
+        self.get_job(job_id)
+        created_at = to_iso(utcnow())
+        with self._conn() as conn:
+            cursor = conn.execute(
+                "INSERT INTO feedback (job_id, run_id, series_id, start_ts, end_ts,"
+                " kind, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    job_id,
+                    run_id,
+                    series_id,
+                    start_ts,
+                    end_ts,
+                    kind,
+                    note,
+                    created_at,
+                ),
+            )
+            feedback_id = int(cursor.lastrowid)
+        return self.get_feedback(feedback_id)
+
+    def get_feedback(self, feedback_id: int) -> Feedback:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM feedback WHERE id = ?", (feedback_id,)
+            ).fetchone()
+        if row is None:
+            raise ValueError(f"反馈不存在: {feedback_id}")
+        return Feedback(**dict(row))
+
+    def list_feedback(self, job_id: int) -> list[Feedback]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM feedback WHERE job_id = ? ORDER BY id", (job_id,)
+            ).fetchall()
+        return [Feedback(**dict(row)) for row in rows]
+
+    def update_job_rules(self, job_id: int, rules: list[dict]) -> Job:
+        """替换任务的规则表（应用反馈建议时用）。"""
+        parsed = parse_rules(rules)
+        alert = band_multiplier(parsed)
+        critical = highest_multiplier(parsed) or alert
+        rules_json = json.dumps(rules_to_dicts(parsed), ensure_ascii=False)
+        with self._conn() as conn:
+            conn.execute(
+                "UPDATE jobs SET alert_rules = ?, alert_threshold = ?,"
+                " critical_threshold = ? WHERE id = ?",
+                (rules_json, alert, critical, job_id),
+            )
+        return self.get_job(job_id)
