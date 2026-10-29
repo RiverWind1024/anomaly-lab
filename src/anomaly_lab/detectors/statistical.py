@@ -120,13 +120,19 @@ class SeasonalDetector(TimedDetector):
     score_type = "zscore"
     default_threshold = 2.5
 
-    def __init__(self, period: int, k: float = 2.5) -> None:
-        if period <= 1:
+    def __init__(self, period: int | None = None, k: float = 2.5) -> None:
+        if period is not None and period <= 1:
             raise ValueError("period 必须大于 1")
-        self.period = int(period)
+        self.period = int(period) if period is not None else 24
+        self._auto = period is None
         self.default_threshold = float(k)
 
     def fit(self, series: SeriesBundle) -> SeasonalDetector:
+        if self._auto:
+            from anomaly_lab.classification.features import extract_features
+
+            detected = extract_features(series.values).dominant_period
+            self.period = int(detected) if detected else 24
         return self
 
     def score(self, series: SeriesBundle) -> np.ndarray:

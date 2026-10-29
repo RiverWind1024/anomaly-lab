@@ -35,7 +35,7 @@ _DETECTORS = {
     "iqr": IQRDetector,
     "mad": MADDetector,
     "zscore": ZScoreDetector,
-    "seasonal": lambda: SeasonalDetector(period=24),
+    "seasonal": SeasonalDetector,
     "stl_residual": lambda: STLResidualDetector(period=24),
     "deseasonalized_iqr": DeseasonalizedIQRDetector,
     "changepoint": ChangePointDetector,
@@ -296,7 +296,7 @@ def _cmd_compare(args: argparse.Namespace) -> int:
             print(f"深度模型训练失败，将记录为跳过：{exc}", file=sys.stderr)
 
     # 带构造参数的检测器用工厂覆盖默认无参构造
-    factories.setdefault("Seasonal", lambda: SeasonalDetector(period=24))
+    factories.setdefault("Seasonal", SeasonalDetector)
     factories.setdefault("STLResidual", lambda: STLResidualDetector(period=24))
 
     rows = compare_detectors(series_list, specs, factories=factories)

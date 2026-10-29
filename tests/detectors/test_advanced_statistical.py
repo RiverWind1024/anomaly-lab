@@ -45,3 +45,13 @@ def test_event_count_detector_on_sparse_series():
     )
     res = EventCountDetector(window=50).fit(s).detect(s)
     assert (res.is_anomaly & s.anomaly_indices()).sum() >= 1
+
+
+def test_seasonal_auto_period_is_detected_from_data():
+    s = generate_series(
+        "periodic", n=1000, seed=41, n_anomalies=1, anomaly_types=["contextual"]
+    )
+    det = SeasonalDetector().fit(s)
+    assert det.period >= 2
+    res = det.detect(s)
+    assert (res.is_anomaly & s.anomaly_indices()).sum() >= 1
