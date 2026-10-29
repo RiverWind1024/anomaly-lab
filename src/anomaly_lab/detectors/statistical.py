@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 
 from anomaly_lab.contracts import DetectionResult, SeriesBundle
+from anomaly_lab.detectors.bands import Bands
 from anomaly_lab.detectors.base import TimedDetector
 
 
@@ -35,6 +36,17 @@ class _WindowedDetector(TimedDetector):
         self, series: SeriesBundle, threshold: float | None = None
     ) -> DetectionResult:
         return self._timed_detect(series, threshold)
+
+    def bands(self, series: SeriesBundle, threshold: float) -> Bands:
+        values = np.asarray(series.values, dtype=float)
+        center, scale = self._center_scale(values)
+        return Bands(
+            baseline=center,
+            lower=center - float(threshold) * scale,
+            upper=center + float(threshold) * scale,
+            detector=self.name,
+            threshold=float(threshold),
+        )
 
 
 def _rolling_quantile(values: np.ndarray, window: int, q: float) -> np.ndarray:
@@ -137,22 +149,42 @@ class SeasonalDetector(TimedDetector):
 
     def score(self, series: SeriesBundle) -> np.ndarray:
         values = np.asarray(series.values, dtype=float)
+        center, scale = self._phase_center_scale(values)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            scores = np.abs(values - center) / scale
+        return np.where(np.isfinite(scores), scores, 0.0)
+
+    def _phase_center_scale(self, values: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """按相位分组求中位数与 MAD；样本不足或尺度为 0 的相位留空。"""
         n = len(values)
-        scores = np.zeros(n)
+        center = np.full(n, np.nan)
+        scale = np.full(n, np.nan)
         phases = np.arange(n) % self.period
         for phase in range(self.period):
             mask = phases == phase
             if mask.sum() < 2:
                 continue
             group = values[mask]
-            center = float(np.median(group))
-            mad = float(np.median(np.abs(group - center))) * 1.4826
+            med = float(np.median(group))
+            mad = float(np.median(np.abs(group - med))) * 1.4826
             if mad <= 0:
                 mad = float(np.std(group))
             if mad <= 0:
                 continue
-            scores[mask] = np.abs(group - center) / mad
-        return np.where(np.isfinite(scores), scores, 0.0)
+            center[mask] = med
+            scale[mask] = mad
+        return center, scale
+
+    def bands(self, series: SeriesBundle, threshold: float) -> Bands:
+        values = np.asarray(series.values, dtype=float)
+        center, scale = self._phase_center_scale(values)
+        return Bands(
+            baseline=center,
+            lower=center - float(threshold) * scale,
+            upper=center + float(threshold) * scale,
+            detector=self.name,
+            threshold=float(threshold),
+        )
 
     def detect(
         self, series: SeriesBundle, threshold: float | None = None
@@ -177,17 +209,35 @@ class STLResidualDetector(TimedDetector):
         return self
 
     def score(self, series: SeriesBundle) -> np.ndarray:
-        from statsmodels.tsa.seasonal import STL
-
         values = np.asarray(series.values, dtype=float)
-        residuals = STL(values, period=self.period, robust=True).fit().resid
-        resid = np.abs(np.asarray(residuals, dtype=float))
-        mad = float(np.median(np.abs(resid - np.median(resid)))) * 1.4826
-        if mad <= 0:
-            mad = float(np.std(resid))
+        _, abs_resid, mad = self._residual_parts(values)
         if mad <= 0:
             return np.zeros_like(values)
-        return resid / mad
+        return abs_resid / mad
+
+    def _residual_parts(self, values: np.ndarray) -> tuple[np.ndarray, np.ndarray, float]:
+        """返回 (拟合曲线, 残差绝对值, 残差尺度)。"""
+        from statsmodels.tsa.seasonal import STL
+
+        fit = STL(values, period=self.period, robust=True).fit()
+        fitted = np.asarray(fit.trend + fit.seasonal, dtype=float)
+        abs_resid = np.abs(values - fitted)
+        mad = float(np.median(np.abs(abs_resid - np.median(abs_resid)))) * 1.4826
+        if mad <= 0:
+            mad = float(np.std(abs_resid))
+        return fitted, abs_resid, mad
+
+    def bands(self, series: SeriesBundle, threshold: float) -> Bands:
+        values = np.asarray(series.values, dtype=float)
+        fitted, _, mad = self._residual_parts(values)
+        scale = np.full_like(values, mad)
+        return Bands(
+            baseline=fitted,
+            lower=fitted - float(threshold) * scale,
+            upper=fitted + float(threshold) * scale,
+            detector=self.name,
+            threshold=float(threshold),
+        )
 
     def detect(
         self, series: SeriesBundle, threshold: float | None = None
@@ -211,9 +261,7 @@ class DeseasonalizedIQRDetector(TimedDetector):
 
     def score(self, series: SeriesBundle) -> np.ndarray:
         values = np.asarray(series.values, dtype=float)
-        t = np.arange(len(values), dtype=float)
-        slope, intercept = np.polyfit(t, values, 1)
-        residuals = values - (slope * t + intercept)
+        _, residuals = self._trend_and_residual(values)
         return IQRDetector(k=self.k).score(
             SeriesBundle(
                 series_id=series.series_id,
@@ -221,6 +269,25 @@ class DeseasonalizedIQRDetector(TimedDetector):
                 timestamps=series.timestamps,
                 freq=series.freq,
             )
+        )
+
+    def _trend_and_residual(self, values: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        t = np.arange(len(values), dtype=float)
+        slope, intercept = np.polyfit(t, values, 1)
+        trend = slope * t + intercept
+        return trend, values - trend
+
+    def bands(self, series: SeriesBundle, threshold: float) -> Bands:
+        values = np.asarray(series.values, dtype=float)
+        trend, residuals = self._trend_and_residual(values)
+        center, scale = IQRDetector(k=self.k)._center_scale(residuals)
+        baseline = trend + center
+        return Bands(
+            baseline=baseline,
+            lower=baseline - float(threshold) * scale,
+            upper=baseline + float(threshold) * scale,
+            detector=self.name,
+            threshold=float(threshold),
         )
 
     def detect(
