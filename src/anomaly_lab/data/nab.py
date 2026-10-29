@@ -37,9 +37,6 @@ _TAR_URL_ENV = "ANOMALY_LAB_NAB_URL"
 #: NAB 的标签文件（点级异常标注）
 _LABELS_FILE = "labels/combined_labels.json"
 
-#: NAB 的真实数据目录（相对仓库根）
-_VALUES_DIR = "data/realKnownValues"
-
 #: 并发下载线程数
 _DOWNLOAD_WORKERS = 8
 
@@ -56,9 +53,17 @@ def nab_cache_dir(cache_dir: Path | None = None) -> Path:
 
 
 def nab_available(cache_dir: Path | None = None) -> bool:
-    """缓存里是否已有可用的 NAB 数据。"""
+    """缓存里是否已有可用的 NAB 数据。
+
+    注意：上游 `data/` 下是**多个子目录**（realAWSCloudwatch / realTraffic /
+    artificialWithAnomaly / ...），并没有 `realKnownValues` 这个目录——
+    所以只能按「有标签文件 + 有数据文件」判断，不能硬编码某个子目录。
+    """
     root = nab_cache_dir(cache_dir)
-    return (root / _LABELS_FILE).is_file() and (root / _VALUES_DIR).is_dir()
+    if not (root / _LABELS_FILE).is_file():
+        return False
+    data_dir = root / "data"
+    return data_dir.is_dir() and any(data_dir.rglob("*.csv"))
 
 
 def _download(url: str, dest: Path, timeout: int = 120) -> None:

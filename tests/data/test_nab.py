@@ -24,11 +24,11 @@ def _make_cache(root: Path, files: dict[str, str]) -> Path:
 
 _LABELS = json.dumps(
     {
-        "realKnownValues/demo.csv": [
+        "realAWSCloudwatch/demo.csv": [
             ["2026-01-01 00:00:00", 1.0, True],
             ["2026-01-01 00:05:00", 1.0, True],
         ],
-        "realKnownValues/clean.csv": [],
+        "realTraffic/clean.csv": [],
     }
 )
 
@@ -41,7 +41,7 @@ def test_load_nab_series_pairs_values_with_labels(tmp_path):
         cache,
         {
             "labels/combined_labels.json": _LABELS,
-            "data/realKnownValues/demo.csv": _CSV,
+            "data/realAWSCloudwatch/demo.csv": _CSV,
         },
     )
     series = load_nab_series(cache_dir=cache, auto_download=False)
@@ -61,8 +61,8 @@ def test_series_without_labels_are_skipped(tmp_path):
         cache,
         {
             "labels/combined_labels.json": _LABELS,
-            "data/realKnownValues/demo.csv": _CSV,
-            "data/realKnownValues/clean.csv": _CSV,
+            "data/realAWSCloudwatch/demo.csv": _CSV,
+            "data/realTraffic/clean.csv": _CSV,
         },
     )
     series = load_nab_series(cache_dir=cache, auto_download=False)
@@ -86,7 +86,7 @@ def test_limit_truncates_the_result(tmp_path):
         cache,
         {
             "labels/combined_labels.json": _LABELS,
-            "data/realKnownValues/demo.csv": _CSV,
+            "data/realAWSCloudwatch/demo.csv": _CSV,
         },
     )
     series = load_nab_series(cache_dir=cache, limit=0, auto_download=False)
@@ -101,9 +101,27 @@ def test_availability_check(tmp_path):
         cache,
         {
             "labels/combined_labels.json": _LABELS,
-            "data/realKnownValues/demo.csv": _CSV,
+            "data/realAWSCloudwatch/demo.csv": _CSV,
         },
     )
+    assert nab_available(cache) is True
+
+
+def test_availability_does_not_require_a_fixed_subdirectory(tmp_path):
+    """上游 data/ 下是多个子目录，**没有** realKnownValues。
+
+    早期实现硬检查这个目录，导致真实布局下被判为「不可用」——
+    自动下载完成后反而报错。测试要锁住这个行为。
+    """
+    cache = tmp_path / "nab"
+    _make_cache(
+        cache,
+        {
+            "labels/combined_labels.json": _LABELS,
+            "data/realAdExchange/demo.csv": _CSV,
+        },
+    )
+    assert not (cache / "data" / "realKnownValues").is_dir()
     assert nab_available(cache) is True
 
 
