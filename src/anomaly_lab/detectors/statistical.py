@@ -8,7 +8,8 @@ import pandas as pd
 from anomaly_lab.contracts import DetectionResult, SeriesBundle
 from anomaly_lab.detectors.bands import Bands
 from anomaly_lab.detectors.base import TimedDetector
-from anomaly_lab.detectors.period import detect_period
+from anomaly_lab.detectors.period import detect_period, usable_period
+from anomaly_lab.detectors.robust import winsorize
 
 #: 周期拿不准时的兜底值（点数）
 DEFAULT_PERIOD = 24
@@ -141,45 +142,100 @@ class SeasonalDetector(TimedDetector):
             raise ValueError("period 必须大于 1")
         self.period = int(period) if period is not None else DEFAULT_PERIOD
         self._auto = period is None
+        #: 是否真的做相位分组。周期不可信时为 False，退化成全局稳健统计。
+        self.seasonal = True
         self.default_threshold = float(k)
         self._phase_cache: tuple | None = None
 
     def fit(self, series: SeriesBundle) -> SeasonalDetector:
         if self._auto:
-            self.period = detect_period(series, DEFAULT_PERIOD)
+            period = usable_period(series)
+            if period is None:
+                # 没有可信周期 → **不做**相位分组，退化成全局稳健统计。
+                #
+                # 猜一个周期再去分组只会造出混相位的基线，比不做季节性更糟：
+                # 实测非周期序列被分到 250 个相位（每相位仅 2 个点）时，
+                # 中位数与 MAD 都不稳定，F1 从 0.305 掉到 0.192。
+                self.seasonal = False
+                self.period = 0
+            else:
+                self.period = period
+                self.seasonal = True
         return self
+
+    def estimate_values(self, values: np.ndarray) -> np.ndarray:
+        """相位中位数/MAD 本身就稳健，但小组时清洗更稳。
+
+        注意：只有**估计**用清洗值，`score` 仍用原始值打分。
+        """
+        return winsorize(values)
 
     def score(self, series: SeriesBundle) -> np.ndarray:
         values = np.asarray(series.values, dtype=float)
-        center, scale = self._phase_center_scale(values)
+        center, scale = self._phase_center_scale(values, self.estimate_values(values))
         with np.errstate(divide="ignore", invalid="ignore"):
             scores = np.abs(values - center) / scale
         return np.where(np.isfinite(scores), scores, 0.0)
 
-    def _phase_center_scale(self, values: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        """按相位分组求中位数与 MAD；样本不足或尺度为 0 的相位留空。"""
+    def _phase_center_scale(
+        self, values: np.ndarray, estimate: np.ndarray | None = None
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """按相位分组求中位数与 MAD。
+
+        `estimate` 是清洗后的值，用来做**估计**（中位数与尺度）；
+        打分仍用原始 `values`，异常点不会被洗掉。
+
+        组内尺度为 0（该相位的值完全相同）时，退到**全局尺度**兜底，
+        而不是留空——留空会让基线与上下界变成 NaN。完全确定的周期
+        是理想情况，不该让整条曲线的基线失效。
+        """
+        if estimate is None:
+            estimate = values
+        n = len(values)
+        if not self.seasonal:
+            # 无季节性模式：全局中位数 + 全局 MAD（等价于一个稳健检测器）
+            median = float(np.median(estimate))
+            scale = self._global_scale(estimate)
+            center = np.full(n, median)
+            scale_arr = np.full(n, scale) if scale > 0 else np.zeros(n)
+            self._phase_cache = (values.copy(), center, scale_arr)
+            return center, scale_arr
         cached = self._phase_cache
         if cached is not None and np.array_equal(cached[0], values):
             return cached[1], cached[2]
-        n = len(values)
         center = np.full(n, np.nan)
         scale = np.full(n, np.nan)
         phases = np.arange(n) % self.period
+        global_scale = self._global_scale(estimate)
         for phase in range(self.period):
             mask = phases == phase
             if mask.sum() < 2:
                 continue
-            group = values[mask]
+            group = estimate[mask]
             med = float(np.median(group))
             mad = float(np.median(np.abs(group - med))) * 1.4826
             if mad <= 0:
                 mad = float(np.std(group))
+            if mad <= 0:
+                # 组内完全确定：用一个正的尺度兜底，避免除零与 NaN
+                mad = global_scale
             if mad <= 0:
                 continue
             center[mask] = med
             scale[mask] = mad
         self._phase_cache = (values.copy(), center, scale)
         return center, scale
+
+    @staticmethod
+    def _global_scale(values: np.ndarray) -> float:
+        """全局稳健尺度，作为相位组内尺度退化时的兜底。"""
+        if len(values) == 0:
+            return 0.0
+        mad = float(np.median(np.abs(values - np.median(values)))) * 1.4826
+        if mad > 0:
+            return mad
+        std = float(np.std(values))
+        return std
 
     def bands(self, series: SeriesBundle, threshold: float) -> Bands:
         values = np.asarray(series.values, dtype=float)
@@ -215,25 +271,39 @@ class STLResidualDetector(TimedDetector):
 
     def fit(self, series: SeriesBundle) -> STLResidualDetector:
         if self._auto:
-            self.period = detect_period(series, DEFAULT_PERIOD)
+            # fallback 传 None = 按时间回退（见 period.default_fallback_period）
+            self.period = detect_period(series)
         return self
 
     def score(self, series: SeriesBundle) -> np.ndarray:
         values = np.asarray(series.values, dtype=float)
-        _, abs_resid, mad = self._residual_parts(values)
+        _, abs_resid, mad = self._residual_parts(values, self.estimate_values(values))
         if mad <= 0:
             return np.zeros_like(values)
         return abs_resid / mad
 
-    def _residual_parts(self, values: np.ndarray) -> tuple[np.ndarray, np.ndarray, float]:
+    def estimate_values(self, values: np.ndarray) -> np.ndarray:
+        """STL 分解是最小二乘拟合——尖峰会把拟合曲线拉偏。
+
+        所以**分解用清洗值**，而**残差仍用原始值**：
+        异常点必须留在残差里，否则检测器就看不见它了。
+        """
+        return winsorize(values)
+
+    def _residual_parts(
+        self, values: np.ndarray, estimate: np.ndarray | None = None
+    ) -> tuple[np.ndarray, np.ndarray, float]:
         """返回 (拟合曲线, 残差绝对值, 残差尺度)。结果会缓存，score 与 bands 共用。"""
         cached = self._residual_cache
         if cached is not None and np.array_equal(cached[0], values):
             return cached[1], cached[2], cached[3]
         from statsmodels.tsa.seasonal import STL
 
-        fit = STL(values, period=self.period, robust=True).fit()
+        if estimate is None:
+            estimate = values
+        fit = STL(estimate, period=self.period, robust=True).fit()
         fitted = np.asarray(fit.trend + fit.seasonal, dtype=float)
+        # 残差用原始值算：异常点必须体现在残差里
         abs_resid = np.abs(values - fitted)
         mad = float(np.median(np.abs(abs_resid - np.median(abs_resid)))) * 1.4826
         if mad <= 0:

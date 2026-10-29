@@ -68,6 +68,17 @@ class TimedDetector:
     score_type: str = ""
     default_threshold: float = 0.0
 
+    def estimate_values(self, values: np.ndarray) -> np.ndarray:
+        """**估计**用的值：周期、基线、分解都基于它。
+
+        默认返回原始值。子类可以返回**清洗后**的值，让最小二乘 / 频域
+        这类不稳健的估计量不被离群点带偏。
+
+        注意这条约定是单向的：**打分必须用原始值**（见 `score`）。
+        把异常点从打分输入里洗掉，检测器就看不见它了。
+        """
+        return np.asarray(values, dtype=float)
+
     def _timed_detect(
         self, series: SeriesBundle, threshold: float | None = None
     ) -> DetectionResult:

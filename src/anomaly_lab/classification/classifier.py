@@ -15,6 +15,8 @@ _HIGH_ZERO_RATIO = 0.6
 _CHANGEPOINT_THRESHOLD = 0.7
 _TREND_THRESHOLD = 0.3
 _ADF_ALPHA = 0.05
+#: 趋势强度高到不可能是周期型的门槛（step / stationary 判据也用它）
+_STRONG_TREND = 0.9
 
 
 @dataclass(frozen=True, eq=False)
@@ -64,13 +66,19 @@ def _classify_features(values: np.ndarray, f: FeatureVector) -> tuple[MetricClas
             [f"零值占比 {f.zero_ratio:.1%} → 高零值比例型"],
         )
 
-    if f.dominant_period is not None:
+    if f.dominant_period is not None and f.trend_strength < _STRONG_TREND:
+        # 「趋势弱」是必要条件：强趋势序列去趋势后会留下被误认成周期的
+        # 残留结构（实测 trending 序列的伪周期 ACF 峰 0.862，比真周期的
+        # 0.273 还高——只看 ACF 峰会被骗）。真周期序列的趋势强度都在 0.43 以下。
         peak = _acf_peak(values, f.dominant_period)
         confidence = 0.6 + 0.39 * min(1.0, max(0.0, (peak - 0.2) / 0.8))
         return (
             "periodic",
             confidence,
-            [f"ACF 主峰在 lag={f.dominant_period}（r={peak:.2f}）→ 周期型"],
+            [
+                f"主周期 lag={f.dominant_period}（ACF r={peak:.2f}）→ 周期型",
+                f"趋势强度 {f.trend_strength:.2f} < {_STRONG_TREND} → 排除趋势残留",
+            ],
         )
 
     if f.changepoint_score >= _CHANGEPOINT_THRESHOLD and f.trend_strength < 0.9:

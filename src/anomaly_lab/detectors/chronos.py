@@ -13,6 +13,12 @@ from anomaly_lab.detectors.base import TimedDetector
 
 MODEL_NAME = "amazon/chronos-t5-tiny"
 
+#: 已加载的 pipeline 缓存（按模型名）。
+#:
+#: 必须缓存：huggingface.co 不可达时，`from_pretrained` 每次都要重试退避
+#: ~540 秒——回测 120 条序列就是 18 小时。实测缓存后加载只花 2.4 秒。
+_PIPELINE_CACHE: dict[str, object] = {}
+
 
 class ChronosUnavailable(RuntimeError):
     """chronos 包或本地权重不可用。"""
@@ -35,6 +41,22 @@ def chronos_available() -> bool:
     )
 
 
+def _load_pipeline(model_name: str):
+    """加载 pipeline（按模型名缓存到模块级）。
+
+    缓存是必须的：huggingface.co 不可达时 `from_pretrained` 每次都要
+    重试退避 ~540 秒，回测 120 条序列就是 18 小时。
+    """
+    cached = _PIPELINE_CACHE.get(model_name)
+    if cached is not None:
+        return cached
+    from chronos import ChronosPipeline
+
+    pipeline = ChronosPipeline.from_pretrained(model_name, device_map="cpu")
+    _PIPELINE_CACHE[model_name] = pipeline
+    return pipeline
+
+
 class ChronosDetector(TimedDetector):
     """用预训练模型的分位数预测区间宽度/越界程度作为异常分数。"""
 
@@ -54,11 +76,7 @@ class ChronosDetector(TimedDetector):
                 "chronos 未安装或本地无权重缓存；跳过该检测器"
             )
         try:
-            from chronos import ChronosPipeline
-
-            self.pipeline = ChronosPipeline.from_pretrained(
-                self.model_name, device_map="cpu"
-            )
+            self.pipeline = _load_pipeline(self.model_name)
         except Exception as exc:
             raise ChronosUnavailable(f"加载 Chronos 失败: {exc}") from exc
         return self
@@ -73,11 +91,14 @@ class ChronosDetector(TimedDetector):
         n = len(values)
         scores = np.zeros(n)
         context_len = min(self.window, max(8, n - self.horizon))
-        starts = list(range(context_len, n, self.horizon))
-        for start in starts:
-            context = values[max(0, start - context_len) : start]
+        # 从**最小上下文**开始滚动：原来从 context_len 才开始评分，
+        # 前 256 点（占 51%）完全没打分，召回被结构性封顶在 49.8%。
+        min_context = 8
+        for start in range(min_context, n, self.horizon):
+            ctx_len = min(context_len, start)
+            context = values[start - ctx_len : start]
             target = values[start : start + self.horizon]
-            if len(target) == 0:
+            if len(target) == 0 or len(context) == 0:
                 continue
             tensor = torch.tensor(context, dtype=torch.float32).unsqueeze(0)
             try:

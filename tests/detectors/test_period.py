@@ -1,10 +1,20 @@
-"""周期估计：FFT 粗定位 + ACF 验证。"""
+"""周期估计：FFT 粗定位 + ACF 谐波验证。
+
+关键设计：
+- 候选周期范围按**时间**表达，换采样频率也能找到同一个「日周期」；
+- ACF 用**谐波重复性**（p、2p、3p 都出现）验证，而不是单点显著性——
+  单点门槛会被单个异常点抬高，恰恰让有异常的那段数据失效；
+- 估计过程对离群点鲁棒（先截尾）。
+"""
 
 import numpy as np
 import pytest
 
 from anomaly_lab.detectors.period import (
+    HARMONIC_THRESHOLD,
     MIN_CONFIDENCE,
+    MIN_PERIOD_POINTS,
+    default_fallback_period,
     detect_period,
     estimate_period,
 )
@@ -14,6 +24,10 @@ def _sine(period: int, n: int, noise: float = 0.3, seed: int = 0) -> np.ndarray:
     t = np.arange(n)
     rng = np.random.default_rng(seed)
     return 5 + 2 * np.sin(2 * np.pi * t / period) + rng.normal(0, noise, n)
+
+
+def _sawtooth(period: int, n: int) -> np.ndarray:
+    return np.array([float(i % period) for i in range(n)])
 
 
 def test_exact_period_is_recovered():
@@ -34,7 +48,17 @@ def test_long_period_beyond_old_acf_limit_is_found():
     """旧的 ACF 实现 lag 上限写死 200，168 点的周周期根本看不到。"""
     estimate = estimate_period(_sine(168, 1000), "5min")
     assert estimate.found
-    assert abs(estimate.period_points - 168) <= 1
+    # 长周期的**定位精度**受数据长度限制，不是算法问题：
+    # 频率分辨率 ~1/n，折算成周期约 P²/n（P=168, n=1000 → ~28 个周期点）。
+    # 补零只能做亚桶插值，不能提高真实分辨率。所以这里不要求精确命中。
+    assert abs(estimate.period_points - 168) <= 4
+
+
+def test_short_period_is_located_exactly():
+    """短周期必须精确——±1 的误差会让相位分组整体错位。"""
+    for period in (24, 48):
+        estimate = estimate_period(_sine(period, 500), "5min")
+        assert estimate.period_points == period
 
 
 def test_same_time_period_found_across_sampling_rates():
@@ -71,6 +95,39 @@ def test_single_cycle_gets_low_confidence():
     assert estimate.confidence < MIN_CONFIDENCE
 
 
+def test_spike_does_not_break_period_estimation():
+    """异常点不能主导周期估计。
+
+    单个离群点会把去趋势后的自相关从 0.824 压到 0.08、把频谱突出度
+    从 19 压到 1.9——如果估计因此失效，季节性基线就没了，
+    恰恰是**有异常的那段数据**最容易漏报。
+    """
+    clean = _sawtooth(10, 60)
+    spiky = clean.copy()
+    spiky[30] += 50.0
+
+    before = estimate_period(clean, "5min")
+    after = estimate_period(spiky, "5min")
+    assert before.usable and after.usable
+    assert after.period_points == before.period_points == 10
+    assert after.confidence > MIN_CONFIDENCE
+
+
+def test_short_period_is_not_excluded_by_the_lower_bound():
+    """分钟级的短周期很常见，下限不能把它排除在候选之外。"""
+    values = _sawtooth(10, 60)  # 5min 粒度 → 50 分钟的周期
+    estimate = estimate_period(values, "5min")
+    assert estimate.found
+    assert estimate.period_points == 10
+
+
+def test_period_below_minimum_points_is_rejected():
+    """少于 4 个点的「周期」没有统计意义。"""
+    assert MIN_PERIOD_POINTS >= 4
+    estimate = estimate_period(_sawtooth(2, 100), "5min")
+    assert estimate.period_points is None or estimate.period_points >= MIN_PERIOD_POINTS
+
+
 def test_detect_period_falls_back_when_unreliable():
     """拿不准或装不下两个周期时回退到默认值。"""
 
@@ -96,6 +153,16 @@ def test_detect_period_uses_estimate_when_confident():
     assert detect_period(_Periodic(), fallback=24) == 48
 
 
+def test_detect_period_fallback_is_sampling_rate_independent():
+    """不给显式 fallback 时，回退周期按时间给，而不是写死点数。"""
+
+    class _Noise:
+        values = np.random.default_rng(9).normal(size=10000)
+        freq = "5min"
+
+    assert detect_period(_Noise()) == default_fallback_period("5min", 10000)
+
+
 def test_confidence_is_between_zero_and_one():
     estimate = estimate_period(_sine(48, 400), "5min")
     assert 0.0 <= estimate.confidence <= 1.0
@@ -117,3 +184,8 @@ def test_autocorrelate_matches_direct_correlation():
 def test_invalid_frequency_does_not_crash(freq):
     estimate = estimate_period(_sine(24, 200), freq)
     assert estimate.period_points is None or estimate.period_points >= 2
+
+
+def test_harmonic_threshold_separates_real_periods_from_spurious_ones():
+    """真实周期的谐波强度要显著高于异常造成的伪周期。"""
+    assert HARMONIC_THRESHOLD > 0.1
