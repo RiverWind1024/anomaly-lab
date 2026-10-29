@@ -126,7 +126,7 @@ class SeasonalDetector(TimedDetector):
         self.period = int(period)
         self.default_threshold = float(k)
 
-    def fit(self, series: SeriesBundle) -> "SeasonalDetector":
+    def fit(self, series: SeriesBundle) -> SeasonalDetector:
         return self
 
     def score(self, series: SeriesBundle) -> np.ndarray:
@@ -167,7 +167,7 @@ class STLResidualDetector(TimedDetector):
         self.period = int(period)
         self.default_threshold = float(k)
 
-    def fit(self, series: SeriesBundle) -> "STLResidualDetector":
+    def fit(self, series: SeriesBundle) -> STLResidualDetector:
         return self
 
     def score(self, series: SeriesBundle) -> np.ndarray:
@@ -200,7 +200,7 @@ class DeseasonalizedIQRDetector(TimedDetector):
         self.k = float(k)
         self.default_threshold = float(k)
 
-    def fit(self, series: SeriesBundle) -> "DeseasonalizedIQRDetector":
+    def fit(self, series: SeriesBundle) -> DeseasonalizedIQRDetector:
         return self
 
     def score(self, series: SeriesBundle) -> np.ndarray:
@@ -236,7 +236,7 @@ class ChangePointDetector(TimedDetector):
         self.min_seg = int(min_seg)
         self.default_threshold = float(threshold)
 
-    def fit(self, series: SeriesBundle) -> "ChangePointDetector":
+    def fit(self, series: SeriesBundle) -> ChangePointDetector:
         return self
 
     def score(self, series: SeriesBundle) -> np.ndarray:
@@ -273,7 +273,7 @@ class EventCountDetector(TimedDetector):
         self.window = int(window)
         self.default_threshold = float(threshold)
 
-    def fit(self, series: SeriesBundle) -> "EventCountDetector":
+    def fit(self, series: SeriesBundle) -> EventCountDetector:
         return self
 
     def score(self, series: SeriesBundle) -> np.ndarray:
