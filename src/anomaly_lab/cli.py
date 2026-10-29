@@ -36,7 +36,8 @@ _DETECTORS = {
     "mad": MADDetector,
     "zscore": ZScoreDetector,
     "seasonal": SeasonalDetector,
-    "stl_residual": lambda: STLResidualDetector(period=24),
+    # period 传 None = 按序列自动估计周期
+    "stl_residual": STLResidualDetector,
     "deseasonalized_iqr": DeseasonalizedIQRDetector,
     "changepoint": ChangePointDetector,
     "event_count": EventCountDetector,

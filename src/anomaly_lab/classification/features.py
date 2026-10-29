@@ -165,6 +165,21 @@ def noise_ratio(values: np.ndarray, period: int | None = None) -> float:
     return float(np.clip(np.sum(residual**2) / total, 0.0, 1.0))
 
 
+def _estimate_period(values: np.ndarray, freq: str | None) -> int | None:
+    """用 FFT + ACF 估计周期；拿不准时返回 None。
+
+    延迟导入检测器层的周期估计，避免 classification 与 detectors 互相依赖。
+    """
+    if len(values) < 10:
+        return None
+    from anomaly_lab.detectors.period import estimate_period
+
+    estimate = estimate_period(values, freq or "1min")
+    if not estimate.usable:
+        return None
+    return int(estimate.period_points)
+
+
 def extract_features(values: np.ndarray, freq: str | None = None) -> FeatureVector:
     values = np.asarray(values, dtype=float)
     n = len(values)
@@ -175,7 +190,7 @@ def extract_features(values: np.ndarray, freq: str | None = None) -> FeatureVect
     else:
         detrended = values
     acf_vals = acf(detrended)
-    period = dominant_period(acf_vals)
+    period = _estimate_period(values, freq)
     nonzero_mask = values != 0
     n_nonzero_runs = (
         int(nonzero_mask[0]) + int(np.sum(nonzero_mask[1:] & ~nonzero_mask[:-1])) if n else 0

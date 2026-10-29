@@ -8,6 +8,10 @@ import pandas as pd
 from anomaly_lab.contracts import DetectionResult, SeriesBundle
 from anomaly_lab.detectors.bands import Bands
 from anomaly_lab.detectors.base import TimedDetector
+from anomaly_lab.detectors.period import detect_period
+
+#: 周期拿不准时的兜底值（点数）
+DEFAULT_PERIOD = 24
 
 
 class _WindowedDetector(TimedDetector):
@@ -135,17 +139,14 @@ class SeasonalDetector(TimedDetector):
     def __init__(self, period: int | None = None, k: float = 2.5) -> None:
         if period is not None and period <= 1:
             raise ValueError("period 必须大于 1")
-        self.period = int(period) if period is not None else 24
+        self.period = int(period) if period is not None else DEFAULT_PERIOD
         self._auto = period is None
         self.default_threshold = float(k)
         self._phase_cache: tuple | None = None
 
     def fit(self, series: SeriesBundle) -> SeasonalDetector:
         if self._auto:
-            from anomaly_lab.classification.features import extract_features
-
-            detected = extract_features(series.values).dominant_period
-            self.period = int(detected) if detected else 24
+            self.period = detect_period(series, DEFAULT_PERIOD)
         return self
 
     def score(self, series: SeriesBundle) -> np.ndarray:
@@ -204,14 +205,17 @@ class STLResidualDetector(TimedDetector):
     score_type = "residual_ratio"
     default_threshold = 3.5
 
-    def __init__(self, period: int, k: float = 3.5) -> None:
-        if period <= 1:
+    def __init__(self, period: int | None = None, k: float = 3.5) -> None:
+        if period is not None and period <= 1:
             raise ValueError("period 必须大于 1")
-        self.period = int(period)
+        self.period = int(period) if period is not None else DEFAULT_PERIOD
+        self._auto = period is None
         self.default_threshold = float(k)
         self._residual_cache: tuple | None = None
 
     def fit(self, series: SeriesBundle) -> STLResidualDetector:
+        if self._auto:
+            self.period = detect_period(series, DEFAULT_PERIOD)
         return self
 
     def score(self, series: SeriesBundle) -> np.ndarray:

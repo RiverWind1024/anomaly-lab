@@ -107,6 +107,8 @@ SELECT * FROM (SELECT ts, host, value FROM metrics
 - **基线**：该算法认为的「正常值」曲线（IQR 类是稳健中位数，Seasonal 是相位中位数，STL 是趋势+季节拟合）。
 - **上下界**：基线 ± 最低档倍数 × 鲁棒尺度。
 - **分级**：按上节的规则表判定；「从 10 突增到 50 算 P0 还是 P1」没有通用答案，所以由用户用倍数配等级。
+- **周期自动估计**：`seasonal` 与 `stl_residual` 的周期按序列自动检测（FFT + ACF，见 [ALGORITHMS.md](ALGORITHMS.md)），
+  不再写死 24——5min 粒度下 24 点只有 2 小时，而日周期是 288 点。拿不准时回退到默认周期。
 
 ## 算法选择：默认自动推荐，也可指定
 
