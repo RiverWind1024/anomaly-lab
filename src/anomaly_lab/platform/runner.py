@@ -16,6 +16,7 @@ import numpy as np
 
 from anomaly_lab.detectors.bands import compute_bands
 from anomaly_lab.platform.alerts import (
+    SEVERITY_NORMAL,
     band_multiplier,
     default_rules,
     highest_multiplier,
@@ -28,10 +29,6 @@ from anomaly_lab.platform.detectors import create_detector, resolve_detector
 from anomaly_lab.platform.sqlite_source import load_series
 from anomaly_lab.platform.store import PlatformStore
 from anomaly_lab.platform.timeutil import freq_delta, to_iso, utcnow
-
-SEVERITY_NORMAL = 0
-SEVERITY_P1 = 1
-SEVERITY_P0 = 2
 
 # 正在执行的任务：job_id -> run_id。避免「手动触发」和「调度到点」重复跑同一个任务。
 _INFLIGHT: dict[int, int] = {}
@@ -47,7 +44,7 @@ def resolve_source_path(source_path: str, data_root: Path) -> Path:
     return path if path.is_absolute() else Path(data_root) / path
 
 
-def _job_rules(job) -> list:
+def job_rules(job) -> list:
     """任务规则表；老数据没有规则时回落到两个阈值。"""
     rules = parse_rules(getattr(job, "alert_rules", None) or [])
     if rules:
@@ -105,10 +102,12 @@ def _run_job(
         )
         source_path = resolve_source_path(source.path, data_root)
         series_list = load_series(metric, source_path, start_time, end_time)
-        rules = _job_rules(job)
+        rules = job_rules(job)
         band_width = band_multiplier(rules)
         levels = level_labels(rules)
         critical_ref = highest_multiplier(rules) or band_width
+        # 最高档的序号 = 规则条数（0 号固定是「正常」）
+        top_level = len(rules)
 
         target = run_dir(data_root, run.id)
         target.mkdir(parents=True, exist_ok=True)
@@ -172,7 +171,7 @@ def _run_job(
                     "n_valid": int(series.meta.get("n_valid", series.n)),
                     "n_missing": int(series.meta.get("n_missing", 0)),
                     "n_alerts": n_alerts,
-                    "n_p0": int((severity == SEVERITY_P0).sum()),
+                    "n_p0": int((severity == top_level).sum()),
                     "sufficient": True,
                     "detector": resolution.detector,
                     "metric_class": resolution.metric_class,

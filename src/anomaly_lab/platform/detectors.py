@@ -54,6 +54,8 @@ class DetectorResolution:
     reasons: list[str] = field(default_factory=list)
     rationale: str = ""
     fallback: bool = False
+    #: 形态分类给出的候选算法（按推荐顺序）；平台不支持的也在里面
+    candidates: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict:
         return {
@@ -64,6 +66,7 @@ class DetectorResolution:
             "reasons": list(self.reasons),
             "rationale": self.rationale,
             "fallback": self.fallback,
+            "candidates": list(self.candidates),
         }
 
 
@@ -120,6 +123,7 @@ def resolve_detector(requested: str, series) -> DetectorResolution:
         reasons=list(result.reasons),
         rationale=rationale,
         fallback=fallback,
+        candidates=candidates,
     )
 
 

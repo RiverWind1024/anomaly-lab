@@ -17,20 +17,27 @@ from anomaly_lab.platform import runner as runner_module
 from anomaly_lab.platform.alerts import (
     band_multiplier,
     highest_multiplier,
+    level_labels,
     parse_rules,
+    rules_to_dicts,
 )
+from anomaly_lab.platform.compare import compare_series
 from anomaly_lab.platform.detectors import (
     AUTO_DETECTOR,
     DEFAULT_DETECTOR,
+    DETECTOR_FACTORIES,
     create_detector,
     detector_catalog,
+    resolve_detector,
 )
 from anomaly_lab.platform.feedback import (
     Annotation,
     SeriesOutcome,
     suggest_multiplier,
 )
+from anomaly_lab.platform.sqlite_source import load_series
 from anomaly_lab.platform.store import PlatformStore
+from anomaly_lab.platform.timeutil import freq_delta, utcnow
 
 TimeFormat = Literal["iso_utc", "iso_naive", "epoch_s", "epoch_ms"]
 MissingPolicy = Literal["drop", "interpolate", "error"]
@@ -384,8 +391,126 @@ def build_router(
             "series": entries,
         }
 
-    # ---------- 人工反馈与阈值建议 ----------
+    # ---------- 多算法对比 ----------
 
+    @router.get("/api/platform/jobs/{job_id}/compare")
+    def compare(
+        job_id: int,
+        series_id: str | None = None,
+        detectors: str | None = None,
+    ) -> dict:
+        """同一条序列用多个算法各跑一遍，供选算法时对照。
+
+        这是探索功能：不产生告警、不落盘，只回传各自的基线/上下界/告警点。
+        """
+        store = _store()
+        try:
+            job = store.get_job(job_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        try:
+            metric = store.get_metric(job.metric_id)
+            source = store.get_source(metric.source_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        rules = runner_module.job_rules(job)
+        band_width = band_multiplier(rules)
+        end_time = utcnow()
+        start_time = end_time - freq_delta(metric.freq) * job.window_points
+        source_path = runner_module.resolve_source_path(source.path, get_data_root())
+        series_list = load_series(metric, source_path, start_time, end_time)
+        if not series_list:
+            raise HTTPException(status_code=404, detail="该窗口内没有取到数据")
+        series = series_list[0]
+        if series_id:
+            matched = next((item for item in series_list if item.series_id == series_id), None)
+            if matched is None:
+                raise HTTPException(status_code=404, detail=f"序列不存在: {series_id}")
+            series = matched
+        if not bool(series.meta.get("sufficient", True)):
+            n_valid = int(series.meta.get("n_valid", 0))
+            raise HTTPException(
+                status_code=404,
+                detail=f"序列 {series.series_id} 有效点仅 {n_valid} 个，不足以做检测",
+            )
+
+        resolution = resolve_detector(AUTO_DETECTOR, series)
+        # 可选项：任务配置的算法 + auto 推荐的候选（用户能勾选的全部）
+        available: list[str] = []
+        if job.detector != AUTO_DETECTOR:
+            available.append(job.detector)
+        available.extend(resolution.candidates)
+        available = [
+            name for name in dict.fromkeys(available) if name in DETECTOR_FACTORIES
+        ]
+        names = [
+            name.strip()
+            for name in (detectors or "").split(",")
+            if name.strip() and name.strip() != AUTO_DETECTOR
+        ]
+        if not names:
+            names = list(available)
+        seen: list[str] = []
+        for name in names:
+            if name in DETECTOR_FACTORIES and name not in seen:
+                seen.append(name)
+        if not seen:
+            raise HTTPException(status_code=400, detail="没有可对比的算法")
+
+        outcomes = compare_series(series, seen, rules, band_width)
+        index = _sample_indices(len(series.values), MAX_PREVIEW_POINTS)
+        sampled = index is not None
+        timestamps = series.timestamps
+        values = series.values
+        if sampled:
+            timestamps = timestamps[index]
+            values = values[index]
+
+        def _take(array: np.ndarray | None) -> list[float | None] | None:
+            if array is None:
+                return None
+            return _clean(array[index] if sampled else array)
+
+        return {
+            "job_id": job.id,
+            "series_id": series.series_id,
+            "group": series.meta.get("group"),
+            "n": int(series.n),
+            "sampled": sampled,
+            "original_n": int(series.n),
+            "timestamps": [str(item) for item in timestamps.astype("datetime64[s]")],
+            "values": _clean(values),
+            "metric_class": resolution.metric_class,
+            "confidence": resolution.confidence,
+            "reasons": resolution.reasons,
+            "recommendation": {
+                "detectors": list(resolution.candidates),
+                "rationale": resolution.rationale,
+            },
+            "auto_detector": resolution.detector,
+            "auto_fallback": resolution.fallback,
+            "auto_rationale": resolution.rationale,
+            "available": available,
+            "detectors": [
+                {
+                    **outcome.as_dict(),
+                    "baseline": _take(outcome.baseline),
+                    "lower": _take(outcome.lower),
+                    "upper": _take(outcome.upper),
+                    "scores": _take(outcome.scores),
+                    "severity": [
+                        int(item) for item in (outcome.severity[index] if sampled else outcome.severity)
+                    ],
+                    "is_auto": outcome.name == resolution.detector,
+                }
+                for outcome in outcomes
+            ],
+            "levels": level_labels(rules),
+            "alert_rules": rules_to_dicts(rules),
+            "band_width": band_width,
+        }
+
+    # ---------- 人工反馈与阈值建议 ----------
     def _load_outcomes(run_id: int) -> list[SeriesOutcome]:
         """读出一次运行的分数与时间，供反馈评估使用。"""
         data_root = get_data_root()

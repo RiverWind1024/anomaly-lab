@@ -78,7 +78,21 @@
     <select id="preview-run"></select>
     <select id="preview-series"></select>
     <button id="preview-refresh">刷新</button>
+    <label class="inline"><input type="checkbox" id="compare-mode"> 多算法对比</label>
     <span id="preview-hint" class="muted"></span>
+  </div>
+  <div id="compare-panel" hidden>
+    <p class="muted">
+      同一条序列用不同算法各跑一遍（同一套倍数规则，因此告警数可直接横向比较）。
+      表里的「惯用倍数」是该算法自己的经典阈值——各算法的尺度估计方式不同，
+      分数量级可能差很多，看这个列才能正确解读差异。
+    </p>
+    <div id="compare-algos" class="toolbar"></div>
+    <table><thead><tr>
+      <th>算法</th><th>自动推荐</th><th>告警数</th><th>最高档</th><th>最高分</th><th>惯用倍数</th>
+    </tr></thead>
+    <tbody id="compare-rows"></tbody></table>
+    <p id="compare-hint" class="muted"></p>
   </div>
   <div id="chart" class="chart"></div>
 </section>

@@ -177,6 +177,78 @@ def test_job_defaults_to_auto_detector(tmp_path):
     assert preview["detector_rationale"]
 
 
+def test_compare_endpoint_returns_multiple_detectors(tmp_path):
+    """多算法对比：同一条序列用各算法各跑一遍，并给出 auto 推荐。"""
+    client, _ = _client(tmp_path)
+    source = client.post(
+        "/api/platform/sources", json={"name": "local", "path": "platform/source.db"}
+    )
+    metric = client.post(
+        "/api/platform/metrics",
+        json={
+            "source_id": source.json()["id"],
+            "name": "demo",
+            "query": "SELECT ts, host, value FROM metrics WHERE $timefilter ORDER BY ts",
+            "time_column": "ts",
+            "value_column": "value",
+            "group_column": "host",
+            "time_format": "iso_utc",
+        },
+    )
+    job = client.post(
+        "/api/platform/jobs",
+        json={
+            "metric_id": metric.json()["id"],
+            "name": "cmp-job",
+            "detector": "auto",
+            "alert_rules": [{"multiplier": 1.0, "level": "P2"}],
+        },
+    )
+    job_id = job.json()["id"]
+    response = client.get(
+        f"/api/platform/jobs/{job_id}/compare?detectors=iqr,mad,seasonal"
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["series_id"] == "demo:a"
+    names = [item["name"] for item in payload["detectors"]]
+    assert names == ["iqr", "mad", "seasonal"]
+    for item in payload["detectors"]:
+        assert len(item["scores"]) == len(payload["values"])
+        assert len(item["severity"]) == len(payload["values"])
+        assert item["default_threshold"] > 0
+    # auto 推荐要一并给出，方便对照
+    assert payload["auto_detector"] in names or payload["auto_detector"]
+    assert payload["recommendation"]["detectors"]
+
+
+def test_compare_endpoint_rejects_unknown_series(tmp_path):
+    client, _ = _client(tmp_path)
+    source = client.post(
+        "/api/platform/sources", json={"name": "local", "path": "platform/source.db"}
+    )
+    metric = client.post(
+        "/api/platform/metrics",
+        json={
+            "source_id": source.json()["id"],
+            "name": "demo",
+            "query": "SELECT ts, host, value FROM metrics WHERE $timefilter ORDER BY ts",
+            "time_column": "ts",
+            "value_column": "value",
+            "group_column": "host",
+            "time_format": "iso_utc",
+        },
+    )
+    job = client.post(
+        "/api/platform/jobs",
+        json={"metric_id": metric.json()["id"], "name": "cmp-job", "detector": "auto"},
+    )
+    response = client.get(
+        f"/api/platform/jobs/{job.json()['id']}/compare?series_id=not-exist"
+    )
+    assert response.status_code == 404
+
+
 def test_feedback_loop_suggests_and_applies_multiplier(tmp_path):
     """闭环：提交反馈 → 拿到倍数建议 → 应用建议改写规则表。"""
     client, _store = _client(tmp_path)

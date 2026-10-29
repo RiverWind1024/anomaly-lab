@@ -297,6 +297,130 @@ document.getElementById('preview-run').addEventListener('change', loadPreview);
 document.getElementById('preview-series').addEventListener('change', loadPreview);
 document.getElementById('preview-refresh').addEventListener('click', loadPreview);
 
+// ---------- 多算法对比 ----------
+
+const COMPARE_COLORS = ['#2563eb', '#db2777', '#059669', '#d97706', '#7c3aed', '#0891b2'];
+
+function collectCompareSelection() {
+  return Array.from(document.querySelectorAll('#compare-algos input:checked'))
+    .map(item => item.value);
+}
+
+function renderCompareOptions(data) {
+  const box = document.getElementById('compare-algos');
+  const previous = collectCompareSelection();
+  const names = data.available && data.available.length
+    ? data.available
+    : data.detectors.map(item => item.name);
+  box.innerHTML = '';
+  for (const name of names) {
+    const label = document.createElement('label');
+    label.className = 'inline';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.value = name;
+    // 首次渲染勾 auto 推荐的；有上次的勾选就沿用（未加载的算法也留在列表里）
+    input.checked = previous.length
+      ? previous.includes(name)
+      : name === data.auto_detector || name === names[0];
+    input.addEventListener('change', () => loadCompare());
+    label.appendChild(input);
+    label.appendChild(document.createTextNode(` ${name}`));
+    box.appendChild(label);
+  }
+}
+
+function renderCompareTable(data) {
+  const rows = document.getElementById('compare-rows');
+  rows.innerHTML = data.detectors.map((item, index) => {
+    const color = COMPARE_COLORS[index % COMPARE_COLORS.length];
+    const top = Math.max(...item.scores);
+    return `<tr><td><span style="color:${color}">●</span> ${item.name}</td>` +
+      `<td>${item.is_auto ? '是' : ''}</td>` +
+      `<td>${item.n_alerts}</td>` +
+      `<td>${item.n_top}</td>` +
+      `<td>${top.toFixed(2)}</td>` +
+      `<td>${item.default_threshold}</td></tr>`;
+  }).join('');
+  const hint = document.getElementById('compare-hint');
+  const confidence = data.confidence === null ? '—' : data.confidence.toFixed(2);
+  hint.textContent = `形态 ${data.metric_class || '未判定'}（置信度 ${confidence}）`
+    + ` · auto 选用 ${data.auto_detector}${data.auto_fallback ? '（回退）' : ''}`
+    + ` · 推荐候选 ${data.recommendation.detectors.join('/') || '—'}`;
+}
+
+function renderCompareChart(data) {
+  if (!chart) chart = echarts.init(document.getElementById('chart'));
+  const series = [{
+    name: '实际值',
+    type: 'line',
+    showSymbol: false,
+    data: data.values,
+  }];
+  const legend = ['实际值'];
+  data.detectors.forEach((item, index) => {
+    const color = COMPARE_COLORS[index % COMPARE_COLORS.length];
+    if (item.baseline) {
+      series.push({
+        name: `${item.name} 基线`,
+        type: 'line',
+        showSymbol: false,
+        lineStyle: { width: 1, type: 'dashed', color },
+        itemStyle: { color },
+        data: item.baseline,
+      });
+      legend.push(`${item.name} 基线`);
+    }
+    const points = [];
+    item.severity.forEach((severity, i) => {
+      if (severity > 0 && data.values[i] !== null) points.push([i, data.values[i]]);
+    });
+    if (points.length) {
+      series.push({
+        name: `${item.name} 告警`,
+        type: 'scatter',
+        symbolSize: 7,
+        itemStyle: { color },
+        data: points,
+      });
+      legend.push(`${item.name} 告警`);
+    }
+  });
+  chart.setOption({
+    tooltip: { trigger: 'axis' },
+    grid: { left: 60, right: 20, top: 30, bottom: 80 },
+    xAxis: { type: 'category', data: data.timestamps, boundaryGap: false },
+    yAxis: { type: 'value', scale: true },
+    dataZoom: [{ type: 'inside' }, { type: 'slider', height: 24 }],
+    legend: { data: legend },
+    series,
+  }, true);
+}
+
+async function loadCompare() {
+  const jobId = document.getElementById('preview-job').value;
+  if (!jobId) return;
+  const params = new URLSearchParams();
+  const seriesId = document.getElementById('preview-series').value;
+  if (seriesId) params.set('series_id', seriesId);
+  const selected = collectCompareSelection();
+  if (selected.length) params.set('detectors', selected.join(','));
+  const data = await api(`/api/platform/jobs/${jobId}/compare?${params.toString()}`);
+  renderCompareOptions(data);
+  renderCompareTable(data);
+  renderCompareChart(data);
+}
+
+document.getElementById('compare-mode').addEventListener('change', async event => {
+  const panel = document.getElementById('compare-panel');
+  panel.hidden = !event.target.checked;
+  if (event.target.checked) {
+    await loadCompare();
+  } else {
+    await loadPreview();
+  }
+});
+
 // ---------- 反馈与调参 ----------
 
 let lastSuggestion = null;
