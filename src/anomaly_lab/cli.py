@@ -117,6 +117,23 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--data", type=Path, default=None)
     p.add_argument("--out", type=Path, default=None)
 
+    p = sub.add_parser(
+        "validate-auto", help="在带真值的公开数据上验证「自动推荐算法」的质量"
+    )
+    p.add_argument(
+        "--source",
+        default="nab",
+        choices=["nab", "synthetic"],
+        help="验证数据源：nab=公开真实数据，synthetic=项目自带合成数据",
+    )
+    p.add_argument("--data", type=Path, default=None, help="synthetic 模式下的数据目录")
+    p.add_argument("--limit", type=int, default=None, help="最多验证多少条序列")
+    p.add_argument("--baseline", default="iqr", help="作为对照的固定算法")
+    p.add_argument("--out", type=Path, default=None, help="报告输出路径（.md）")
+    p.add_argument(
+        "--offline", action="store_true", help="不联网（要求数据已在缓存里）"
+    )
+
     p = sub.add_parser("serve", help="启动 Web")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8000)
@@ -317,6 +334,127 @@ def _cmd_compare(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_validate_auto(args: argparse.Namespace) -> int:
+    """在带真值的序列上验证 auto 推荐的质量。"""
+    from anomaly_lab.evaluation.auto_validation import validate_auto
+
+    source_label = "NAB（公开真实数据）"
+    if args.source == "nab":
+        from anomaly_lab.data.nab import NabUnavailable, load_nab_series
+
+        try:
+            series_list = load_nab_series(
+                limit=args.limit, auto_download=not args.offline
+            )
+        except NabUnavailable as exc:
+            print(f"NAB 数据不可用：{exc}", file=sys.stderr)
+            print(
+                "提示：可用 ANOMALY_LAB_NAB_URL 指定下载源，或先手动放入 "
+                "data/cache/nab/",
+                file=sys.stderr,
+            )
+            return 1
+    else:
+        source_label = "合成数据"
+        data_dir = args.data or CONFIG.synthetic_dir
+        series_list = load_dataset(data_dir)
+        if args.limit:
+            series_list = series_list[: args.limit]
+        if not series_list:
+            print(f"没有可加载的数据：{data_dir}", file=sys.stderr)
+            return 1
+
+    try:
+        report = validate_auto(series_list, baseline_detector=args.baseline)
+    except ValueError as exc:
+        print(f"无法验证：{exc}", file=sys.stderr)
+        return 1
+
+    print(f"自动推荐算法验证（数据源：{source_label}，{len(report.rows)} 条序列）")
+    print()
+    print("各算法平均 F1（各自固定默认阈值）：")
+    for name, score in sorted(
+        report.detector_mean_f1.items(), key=lambda item: -item[1]
+    ):
+        mark = " ← auto 平均选中" if name == report.best_fixed_detector else ""
+        print(f"  {name:<22}{score:.3f}{mark}")
+    print()
+    print(
+        f"auto 选中算法：平均 F1 {report.auto_mean_f1:.3f} / "
+        f"平均排名 {report.auto_mean_rank:.2f} / 夺冠率 {report.auto_top1_rate:.1%} / "
+        f"回退率 {report.fallback_rate:.1%}"
+    )
+    gap = report.auto_mean_f1 - report.best_fixed_mean_f1
+    print(
+        f"对比最好的固定算法（{report.best_fixed_detector} {report.best_fixed_mean_f1:.3f}）："
+        f"{gap:+.3f}"
+    )
+    print(
+        f"对比基线固定算法（{report.baseline_detector} {report.baseline_mean_f1:.3f}）："
+        f"{report.auto_mean_f1 - report.baseline_mean_f1:+.3f}"
+    )
+
+    out = Path(args.out or (CONFIG.reports_dir / "auto_validation.md"))
+    if out.suffix != ".md":
+        out = out / "auto_validation.md"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(_auto_validation_markdown(report, source_label), encoding="utf-8")
+    print(f"报告已写入：{out}")
+    return 0
+
+
+def _auto_validation_markdown(report, source_label: str) -> str:
+    lines = [
+        "# 自动推荐算法验证",
+        "",
+        f"- 数据源：{source_label}",
+        f"- 序列数：{len(report.rows)}",
+        (
+            "- 判定口径：各检测器在**各自固定默认阈值**下的点级 F1"
+            "（不是逐序列搜阈值的诊断上限）"
+        ),
+        "",
+        "## 各算法平均 F1",
+        "",
+        "| 算法 | 平均 F1 |",
+        "|---|---:|",
+    ]
+    for name, score in sorted(report.detector_mean_f1.items(), key=lambda i: -i[1]):
+        lines.append(f"| {name} | {score:.3f} |")
+    lines += [
+        "",
+        "## auto 的表现",
+        "",
+        "| 指标 | 值 |",
+        "|---|---:|",
+        f"| 平均 F1 | {report.auto_mean_f1:.3f} |",
+        f"| 平均排名（1 最好） | {report.auto_mean_rank:.2f} |",
+        f"| 夺冠率 | {report.auto_top1_rate:.1%} |",
+        f"| 回退率 | {report.fallback_rate:.1%} |",
+        (
+            f"| 相对最好的固定算法（{report.best_fixed_detector}） | "
+            f"{report.auto_mean_f1 - report.best_fixed_mean_f1:+.3f} |"
+        ),
+        (
+            f"| 相对基线（{report.baseline_detector}） | "
+            f"{report.auto_mean_f1 - report.baseline_mean_f1:+.3f} |"
+        ),
+        "",
+        "## 逐序列明细",
+        "",
+        "| 序列 | 形态 | auto 选中 | 回退 | auto F1 | auto 排名 | 最好算法 |",
+        "|---|---|---|---|---:|---:|---|",
+    ]
+    for row in report.rows:
+        best = max(row.f1, key=lambda name: row.f1[name]) if row.f1 else "-"
+        lines.append(
+            f"| {row.series_id} | {row.metric_class} | {row.auto_detector} | "
+            f"{'是' if row.fallback else ''} | {row.f1.get(row.auto_detector, 0.0):.3f} | "
+            f"{row.ranks.get(row.auto_detector, 0)} | {best} |"
+        )
+    return "\n".join(lines) + "\n"
+
+
 def _cmd_report(args: argparse.Namespace) -> int:
     data_dir = args.data or CONFIG.synthetic_dir
     rows = _load_rows(data_dir)
@@ -404,6 +542,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_evaluate(args)
     if args.command == "report":
         return _cmd_report(args)
+    if args.command == "validate-auto":
+        return _cmd_validate_auto(args)
     if args.command == "compare":
         return _cmd_compare(args)
     if args.command == "serve":
