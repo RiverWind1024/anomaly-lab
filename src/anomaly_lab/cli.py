@@ -29,9 +29,7 @@ from anomaly_lab.evaluation.metrics import precision_recall_f1, range_based_prf
 from anomaly_lab.evaluation.report import build_report
 from anomaly_lab.evaluation.thresholds import search_threshold
 
-_UNIMPLEMENTED = {
-    "serve": "Chunk 4",
-}
+_UNIMPLEMENTED: dict[str, str] = {}
 
 _DETECTORS = {
     "iqr": IQRDetector,
@@ -120,6 +118,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--out", type=Path, default=None)
 
     p = sub.add_parser("serve", help="启动 Web")
+    p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8000)
 
     sub.add_parser("compliance-check", help="合规自检")
@@ -346,6 +345,15 @@ def _cmd_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_serve(args: argparse.Namespace) -> int:
+    import uvicorn
+
+    from anomaly_lab.web.app import create_app
+
+    uvicorn.run(create_app(), host=args.host, port=args.port)
+    return 0
+
+
 def _cmd_compliance(args: argparse.Namespace) -> int:
     hits = scan_repo(Path.cwd())
     if hits:
@@ -372,6 +380,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_report(args)
     if args.command == "compare":
         return _cmd_compare(args)
+    if args.command == "serve":
+        return _cmd_serve(args)
     if args.command == "compliance-check":
         return _cmd_compliance(args)
     if args.command in _UNIMPLEMENTED:

@@ -1,7 +1,7 @@
 PY := .venv/bin/python
 PIP := uv pip
 
-.PHONY: setup test lint generate classify detect evaluate compare report serve compliance-check clean
+.PHONY: setup test lint generate classify detect evaluate compare report serve smoke compliance-check clean
 
 setup:
 	uv python install 3.12
@@ -34,6 +34,9 @@ report:
 
 serve:
 	$(PY) -m anomaly_lab.cli serve --port 8000
+
+smoke:
+	./scripts/smoke.sh
 
 compliance-check:
 	$(PY) -m anomaly_lab.cli compliance-check

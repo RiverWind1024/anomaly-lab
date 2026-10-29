@@ -16,10 +16,15 @@ def test_generate_then_classify(tmp_path: Path, capsys):
     assert "分类准确率" in out or "accuracy" in out.lower()
 
 
-def test_unimplemented_command_exits_2(tmp_path: Path):
-    with pytest.raises(SystemExit) as e:
-        main(["serve"])
-    assert e.value.code == 2
+def test_serve_invokes_uvicorn(monkeypatch):
+    calls = {}
+
+    def fake_run(app, **kwargs):
+        calls.update(kwargs)
+
+    monkeypatch.setattr("uvicorn.run", fake_run)
+    assert main(["serve", "--port", "8765"]) == 0
+    assert calls["port"] == 8765
 
 
 def test_compliance_check_passes_on_clean_repo():
