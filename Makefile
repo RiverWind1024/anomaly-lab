@@ -1,12 +1,13 @@
 PY := .venv/bin/python
 PIP := uv pip
+PIP_INDEX ?= https://pypi.tuna.tsinghua.edu.cn/simple
 
 .PHONY: setup test lint generate classify detect evaluate compare report serve smoke compliance-check clean
 
 setup:
 	uv python install 3.12
 	uv venv --python 3.12
-	$(PIP) install -e ".[dev]"
+	$(PIP) install -e ".[dev]" --index-url $(PIP_INDEX)
 
 test:
 	$(PY) -m pytest

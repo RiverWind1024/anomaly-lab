@@ -44,3 +44,13 @@
 - **chronos 未安装**：`chronos-forecasting` 与本地权重均缺失，`compare` 中 Chronos 行记录 `ChronosUnavailable` 并跳过，不阻塞统计 + 自训深度两方对比。
 - **深度模型训练数据**：CLI 默认用前 24 条合成序列训练 TCN/LSTM，模型缓存到 `data/cache/models/`。
 - **compare 对照**：61 行（统计 8 个检测器 + TCN/LSTM + Chronos 跳过行）；STL 单次检测约 31ms，其余统计检测器 <1ms，深度模型约 1.8ms/条。
+
+## v1 验收与开放项（2026-10-29）
+
+- **已达标**：全量测试通过；ruff 无告警；离线 smoke 通过；合规自检通过；形态分类 120/120；统计 + 自训练深度 + Chronos 跳过行的三方对照表可生成；报告可 diff。
+- **UCR 在线下载未校准**：单序列 URL 形式仍未验证，在线模式必须显式提供 `ANOMALY_LAB_UCR_SERIES_URL`；默认走离线缓存。
+- **Chronos 未纳入对比**：`chronos-forecasting` 与本地权重均缺失，对照表保留跳过原因。
+- **深度模型未跑赢基线**：TCN F1=0.279、LSTM F1=0.458，均低于去趋势 IQR 的 0.510；原因包括只用 24 条序列训练、合成异常与训练分布差异大。结论仅限合成集。
+- **阈值搜索偏乐观**：当前逐序列用真值搜索阈值，属于诊断用上限；真实上线需按时间切分校准集/测试集，禁止在测试段搜阈值。
+- **Web 标注回路**：API 与页面已实现，自动化测试覆盖 API；浏览器刷选交互仅手工冒烟，未做 Playwright 端到端。
+- **合规豁免**：`docs/DESIGN.md`、`docs/PLAN.md`、`docs/RESEARCH.md` 因讨论禁词本身而豁免扫描，属有意设计。
