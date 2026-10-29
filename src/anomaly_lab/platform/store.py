@@ -334,6 +334,16 @@ class PlatformStore:
                 "UPDATE jobs SET enabled = ? WHERE id = ?", (1 if enabled else 0, job_id)
             )
 
+    def set_job_detector(self, job_id: int, detector: str) -> Job:
+        """改任务的检测算法（用户在多算法对比后选定其一）。"""
+        if detector != AUTO_DETECTOR and detector not in DETECTOR_FACTORIES:
+            raise ValueError(f"不支持的检测器: {detector}")
+        with self._conn() as conn:
+            conn.execute(
+                "UPDATE jobs SET detector = ? WHERE id = ?", (detector, job_id)
+            )
+        return self.get_job(job_id)
+
     def set_job_next_run(self, job_id: int, next_run_at: str) -> None:
         with self._conn() as conn:
             conn.execute("UPDATE jobs SET next_run_at = ? WHERE id = ?", (next_run_at, job_id))

@@ -1,4 +1,4 @@
-"""人工反馈 → 告警阈值建议：闭环里的「优化」环节。
+"""人工反馈 → 算法与阈值建议：闭环里的「优化」环节。
 
 参考 AWS 的做法：
 
@@ -6,9 +6,10 @@
   Correct / False alarm / Missed，CloudWatch 据此自动调整 band 宽度与学习率。
 - **Lookout for Metrics** 同样把「用户对异常的相关性反馈」回灌模型，持续提升准确率。
 
-我们不做在线重训模型，只做一件更可控的事：**用反馈挑告警倍数**。
+我们不做在线重训模型，只做一件更可控的事：**用反馈挑「用哪个算法 + 用哪个倍数」**。
 平台支持的检测器分数都是稳健 z 量纲，倍数就是「偏离基线多少倍正常波动」，
-调倍数等价于调 band 宽度——和 AWS 调 band 宽度是同一件事。
+调倍数等价于调 band 宽度——和 AWS 调 band 宽度是同一件事；而当误报来自
+「这条序列本来就不适合这个算法」时，换算法比调倍数更对症。
 """
 
 from __future__ import annotations
@@ -123,24 +124,37 @@ class ThresholdEvaluation:
 
 
 @dataclass(frozen=True)
-class Suggestion:
-    """基于反馈给出的倍数建议。"""
+class SettingSuggestion:
+    """基于反馈给出的「算法 + 倍数」建议。
 
+    反馈既能说明**阈值**不合适（误报多就调保守），也能说明**算法**不合适
+    （这条序列用 seasonal 一直吵，换个算法就安静了）——所以建议里两者都管。
+    """
+
+    current_detector: str
+    suggested_detector: str
     current_multiplier: float
     suggested_multiplier: float
     reason: str
     current: ThresholdEvaluation | None
     best: ThresholdEvaluation | None
-    candidates: list[ThresholdEvaluation] = field(default_factory=list)
+    candidates: list[dict] = field(default_factory=list)
+
+    @property
+    def detector_changed(self) -> bool:
+        return self.suggested_detector != self.current_detector
 
     def as_dict(self) -> dict:
         return {
+            "current_detector": self.current_detector,
+            "suggested_detector": self.suggested_detector,
+            "detector_changed": self.detector_changed,
             "current_multiplier": self.current_multiplier,
             "suggested_multiplier": self.suggested_multiplier,
             "reason": self.reason,
             "current": self.current.as_dict() if self.current else None,
             "best": self.best.as_dict() if self.best else None,
-            "candidates": [item.as_dict() for item in self.candidates],
+            "candidates": self.candidates,
         }
 
 
@@ -237,15 +251,22 @@ def _score_multiplier(
     )
 
 
-def suggest_multiplier(
-    outcomes: list[SeriesOutcome],
+def suggest_setting(
+    outcomes_by_detector: dict[str, list[SeriesOutcome]],
     annotations: list[Annotation],
+    current_detector: str,
     current_multiplier: float,
-) -> Suggestion:
-    """根据反馈给出新的告警倍数建议。
+) -> SettingSuggestion:
+    """根据反馈给出「用哪个算法 + 用哪个倍数」的建议。
 
-    目标函数按可用标签自适应：有正反例时最大化 F1；只有漏报时最大化召回；
-    只有误报时最小化误报点数。**没有反馈就不给建议**，绝不猜。
+    对每个候选算法 × 候选倍数算一遍表现，再在全部组合里挑最优：
+
+    - 目标函数按可用标签自适应：有正反例时最大化 F1；只有漏报时最大化召回；
+      只有误报时最小化误报点数；
+    - 同等效果时**优先不改算法**，其次**最小干预**（倍数离当前最近）——
+      避免一步把配置推到极端（AWS 的做法也是渐进调整而非一步到位）。
+
+    **没有反馈就不给建议**，绝不猜。
     """
     usable = [
         note
@@ -253,59 +274,159 @@ def suggest_multiplier(
         if note.kind in (_POSITIVE_KIND, _NEGATIVE_KIND)
     ]
     if not usable:
-        return Suggestion(
+        return SettingSuggestion(
+            current_detector=current_detector,
+            suggested_detector=current_detector,
             current_multiplier=float(current_multiplier),
             suggested_multiplier=float(current_multiplier),
-            reason="还没有可用于评估的反馈（漏报/误报），暂不调整倍数",
+            reason="还没有可用于评估的反馈（漏报/误报），暂不调整",
             current=None,
             best=None,
         )
-    scores = np.concatenate([item.scores for item in outcomes]) if outcomes else np.zeros(0)
-    positive, negative = _build_labels(outcomes, usable)
-    has_positive = bool(positive.any())
-    has_negative = bool(negative.any())
 
-    candidates = [
-        _score_multiplier(scores, positive, negative, multiplier)
-        for multiplier in candidate_multipliers(current_multiplier)
-    ]
-    current = next(
-        (item for item in candidates if item.multiplier == float(current_multiplier)),
+    multipliers = candidate_multipliers(current_multiplier)
+    candidates: list[dict] = []
+    has_positive = False
+    has_negative = False
+    for detector, outcomes in outcomes_by_detector.items():
+        if not outcomes:
+            continue
+        scores = np.concatenate([item.scores for item in outcomes])
+        positive, negative = _build_labels(outcomes, usable)
+        has_positive = has_positive or bool(positive.any())
+        has_negative = has_negative or bool(negative.any())
+        for multiplier in multipliers:
+            evaluation = _score_multiplier(scores, positive, negative, multiplier)
+            candidates.append({"detector": detector, **evaluation.as_dict()})
+
+    if not candidates:
+        return SettingSuggestion(
+            current_detector=current_detector,
+            suggested_detector=current_detector,
+            current_multiplier=float(current_multiplier),
+            suggested_multiplier=float(current_multiplier),
+            reason="没有可用于评估的检测结果",
+            current=None,
+            best=None,
+        )
+
+    def objective(item: dict) -> tuple[float, float, float, float]:
+        distance = -abs(item["multiplier"] - float(current_multiplier))
+        same_detector = 1.0 if item["detector"] == current_detector else 0.0
+        if has_positive and has_negative:
+            return (item["f1"] or 0.0, item["precision"] or 0.0, same_detector, distance)
+        if has_positive:
+            return (item["recall"] or 0.0, item["precision"] or 0.0, same_detector, distance)
+        # 只有负例：告警越少越好
+        return (-float(item["fp"]), item["precision"] or 0.0, same_detector, distance)
+
+    best_row = max(candidates, key=objective)
+    suggested_detector = str(best_row["detector"])
+    suggested_multiplier = float(best_row["multiplier"])
+    current_row = next(
+        (
+            item
+            for item in candidates
+            if item["detector"] == current_detector
+            and abs(item["multiplier"] - float(current_multiplier)) < 1e-9
+        ),
         None,
     )
+    best = ThresholdEvaluation(
+        multiplier=suggested_multiplier,
+        precision=best_row["precision"],
+        recall=best_row["recall"],
+        f1=best_row["f1"],
+        tp=best_row["tp"],
+        fp=best_row["fp"],
+        tn=best_row["tn"],
+        fn=best_row["fn"],
+    )
 
-    def objective(item: ThresholdEvaluation) -> tuple[float, float, float]:
-        # 最后一项是「离当前倍数越近越好」：同等效果下取**最小干预**，
-        # 避免一步把告警推到极端（AWS 的做法也是渐进调整而非一步到位）。
-        distance = -abs(item.multiplier - float(current_multiplier))
-        if has_positive and has_negative:
-            return (item.f1 or 0.0, item.precision or 0.0, distance)
-        if has_positive:
-            return (item.recall or 0.0, item.precision or 0.0, distance)
-        # 只有负例：告警越少越好
-        return (-float(item.fp), item.precision or 0.0, distance)
-
-    best = max(candidates, key=objective)
-    suggested = best.multiplier
-    if abs(suggested - current_multiplier) < 1e-9:
-        reason = "当前倍数在已有反馈上已经最优，无需调整"
-    elif suggested > current_multiplier:
-        reason = (
-            f"反馈显示误报偏多（precision={_fmt(best.precision)}），"
-            f"建议把最低档倍数从 {current_multiplier:g} 调到 {suggested:g}（更保守）"
-        )
-    else:
-        reason = (
-            f"反馈显示漏报偏多（recall={_fmt(best.recall)}），"
-            f"建议把最低档倍数从 {current_multiplier:g} 调到 {suggested:g}（更灵敏）"
-        )
-    if len(usable) < MIN_FEEDBACK_FOR_SUGGESTION:
-        reason += f"；但只有 {len(usable)} 条反馈，样本偏少，建议再积累一些再定"
-    return Suggestion(
+    reason = _explain(
+        current_detector=current_detector,
+        suggested_detector=suggested_detector,
         current_multiplier=float(current_multiplier),
-        suggested_multiplier=float(suggested),
+        suggested_multiplier=suggested_multiplier,
+        best=best,
+        current_row=current_row,
+        detector_changed=suggested_detector != current_detector,
+        n_feedback=len(usable),
+    )
+    return SettingSuggestion(
+        current_detector=current_detector,
+        suggested_detector=suggested_detector,
+        current_multiplier=float(current_multiplier),
+        suggested_multiplier=suggested_multiplier,
         reason=reason,
-        current=current,
+        current=(
+            ThresholdEvaluation(
+                multiplier=float(current_row["multiplier"]),
+                precision=current_row["precision"],
+                recall=current_row["recall"],
+                f1=current_row["f1"],
+                tp=current_row["tp"],
+                fp=current_row["fp"],
+                tn=current_row["tn"],
+                fn=current_row["fn"],
+            )
+            if current_row
+            else None
+        ),
         best=best,
         candidates=candidates,
     )
+
+
+def _explain(
+    *,
+    current_detector: str,
+    suggested_detector: str,
+    current_multiplier: float,
+    suggested_multiplier: float,
+    best: ThresholdEvaluation,
+    current_row: dict | None,
+    detector_changed: bool,
+    n_feedback: int,
+) -> str:
+    """把建议写成一句人话，说明**为什么**。"""
+    parts: list[str] = []
+    if detector_changed:
+        before = (
+            f"F1 {current_row['f1']:.2f}"
+            if current_row and current_row.get("f1") is not None
+            else f"误报 {current_row['fp']} 个"
+            if current_row
+            else "当前表现不佳"
+        )
+        after = (
+            f"F1 {best.f1:.2f}"
+            if best.f1 is not None
+            else f"误报 {best.fp} 个"
+        )
+        if current_detector == "auto":
+            # auto 是「逐序列各选一个」的混合表现，不是单个算法
+            parts.append(
+                f"反馈显示自动选择（每条序列各挑一个算法）在这段区间上不合适"
+                f"（{before}），建议把任务固定为 {suggested_detector}（{after}）"
+            )
+        else:
+            parts.append(
+                f"反馈显示这条序列更适合用 {suggested_detector} 而不是 {current_detector}"
+                f"（{before} → {after}）"
+            )
+    elif abs(suggested_multiplier - current_multiplier) < 1e-9:
+        parts.append("当前算法与倍数在已有反馈上已经最优，无需调整")
+    elif suggested_multiplier > current_multiplier:
+        parts.append(
+            f"反馈显示误报偏多（precision={_fmt(best.precision)}），"
+            f"建议把最低档倍数从 {current_multiplier:g} 调到 {suggested_multiplier:g}（更保守）"
+        )
+    else:
+        parts.append(
+            f"反馈显示漏报偏多（recall={_fmt(best.recall)}），"
+            f"建议把最低档倍数从 {current_multiplier:g} 调到 {suggested_multiplier:g}（更灵敏）"
+        )
+    if n_feedback < MIN_FEEDBACK_FOR_SUGGESTION:
+        parts.append(f"但只有 {n_feedback} 条反馈，样本偏少，建议再积累一些再定")
+    return "；".join(parts)

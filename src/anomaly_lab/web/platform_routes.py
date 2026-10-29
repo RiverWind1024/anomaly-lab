@@ -33,7 +33,7 @@ from anomaly_lab.platform.detectors import (
 from anomaly_lab.platform.feedback import (
     Annotation,
     SeriesOutcome,
-    suggest_multiplier,
+    suggest_setting,
 )
 from anomaly_lab.platform.sqlite_source import load_series
 from anomaly_lab.platform.store import PlatformStore
@@ -75,7 +75,10 @@ class JobIn(BaseModel):
 
 
 class JobToggleIn(BaseModel):
-    enabled: bool
+    """任务配置更新：启用状态与（或）检测算法。"""
+
+    enabled: bool | None = None
+    detector: str | None = None
 
 
 class AlertRuleIn(BaseModel):
@@ -104,9 +107,10 @@ class FeedbackIn(BaseModel):
 
 
 class ApplySuggestionIn(BaseModel):
-    """把告警倍数调到指定值（应用反馈建议）。"""
+    """应用反馈建议：可同时改告警倍数与检测算法。"""
 
     multiplier: float
+    detector: str | None = None
 
 
 def _clean(values: np.ndarray) -> list[float | None]:
@@ -236,7 +240,13 @@ def build_router(
             job = store.get_job(job_id)
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        store.set_job_enabled(job.id, payload.enabled)
+        if payload.enabled is not None:
+            store.set_job_enabled(job.id, payload.enabled)
+        if payload.detector is not None:
+            try:
+                store.set_job_detector(job.id, payload.detector)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
         return asdict(store.get_job(job.id))
 
     @router.post("/api/platform/jobs/{job_id}/run")
@@ -511,24 +521,6 @@ def build_router(
         }
 
     # ---------- 人工反馈与阈值建议 ----------
-    def _load_outcomes(run_id: int) -> list[SeriesOutcome]:
-        """读出一次运行的分数与时间，供反馈评估使用。"""
-        data_root = get_data_root()
-        index = runner_module.read_run_index(data_root, run_id)
-        target = runner_module.run_dir(data_root, run_id)
-        outcomes: list[SeriesOutcome] = []
-        for entry in index.get("series", []):
-            if not entry.get("file"):
-                continue
-            payload = np.load(target / entry["file"], allow_pickle=False)
-            outcomes.append(
-                SeriesOutcome(
-                    series_id=entry["series_id"],
-                    timestamps=payload["timestamps"].astype("datetime64[ns]"),
-                    scores=np.asarray(payload["scores"], dtype=float),
-                )
-            )
-        return outcomes
 
     @router.post("/api/platform/feedback")
     def create_feedback(payload: FeedbackIn) -> dict:
@@ -558,23 +550,30 @@ def build_router(
 
     @router.get("/api/platform/jobs/{job_id}/feedback/suggestion")
     def feedback_suggestion(job_id: int, run_id: int | None = None) -> dict:
+        """根据反馈给出「用哪个算法 + 用哪个倍数」的建议。
+
+        评估要比较不同算法，所以这里**重新取数并跑一遍候选算法**——
+        run 落盘的只有任务当时选中的那一个算法的分数。
+        """
         store = _store()
         try:
             job = store.get_job(job_id)
+            metric = store.get_metric(job.metric_id)
+            source = store.get_source(metric.source_id)
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         chosen_run = run_id
         if chosen_run is None:
             latest = store.latest_run(job.id)
-            if latest is None:
-                raise HTTPException(status_code=404, detail="该任务还没有运行记录")
-            chosen_run = latest.id
-        try:
-            store.get_run(chosen_run)
-        except ValueError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-        rules = parse_rules(job.alert_rules) if job.alert_rules else []
-        current = band_multiplier(rules) if rules else job.alert_threshold
+            chosen_run = latest.id if latest else None
+        elif chosen_run is not None:
+            try:
+                store.get_run(chosen_run)
+            except ValueError as exc:
+                raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        rules = runner_module.job_rules(job)
+        current_multiplier = band_multiplier(rules)
         annotations = [
             Annotation(
                 series_id=item.series_id,
@@ -584,22 +583,82 @@ def build_router(
             )
             for item in store.list_feedback(job.id)
         ]
-        suggestion = suggest_multiplier(
-            _load_outcomes(chosen_run), annotations, current
+        candidates = _suggestion_candidates(job, metric, source)
+        outcomes = _collect_outcomes(job, metric, source, candidates)
+        suggestion = suggest_setting(
+            outcomes, annotations, job.detector, current_multiplier
         )
-        return {"run_id": chosen_run, **suggestion.as_dict()}
+        return {
+            "run_id": chosen_run,
+            # 注意：键名不能叫 candidates——suggestion.as_dict() 里也有同名键，
+            # 展开会覆盖它。这里放的是「实际参与比较的算法」。
+            "evaluated_detectors": sorted(outcomes),
+            **suggestion.as_dict(),
+        }
 
-    @router.post("/api/platform/jobs/{job_id}/apply-multiplier")
-    def apply_multiplier(job_id: int, payload: ApplySuggestionIn) -> dict:
-        """按比例整体缩放规则表里的倍数条件（等价于调 band 宽度）。"""
+    def _suggestion_candidates(job, metric, source) -> list[str]:
+        """建议要比较的算法集合：当前设置 + 形态推荐的候选。"""
+        names: list[str] = []
+        # auto 作为「当前设置」参与比较——它是逐序列选算法的混合表现
+        names.append(job.detector)
+        try:
+            series_list = _load_window_series(job, metric, source)
+        except (ValueError, FileNotFoundError):
+            series_list = []
+        for series in series_list:
+            resolution = resolve_detector(AUTO_DETECTOR, series)
+            names.append(resolution.detector)
+            names.extend(resolution.candidates)
+        unique = [
+            name
+            for name in dict.fromkeys(names)
+            if name in DETECTOR_FACTORIES or name == AUTO_DETECTOR
+        ]
+        return unique or list(DETECTOR_FACTORIES)
+
+    def _load_window_series(job, metric, source) -> list:
+        end_time = utcnow()
+        start_time = end_time - freq_delta(metric.freq) * job.window_points
+        source_path = runner_module.resolve_source_path(source.path, get_data_root())
+        return load_series(metric, source_path, start_time, end_time)
+
+    def _collect_outcomes(job, metric, source, detectors: list[str]) -> dict:
+        """按算法收集各序列的分数，供反馈评估使用。
+
+        `auto` 不是具体算法——它是「每条序列各自选一个」的混合表现，
+        所以按序列分别取它会选中的那个算法来算。
+        """
+        series_list = _load_window_series(job, metric, source)
+        outcomes: dict[str, list[SeriesOutcome]] = {}
+        for detector_name in detectors:
+            items: list[SeriesOutcome] = []
+            for series in series_list:
+                if not bool(series.meta.get("sufficient", True)):
+                    continue
+                if detector_name == AUTO_DETECTOR:
+                    actual = resolve_detector(AUTO_DETECTOR, series).detector
+                else:
+                    actual = detector_name
+                detector = create_detector(actual).fit(series)
+                items.append(
+                    SeriesOutcome(
+                        series_id=series.series_id,
+                        timestamps=series.timestamps,
+                        scores=np.asarray(detector.score(series), dtype=float),
+                    )
+                )
+            outcomes[detector_name] = items
+        return outcomes
+
+    @router.post("/api/platform/jobs/{job_id}/apply-suggestion")
+    def apply_suggestion(job_id: int, payload: ApplySuggestionIn) -> dict:
+        """应用建议：可同时改算法与倍数（倍数按比例整体缩放规则表）。"""
         store = _store()
         try:
             job = store.get_job(job_id)
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        rules = parse_rules(job.alert_rules) if job.alert_rules else []
-        if not rules:
-            raise HTTPException(status_code=400, detail="该任务没有告警规则")
+        rules = runner_module.job_rules(job)
         current = band_multiplier(rules)
         if current <= 0:
             raise HTTPException(status_code=400, detail="当前倍数无效")
@@ -616,6 +675,8 @@ def build_router(
                 )
         try:
             updated = store.update_job_rules(job.id, scaled)
+            if payload.detector:
+                updated = store.set_job_detector(updated.id, payload.detector)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return asdict(updated)

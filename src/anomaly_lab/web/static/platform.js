@@ -319,10 +319,11 @@ function renderCompareOptions(data) {
     const input = document.createElement('input');
     input.type = 'checkbox';
     input.value = name;
-    // 首次渲染勾 auto 推荐的；有上次的勾选就沿用（未加载的算法也留在列表里）
+    // 默认把候选并列展示出来（形态模糊时让用户自己比），
+    // 已有勾选则沿用；未加载的算法也留在列表里，可以再勾回来。
     input.checked = previous.length
       ? previous.includes(name)
-      : name === data.auto_detector || name === names[0];
+      : names.length <= 4 || name === data.auto_detector;
     input.addEventListener('change', () => loadCompare());
     label.appendChild(input);
     label.appendChild(document.createTextNode(` ${name}`));
@@ -340,7 +341,8 @@ function renderCompareTable(data) {
       `<td>${item.n_alerts}</td>` +
       `<td>${item.n_top}</td>` +
       `<td>${top.toFixed(2)}</td>` +
-      `<td>${item.default_threshold}</td></tr>`;
+      `<td>${item.default_threshold}</td>` +
+      `<td><button data-apply-detector="${item.name}">设为任务算法</button></td></tr>`;
   }).join('');
   const hint = document.getElementById('compare-hint');
   const confidence = data.confidence === null ? '—' : data.confidence.toFixed(2);
@@ -421,6 +423,20 @@ document.getElementById('compare-mode').addEventListener('change', async event =
   }
 });
 
+document.getElementById('compare-rows').addEventListener('click', async event => {
+  const button = event.target.closest('[data-apply-detector]');
+  if (!button) return;
+  const jobId = document.getElementById('preview-job').value;
+  const detector = button.dataset.applyDetector;
+  await api(`/api/platform/jobs/${jobId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ detector }),
+  });
+  await refreshCatalog();
+  await loadCompare();
+});
+
 // ---------- 反馈与调参 ----------
 
 let lastSuggestion = null;
@@ -467,8 +483,11 @@ document.getElementById('fb-suggest').addEventListener('click', async () => {
   }
   const best = data.best;
   const fmt = value => (value === null || value === undefined ? '—' : value.toFixed(2));
+  const change = data.detector_changed
+    ? ` ｜ 建议换算法 ${data.current_detector} → ${data.suggested_detector}`
+    : '';
   hint.textContent = `${data.reason} ｜ precision ${fmt(best.precision)}`
-    + ` / recall ${fmt(best.recall)} / F1 ${fmt(best.f1)}`;
+    + ` / recall ${fmt(best.recall)} / F1 ${fmt(best.f1)}${change}`;
 });
 
 document.getElementById('fb-apply').addEventListener('click', async () => {
@@ -477,8 +496,9 @@ document.getElementById('fb-apply').addEventListener('click', async () => {
     alert('请先点「评估并给建议」');
     return;
   }
-  await postJson(`/api/platform/jobs/${jobId}/apply-multiplier`, {
+  await postJson(`/api/platform/jobs/${jobId}/apply-suggestion`, {
     multiplier: lastSuggestion.suggested_multiplier,
+    detector: lastSuggestion.suggested_detector,
   });
   lastSuggestion = null;
   document.getElementById('fb-suggestion').textContent = '已应用，新的告警倍数见任务列表';

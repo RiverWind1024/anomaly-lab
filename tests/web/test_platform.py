@@ -308,15 +308,104 @@ def test_feedback_loop_suggests_and_applies_multiplier(tmp_path):
     assert suggestion["suggested_multiplier"] >= suggestion["current_multiplier"]
     assert suggestion["best"] is not None
     assert suggestion["reason"]
+    # 建议也要带上参与比较的算法集合，方便前端展示
+    assert suggestion["candidates"]
 
     applied = client.post(
-        f"/api/platform/jobs/{job_id}/apply-multiplier",
-        json={"multiplier": suggestion["suggested_multiplier"]},
+        f"/api/platform/jobs/{job_id}/apply-suggestion",
+        json={
+            "multiplier": suggestion["suggested_multiplier"],
+            "detector": suggestion["suggested_detector"],
+        },
     )
     assert applied.status_code == 200
     assert applied.json()["alert_threshold"] == pytest.approx(
         suggestion["suggested_multiplier"], rel=1e-3
     )
+    assert applied.json()["detector"] == suggestion["suggested_detector"]
+
+
+def test_suggestion_keeps_auto_when_the_algorithm_is_fine(tmp_path):
+    """auto 模式下，算法没问题就别动它——只调倍数。
+
+    auto 是「每条序列各挑一个算法」的混合表现，不是单个算法；
+    所以它也要参与评估，但建议里不能写成「从 auto 换成 X」。
+    """
+    client, _ = _client(tmp_path)
+    source = client.post(
+        "/api/platform/sources", json={"name": "local", "path": "platform/source.db"}
+    )
+    metric = client.post(
+        "/api/platform/metrics",
+        json={
+            "source_id": source.json()["id"],
+            "name": "demo",
+            "query": "SELECT ts, host, value FROM metrics WHERE $timefilter ORDER BY ts",
+            "time_column": "ts",
+            "value_column": "value",
+            "group_column": "host",
+            "time_format": "iso_utc",
+        },
+    )
+    job = client.post(
+        "/api/platform/jobs",
+        json={
+            "metric_id": metric.json()["id"],
+            "name": "auto-job",
+            "detector": "auto",
+            "alert_rules": [{"multiplier": 1.0, "level": "P2"}],
+        },
+    )
+    job_id = job.json()["id"]
+    client.post(
+        "/api/platform/feedback",
+        json={
+            "job_id": job_id,
+            "series_id": "demo:a",
+            "start_ts": to_iso(utcnow() - timedelta(minutes=30)),
+            "end_ts": to_iso(utcnow()),
+            "kind": "false_alarm",
+        },
+    )
+    suggestion = client.get(f"/api/platform/jobs/{job_id}/feedback/suggestion").json()
+    # auto 必须参与比较
+    assert "auto" in suggestion["evaluated_detectors"]
+    assert suggestion["current_detector"] == "auto"
+    # 没有充分理由换算法时保持 auto
+    assert suggestion["detector_changed"] is False
+    assert suggestion["suggested_detector"] == "auto"
+    assert suggestion["suggested_multiplier"] >= suggestion["current_multiplier"]
+
+
+def test_patch_job_detector(tmp_path):
+    """多算法对比后可以把任务固定成用户选定的算法。"""
+    client, _ = _client(tmp_path)
+    source = client.post(
+        "/api/platform/sources", json={"name": "local", "path": "platform/source.db"}
+    )
+    metric = client.post(
+        "/api/platform/metrics",
+        json={
+            "source_id": source.json()["id"],
+            "name": "demo",
+            "query": "SELECT ts, host, value FROM metrics WHERE $timefilter ORDER BY ts",
+            "time_column": "ts",
+            "value_column": "value",
+            "group_column": "host",
+            "time_format": "iso_utc",
+        },
+    )
+    job = client.post(
+        "/api/platform/jobs",
+        json={"metric_id": metric.json()["id"], "name": "job", "detector": "auto"},
+    )
+    job_id = job.json()["id"]
+    updated = client.patch(f"/api/platform/jobs/{job_id}", json={"detector": "seasonal"})
+    assert updated.status_code == 200
+    assert updated.json()["detector"] == "seasonal"
+
+    bad = client.patch(f"/api/platform/jobs/{job_id}", json={"detector": "nonexistent"})
+    assert bad.status_code == 400
 
 
 def test_feedback_rejects_invalid_range(tmp_path):
