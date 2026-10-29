@@ -172,16 +172,19 @@ anomaly-lab/
 | `GET /api/platform/jobs/{id}/preview` | **200** | —（响应体 `sufficient:false` + `insufficient_reason`） | — | **数据不足态**（不是 404！） |
 | `GET /api/platform/jobs/{id}/compare` | 404 | 该窗口内没有取到数据 | `no_data` | 空态·该窗口无数据 |
 | `GET /api/platform/jobs/{id}/compare` | 404 | 序列 X 有效点仅 N 个，不足以做检测 | `insufficient_data` | **数据不足态** |
+| `GET /api/platform/jobs/{id}/compare` | **400** | 没有可对比的算法 | `no_algorithms` | 空态·无可选算法 |
 | `GET /api/badcases` | 404 | 该序列还没有检测结果 | `no_result` | 空态·Bad Case 页 |
-| 上述端点 | 404 | 序列不存在: X | （**不加头**） | **真错误**（参数错） |
-| 任意 | 404 | store 的 `ValueError` 原文 | （**不加头**） | **真错误** |
+| 上述端点 | 404 | 序列不存在 | （**不加头**） | **真错误**（序列不在数据集） |
+| 上述端点 | 404 | 序列不存在: X | （**不加头**） | **真错误**（X 不在这次运行里） |
+| 任意 | 400 | 当前倍数无效 / 倍数必须为正数 | （**不加头**） | **真错误**（输入非法） |
+| 任意 | 404 | store 的 `ValueError` 原文（如「任务不存在: 999」） | （**不加头**） | **真错误** |
 
 **注意 preview 与 compare 的数据不足表达方式不同**：preview 是 **200 + 响应体**，
 compare 是 **404 + 响应头**。前端两条路径都要处理。
 
 **为什么不用「只按中文文案匹配」**：后端改一个字就会打穿前端判定。响应头是显式契约，
-且对现有客户端零影响。响应头缺失时（如老版本后端）退回按 `detail` 前缀匹配，
-前缀表与上表的 `detail` 列一一对应。
+且对现有客户端零影响。响应头缺失时（如老版本后端）退回按 `detail` **前缀**匹配，
+前缀表就是上表的 `detail` 列（`序列 X 有效点仅…` 取「序列」+「有效点仅」两段前缀）。
 
 ### 4.3 部署形态
 
@@ -266,7 +269,7 @@ frontend/src/styles/tokens.css     ← 唯一的颜色定义处（CSS 变量）
 | 情况 | 处理 |
 |---|---|
 | **422 校验错误** | FastAPI 的 `detail` 是**数组**（`[{loc, msg, type}]`），不是字符串。必须拼接 `msg` 字段：`detail.map(d => d.msg).join("；")`。直接渲染会得到 `[object Object]`。422 在建指标/建任务时很容易触发（SQL、时间格式、规则行） |
-| **业务态 4xx** | 按 §4.2.1 的映射表判定 → 走 §6.1 的空态 / 数据不足态。响应头缺失时按 `detail` 前缀兜底（前缀表 = §4.2.1 的 `detail` 列） |
+| **业务态 4xx** | 按 §4.2.1 的映射表判定 → 走 §6.1 的空态 / 数据不足态。**响应头缺失时按 `detail` 前缀兜底**，前缀表（与 §4.2.1 的 `detail` 列一致）：<br>`该任务还没有运行记录` → `no_run`<br>`该次运行没有序列结果` → `no_series`<br>`该窗口内没有取到数据` → `no_data`<br>`序列 … 有效点仅` → `insufficient_data`<br>`没有可对比的算法` → `no_algorithms`<br>`该序列还没有检测结果` → `no_result`<br>其余（「序列不存在」等）→ 真错误 |
 | **真错误** | 其余 4xx/5xx → 红色内联 Alert，`detail` 原文 |
 
 ---
@@ -361,6 +364,7 @@ running | success | failed | insufficient_data
 | `/platform` §4 | 多算法对比**算法勾选组**（复选框；默认勾 auto 与 ≤4 个候选；可改选后重查） | `/jobs/:id` → `ComparePicker` |
 | `/platform` §4 | 多算法对比**叠加图**（各算法基线与告警点叠在同一张图上） | `/jobs/:id` → `CompareChart` |
 | `/platform` §4 | 多算法对比**表**（告警数 / 最高档 / 最高分 / **惯用倍数**） | `/jobs/:id` → `CompareTable` |
+| `/platform` §4 | 多算法对比**表**的「最高档点数」列（= `n_top`，最高档上的告警**点数**） | `/jobs/:id` → `CompareTable` |
 | `/platform` §4 | 「设为任务算法」 | `/jobs/:id` → `CompareTable` |
 | `/platform` §4 | 顶部提示：`自动 → 检测器 · 形态（回退）· score_type · 规则`，推荐理由在 tooltip | `/jobs/:id` → `ClassificationCard` |
 | `/platform` §5 | 反馈提交（漏报 / 误报 / 正确 / 其他 + 备注） | `/jobs/:id` → `FeedbackPanel` |
@@ -377,6 +381,7 @@ running | success | failed | insufficient_data
 |---|---|
 | `report.js` 对 `/api/badcases` 404 静默 `return` | 显示错误 Alert |
 | `report.js:55` `markArea: {}` 是**空对象 markArea，等于没画**；`/api/badcases` 返回的 `badcases[].indices` 从未被使用 → Bad Case 详情图看不出异常区间 | 用 `badcases[].indices` 真正画出异常区间 |
+| 对比表的「最高档」列显示的是 `n_top`（最高档上的**点数**），与列名不符 —— `levels[n_top]` 会是 `undefined` | 「最高档」列显示**档位名**（`levels[max(severity)]`），另加「最高档点数」列显示 `n_top` |
 | `platform.js` 6 处 `alert()` | 内联 Alert / `message.error` |
 | `annotate.js:61` 用 `prompt()` 选异常类型 | 下拉选择（spike / contextual / drift / freq_shift / variance_shift / flatline） |
 | `annotate.js` **零错误处理**：fetch 不看 `resp.ok`；`/api/series` 出错时 `items` 不是数组 | 统一走 `client.ts`，错误可见 |

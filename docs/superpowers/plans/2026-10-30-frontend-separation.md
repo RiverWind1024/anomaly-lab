@@ -136,7 +136,6 @@ git commit -m "feat(frontend): 视觉 token 落地（<选定的 design system �
 **Files:**
 - Create: `frontend/package.json`
 - Create: `frontend/tsconfig.json`
-- Create: `frontend/tsconfig.node.json`
 - Create: `frontend/vite.config.ts`
 - Create: `frontend/index.html`
 - Create: `frontend/src/main.tsx`
@@ -226,23 +225,11 @@ Expected: 无报错。**若报 `ETARGET`，说明包名写错了，回 Step 1。
 ⚠️ `noUnusedLocals: true` —— **任何未使用的 import 会让 `tsc -b` 失败**，
 后面每个任务写代码时都要注意（import 了就用，别留着用不上的）。
 
-- [ ] **Step 4: 写 `tsconfig.node.json`**
+- [ ] **Step 4: 写 `vite.config.ts`**
 
-```json
-{
-  "compilerOptions": {
-    "composite": true,
-    "skipLibCheck": true,
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "allowSyntheticDefaultImports": true,
-    "types": ["node"]
-  },
-  "include": ["vite.config.ts"]
-}
-```
-
-- [ ] **Step 5: 写 `vite.config.ts`**
+⚠️ **不建 `tsconfig.node.json`** —— `tsconfig.json` 没有 `references`，`vite.config.ts`
+根本不会被 `tsc -b` 检查；而带 `"types": ["node"]` 的独立配置在没装 `@types/node` 时
+会直接报 `TS2688: Cannot find type definition file for 'node'`。一个 `tsconfig.json` 就够。
 
 ```ts
 /// <reference types="vitest" />
@@ -267,7 +254,7 @@ export default defineConfig({
 })
 ```
 
-- [ ] **Step 6: 写 `index.html` 与 `src/main.tsx`**
+- [ ] **Step 5: 写 `index.html` 与 `src/main.tsx`**
 
 `index.html`：
 
@@ -301,7 +288,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 )
 ```
 
-- [ ] **Step 7: 写测试 setup 与类型声明**
+- [ ] **Step 6: 写测试 setup 与类型声明**
 
 `frontend/src/test/setup.ts`：
 
@@ -315,7 +302,7 @@ import '@testing-library/jest-dom/vitest'
 /// <reference types="vite/client" />
 ```
 
-- [ ] **Step 8: 配 `.gitignore`**
+- [ ] **Step 7: 配 `.gitignore`**
 
 `frontend/.gitignore`：
 
@@ -326,7 +313,7 @@ dist/
 
 仓库根 `.gitignore` 追加一行 `node_modules/`（`dist/` 已存在，已覆盖 `frontend/dist`）。
 
-- [ ] **Step 9: 验证**
+- [ ] **Step 8: 验证**
 
 ```bash
 cd frontend && npm run build
@@ -335,11 +322,11 @@ cd frontend && npm run build
 Expected: 生成 `frontend/dist/index.html` 与 `frontend/dist/assets/*`，**无 TS 报错**
 （特别是不能有 `TS6133: declared but its value is never read`）
 
-- [ ] **Step 10: 提交**
+- [ ] **Step 9: 提交**
 
 ```bash
 git add frontend/package.json frontend/package-lock.json frontend/tsconfig.json \
-        frontend/tsconfig.node.json frontend/vite.config.ts frontend/index.html \
+        frontend/vite.config.ts frontend/index.html \
         frontend/src/main.tsx frontend/src/vite-env.d.ts frontend/src/test/setup.ts \
         frontend/.gitignore .gitignore
 git commit -m "feat(frontend): 初始化 React + TS + Vite 工程骨架"
@@ -371,6 +358,17 @@ function jsonResponse(status: number, body: unknown, headers: Record<string, str
   })
 }
 
+/** request() 的 T 推不出来，catch 回来的值是 unknown —— 用这个助手拿类型安全的 ApiError。 */
+async function expectApiError(promise: Promise<unknown>): Promise<ApiError> {
+  try {
+    await promise
+  } catch (e) {
+    expect(e).toBeInstanceOf(ApiError)
+    return e as ApiError
+  }
+  throw new Error('期望抛 ApiError，但请求成功了')
+}
+
 describe('request', () => {
   it('把 422 的数组 detail 拼成可读文案', async () => {
     const resp = jsonResponse(422, {
@@ -379,29 +377,34 @@ describe('request', () => {
         { loc: ['body', 'query'], msg: 'field required', type: 'missing' },
       ],
     })
-    const err = await request('/api/platform/metrics', { method: 'POST' }, resp).catch((e) => e)
-    expect(err).toBeInstanceOf(ApiError)
+    const err = await expectApiError(request('/api/platform/metrics', { method: 'POST' }, resp))
     expect(err.status).toBe(422)
     expect(err.message).toBe('value is not a valid frequency；field required')
   })
 
   it('字符串 detail 原样透出', async () => {
-    const resp = jsonResponse(404, { detail: '该任务还没有运行记录' })
-    const err = await request('/api/x', {}, resp).catch((e) => e)
-    expect(err.message).toBe('该任务还没有运行记录')
+    const resp = jsonResponse(404, { detail: '序列不存在: abc' })
+    const err = await expectApiError(request('/api/x', {}, resp))
+    expect(err.message).toBe('序列不存在: abc')
   })
 
   it('读取业务态响应头 X-Anomaly-Biz-State', async () => {
     const resp = jsonResponse(404, { detail: '该任务还没有运行记录' }, {
       'X-Anomaly-Biz-State': 'no_run',
     })
-    const err = await request('/api/x', {}, resp).catch((e) => e)
+    const err = await expectApiError(request('/api/x', {}, resp))
     expect(err.bizState).toBe('no_run')
   })
 
-  it('没有响应头时 bizState 为 undefined', async () => {
+  it('响应头缺失时按 detail 前缀兜底', async () => {
+    const resp = jsonResponse(404, { detail: '该任务还没有运行记录' })
+    const err = await expectApiError(request('/api/x', {}, resp))
+    expect(err.bizState).toBe('no_run')
+  })
+
+  it('既没有响应头也不是业务态文案时 bizState 为 undefined', async () => {
     const resp = jsonResponse(404, { detail: '序列不存在: abc' })
-    const err = await request('/api/x', {}, resp).catch((e) => e)
+    const err = await expectApiError(request('/api/x', {}, resp))
     expect(err.bizState).toBeUndefined()
   })
 
@@ -424,7 +427,13 @@ Expected: FAIL —— `Cannot find module './client'`
 
 ```ts
 /** 后端用这个响应头区分「业务态」（空/数据不足）与「真错误」。 */
-export type BizState = 'no_run' | 'no_series' | 'no_data' | 'insufficient_data' | 'no_result'
+export type BizState =
+  | 'no_run'
+  | 'no_series'
+  | 'no_data'
+  | 'insufficient_data'
+  | 'no_algorithms'
+  | 'no_result'
 
 export class ApiError extends Error {
   readonly status: number
@@ -435,6 +444,31 @@ export class ApiError extends Error {
     this.status = status
     this.bizState = bizState
   }
+}
+
+/**
+ * 响应头缺失时的兜底：按 detail **前缀**判定业务态。
+ *
+ * 为什么要兜底：老版本后端（或任何没加头的 404）不该一律显示成红色错误框 ——
+ * 「该任务还没有运行记录」是业务态（spec §6.1）。
+ *
+ * 前缀表与 spec §4.2.1 的 detail 列一一对应。
+ * 后端改文案时**这里要同步改**，否则会退化成红框。
+ */
+const DETAIL_PREFIX_TO_STATE: ReadonlyArray<[string, BizState]> = [
+  ['该任务还没有运行记录', 'no_run'],
+  ['该次运行没有序列结果', 'no_series'],
+  ['该窗口内没有取到数据', 'no_data'],
+  ['有效点仅', 'insufficient_data'],
+  ['没有可对比的算法', 'no_algorithms'],
+  ['该序列还没有检测结果', 'no_result'],
+]
+
+function stateFromDetail(detail: string): BizState | undefined {
+  for (const [prefix, state] of DETAIL_PREFIX_TO_STATE) {
+    if (detail.includes(prefix)) return state
+  }
+  return undefined
 }
 
 /** FastAPI 的 422 把 detail 返成数组 [{loc, msg, type}]，直接渲染会得到 [object Object]。 */
@@ -463,7 +497,8 @@ export async function request<T>(
     } catch {
       /* 非 JSON 响应，保留 statusText */
     }
-    const bizState = resp.headers.get('X-Anomaly-Biz-State') as BizState | null
+    const bizState = (resp.headers.get('X-Anomaly-Biz-State') as BizState | null)
+      ?? stateFromDetail(normalizeDetail(detail))
     throw new ApiError(resp.status, normalizeDetail(detail), bizState ?? undefined)
   }
   return (await resp.json()) as T
@@ -484,7 +519,7 @@ export function postJson<T>(path: string, payload: unknown): Promise<T> {
 cd frontend && npx vitest run src/api/client.test.ts
 ```
 
-Expected: PASS，5 个用例全绿
+Expected: PASS，6 个用例全绿
 
 - [ ] **Step 5: 写 `types.ts`**
 
@@ -568,7 +603,7 @@ export interface CompareDetector {
   baseline: (number | null)[]; lower: (number | null)[]; upper: (number | null)[]
   scores: (number | null)[]; severity: number[]
   n_alerts: number
-  /** 后端已算好的「最高档」：n_top = 最高告警档的序号，别自己从 severity 重算 */
+  /** 最高档上的告警**点数**（不是档位序号）：n_top = (severity == top_level).sum() */
   n_top: number
   is_auto: boolean
 }
@@ -576,7 +611,11 @@ export interface Compare {
   job_id: number; series_id: string; group: string | null
   n: number; sampled: boolean; original_n: number
   timestamps: string[]; values: (number | null)[]
-  metric_class: string; confidence: number; reasons: string[]
+  /** ⚠️ 可为 null：分类器对点数不足的序列给不出形态 */
+  metric_class: string | null
+  /** ⚠️ 可为 null：点数不足 30 时给不出置信度 */
+  confidence: number | null
+  reasons: string[]
   recommendation: { detectors: string[]; rationale: string }
   auto_detector: string; auto_fallback: boolean; auto_rationale: string
   available: string[]
@@ -599,7 +638,9 @@ export interface FeedbackRecord {
 }
 export interface FeedbackList { feedback: FeedbackRecord[] }
 export interface Suggestion {
-  run_id: number; evaluated_detectors: string[]
+  /** ⚠️ 可为 null：任务还没有运行记录时后端返回 null */
+  run_id: number | null
+  evaluated_detectors: string[]
   current_detector: string; suggested_detector: string; detector_changed: boolean
   current_multiplier: number; suggested_multiplier: number; reason: string
   current: unknown | null; best: unknown | null; candidates: unknown[]
@@ -616,12 +657,16 @@ export interface EvaluationRow {
   precision: number; recall: number; f1: number; range_f1: number
   n_truth: number; n_pred: number; elapsed_ms: number
 }
+export interface EvalBucket {
+  n_series: number; n_truth: number; n_pred: number
+  precision: number; recall: number; f1: number; range_f1: number; elapsed_ms: number
+}
 export interface Summary {
   generated_at: string | null; title: string
   summary: {
-    overall?: { precision: number; recall: number; f1: number; range_f1: number }
-    by_detector?: Record<string, unknown>
-    by_metric_class?: Record<string, unknown>
+    overall?: EvalBucket
+    by_detector?: Record<string, EvalBucket>
+    by_metric_class?: Record<string, EvalBucket>
   }
   rows: EvaluationRow[]
 }
@@ -879,6 +924,7 @@ const BIZ_DEFAULT_TITLES: Record<BizState, string> = {
   no_series: '该次运行没有序列结果',
   no_data: '该窗口内没有取到数据',
   insufficient_data: '数据不足',
+  no_algorithms: '没有可对比的算法',
   no_result: '还没有可查看的 Bad Case',
 }
 
@@ -891,16 +937,22 @@ export function StateBoundary<T>(props: StateBoundaryProps<T>) {
   if (isLoading) return <Skeleton active paragraph={{ rows: 6 }} />
 
   if (error) {
-    const biz = error instanceof ApiError ? error.bizState : undefined
+    const apiErr = error instanceof ApiError ? error : null
+    const biz = apiErr?.bizState
     if (biz === 'insufficient_data') {
       // 数据不足是业务态，不是错误态 —— 用 warning 而不是 error
-      return <Alert type="warning" showIcon message="数据不足" description={(error as ApiError).message} />
+      return <Alert type="warning" showIcon message="数据不足" description={apiErr?.message} />
     }
     if (biz) {
+      const title = bizTitles?.[biz] ?? BIZ_DEFAULT_TITLES[biz]
       return (
         <div className="empty-state">
-          <p className="empty-title">{bizTitles?.[biz] ?? BIZ_DEFAULT_TITLES[biz]}</p>
-          <p className="muted">{(error as ApiError).message}</p>
+          <p className="empty-title">{title}</p>
+          {/* ⚠️ 后端的 detail 文案常常与标题一字不差（如 no_run），
+              重复渲染会出现两个同样的文本 —— 相同时只渲染标题。 */}
+          {apiErr?.message && apiErr.message !== title && (
+            <p className="muted">{apiErr.message}</p>
+          )}
           {emptyAction}
         </div>
       )
@@ -1074,6 +1126,35 @@ describe('StateBoundary', () => {
     expect(screen.queryByText(/请求失败/)).toBeNull()
   })
 
+  it('bizState 文案与标题相同时不重复渲染', () => {
+    // 后端 no_run 的 detail 就是「该任务还没有运行记录」，
+    // 与默认标题一字不差 —— 渲染两遍会出现「Found multiple elements」
+    render(
+      <StateBoundary
+        isLoading={false}
+        error={new ApiError(404, '该任务还没有运行记录', 'no_run')}
+        data={undefined}
+      >
+        {() => <div>内容</div>}
+      </StateBoundary>,
+    )
+    expect(screen.getAllByText('该任务还没有运行记录')).toHaveLength(1)
+  })
+
+  it('bizState=no_algorithms 显示对应空态标题', () => {
+    render(
+      <StateBoundary
+        isLoading={false}
+        error={new ApiError(400, '没有可对比的算法', 'no_algorithms')}
+        data={undefined}
+      >
+        {() => <div>内容</div>}
+      </StateBoundary>,
+    )
+    expect(screen.getByText('没有可对比的算法')).toBeTruthy()
+    expect(screen.queryByText(/请求失败/)).toBeNull()
+  })
+
   it('响应体里的 sufficient=false 也进数据不足态', () => {
     render(
       <StateBoundary
@@ -1130,7 +1211,7 @@ Expected: FAIL（组件还没写完或断言不对）
 cd frontend && npx vitest run src/components/StateBoundary.test.tsx
 ```
 
-Expected: PASS，7 个用例
+Expected: PASS，9 个用例
 
 - [ ] **Step 4: 提交**
 
@@ -1156,7 +1237,6 @@ TanStack Query hooks 的标准写法（后续每个域都照抄这个形状）�
 ```ts
 import { useQuery } from '@tanstack/react-query'
 import { getSeries } from '../../api/series'
-import type { SeriesMeta } from '../../api/types'
 
 export const seriesKey = ['series'] as const
 
@@ -1164,6 +1244,8 @@ export function useSeries() {
   return useQuery({ queryKey: seriesKey, queryFn: getSeries })
 }
 ```
+
+⚠️ **不要** import `SeriesMeta` —— 这里用不到，`noUnusedLocals` 会报 TS6133 让 build 失败。
 
 - [ ] **Step 2: 写 `SeriesOverview.tsx`**
 
@@ -1346,6 +1428,9 @@ git commit -m "feat(frontend): 任务列表页与新建任务表单（含告警�
 
 `features/jobs/queries.ts` 追加（**query key 必须与 spec §7.1 一致**）：
 
+⚠️ 同时要**补 import**：`getPreview`、`getRuns`、`getCompare` 来自 `../../api/platform`，
+`useQuery` 来自 `@tanstack/react-query`（Task 8 已经引了 `useQuery`，这里只需加前三个）。
+
 ```ts
 export function usePreview(jobId: number, runId?: number, seriesId?: string) {
   return useQuery({
@@ -1424,7 +1509,7 @@ spec §9 明确要求覆盖「数据不足 / 无基线带 / 有缺失点」三�
 ```tsx
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import { PreviewChart } from './PreviewChart'
+import { PreviewChart, buildPreviewOption } from './PreviewChart'
 
 const base = {
   timestamps: ['2026-10-27T22:49:00', '2026-10-27T22:54:00', '2026-10-27T22:59:00'],
@@ -1446,11 +1531,11 @@ describe('PreviewChart', () => {
   })
 
   it('缺点在图上表现为断线（connectNulls 不开）', () => {
-    // 断言渲染出的 option 里 connectNulls 不是 true
-    // 具体实现：把 option 构造抽成导出的纯函数 buildPreviewOption(props)，测试直接调它
     const option = buildPreviewOption({ ...base, values: [1, null, 3] })
-    const valueSeries = option.series.find((s: { name?: string }) => s.name === '数值')
-    expect(valueSeries.connectNulls).not.toBe(true)
+    const series = option.series as Array<{ name?: string; connectNulls?: boolean }>
+    const valueSeries = series.find((s) => s.name === '数值')
+    expect(valueSeries).toBeTruthy()
+    expect(valueSeries!.connectNulls).not.toBe(true)
   })
 })
 ```
@@ -1458,6 +1543,11 @@ describe('PreviewChart', () => {
 > 为此要把 ECharts option 的构造抽成**导出的纯函数** `buildPreviewOption(props)`，
 > 组件只负责 `ReactECharts option={buildPreviewOption(props)}`。这样才能单测。
 > （顺带这条也让「缺点断线」这种行为可验证，而不是只能肉眼看图。）
+>
+> **返回类型要显式收窄**：`buildPreviewOption` 的返回类型写成
+> `{ series: Array<{ name?: string; connectNulls?: boolean }> }`（或给 `series` 收窄成数组），
+> 否则 `option.series.find(...)` 会在 `strict` 下报
+> `TS2339: Property 'find' does not exist on type 'SeriesOption | SeriesOption[]'`。
 
 - [ ] **Step 4: 写 `PreviewPanel.tsx`**
 
@@ -1598,16 +1688,25 @@ input.checked = previous.length
 | 算法 | `name` |
 | 自动推荐 | `is_auto` → 「✓ 自动推荐」 |
 | 告警数 | `n_alerts` |
-| 最高档 | **用后端已算好的 `n_top`**（它就是最高告警档的序号），映射到 `levels[n_top]` |
+| **最高档** | **档位名** = `levels[Math.max(...severity)]`（如 `P0`） |
+| **最高档点数** | `n_top` = 最高档上的告警**点数**（后端已算好） |
 | 最高分 | `max(scores)` —— ⚠️ **必须过滤 `null`**，否则 `Math.max` 得到 `NaN` |
 | **惯用倍数** | `default_threshold` |
 | 操作 | 「设为任务算法」按钮 |
 
+⚠️ **`n_top` 是点数，不是档位序号** —— 后端算的是
+`n_top = int((severity == top_level).sum())`（`platform/compare.py`）。
+用 `levels[n_top]` 会得到 `undefined`（实测 `n_top` 是 7/10/6 这种数）。
+旧 UI 的「最高档」列显示的其实就是这个点数（列名与内容不符），
+新实现拆成「最高档」（档位名）与「最高档点数」（点数）两列。
+
 「惯用倍数」这一列**不能省** —— spec §8.2-A 与 `PLATFORM.md` 都强调它是解读差异的参照。
 
-最高分的正确写法：
+最高档与最高分的正确写法：
 
 ```ts
+const topSeverity = severity.length ? Math.max(...severity) : 0
+const topLevel = levels[topSeverity] ?? '-'
 const maxScore = scores.reduce<number | null>(
   (acc, s) => (s == null ? acc : acc == null ? s : Math.max(acc, s)),
   null,
@@ -1679,6 +1778,9 @@ git commit -m "feat(frontend): 形态分类结论与告警规则只读展示"
 
 - [ ] **Step 1: 加反馈相关的 hooks**
 
+⚠️ 同时要**补 import**：`getFeedback`、`getSuggestion`、`createFeedback`、`applySuggestion`
+来自 `../../api/platform`；`useQueryClient` 来自 `@tanstack/react-query`。
+
 ```ts
 export function useFeedback(jobId: number) {
   return useQuery({
@@ -1710,7 +1812,10 @@ export function useCreateFeedback() {
 export function useApplySuggestion(jobId: number) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (payload: Parameters<typeof applySuggestion>[0]) => applySuggestion(jobId, payload),
+    // ⚠️ 不能写 `Parameters<typeof applySuggestion>[0]` —— applySuggestion 有两个参数
+    // （jobId, payload），`[0]` 取到的是 jobId，类型直接对不上。
+    mutationFn: (payload: { multiplier: number; detector?: string }) =>
+      applySuggestion(jobId, payload),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: catalogKey })        // 任务配置变了
       void qc.invalidateQueries({ queryKey: ['suggestion', jobId] })
@@ -2087,9 +2192,16 @@ raise HTTPException(
 | `platform_routes.py` | 该次运行没有序列结果 | `no_series` |
 | `platform_routes.py` | 该窗口内没有取到数据 | `no_data` |
 | `platform_routes.py` | 序列 X 有效点仅 N 个，不足以做检测 | `insufficient_data` |
+| `platform_routes.py` | 没有可对比的算法（**400**） | `no_algorithms` |
 | `app.py` | 该序列还没有检测结果 | `no_result` |
 
-**不要**给「序列不存在: X」和 store 的 `ValueError`（如「任务不存在: 999」）加头 —— 那些是真错误。
+**不要**给这些加头（它们是真错误）：
+「序列不存在」、「序列不存在: X」、「当前倍数无效」、「倍数必须为正数」、
+以及 store 的 `ValueError` 原文（如「任务不存在: 999」）。
+
+> 准确清单可以自己 grep 出来核对：
+> `grep -rhn 'detail="' src/anomaly_lab/web/platform_routes.py src/anomaly_lab/web/app.py | sed 's/.*detail="\(.*\)".*/\1/' | sort -u`
+> （f-string 的两条要单独看：`序列不存在: {series_id}` 与 `序列 … 有效点仅 …`）
 
 - [ ] **Step 5: 跑测试确认通过**
 
@@ -2164,6 +2276,22 @@ def test_missing_dist_returns_503_without_crashing(tmp_path):
 def test_existing_api_still_works(make_dist):
     client = TestClient(create_app(frontend_dist=make_dist()))
     assert client.get("/api/health").json() == {"status": "ok"}
+
+
+def test_path_traversal_cannot_escape_dist(tmp_path, make_dist):
+    """⚠️ 安全回归：catch-all 不能变成任意文件读取。
+
+    `dist / '../secret.txt'` 会指向 dist 外的文件；百分号编码的 %2f
+    不会被 httpx 规范化掉，会原样到达 Starlette。
+    """
+    (tmp_path / "secret.txt").write_text("SECRET-CONTENT", encoding="utf-8")
+    client = TestClient(create_app(frontend_dist=make_dist()))
+    for path in ("/..%2fsecret.txt", "/%2e%2e/secret.txt"):
+        resp = client.get(path)
+        assert "SECRET-CONTENT" not in resp.text
+        # 应该回退到 index.html
+        assert resp.status_code == 200
+        assert "根" in resp.text
 ```
 
 - [ ] **Step 2: 跑测试确认失败**
@@ -2225,8 +2353,12 @@ def create_app(
                 status_code=503,
                 detail="前端未构建，请先执行 make frontend-build",
             )
-        target = dist / full_path
-        if full_path and target.is_file():
+        # ⚠️ 安全：必须把 target 限制在 dist 之内。
+        # 直接 `dist / full_path` 会形成**任意文件读取**：
+        # `GET /..%2fsecret.txt` → full_path='../secret.txt' → dist/../secret.txt 存在 → 读出 dist 外的内容。
+        # （字面量 '..' 会被 httpx 规范化掉，但百分号编码的 %2f 会原样到达 Starlette。）
+        target = (dist / full_path).resolve()
+        if full_path and target.is_file() and target.is_relative_to(dist.resolve()):
             return FileResponse(target)
         return FileResponse(dist / "index.html")
 ```
@@ -2236,7 +2368,7 @@ def create_app(
 1. catch-all 必须注册在**所有** `/api/*` 路由之后（Starlette 按注册顺序匹配）。
    当前 `app.py` 里 `app.include_router(build_router(...))` 在第 98 行、各 `@app.*` API 路由在
    106~205 行 —— catch-all 追加在 `create_app` 末尾即可。
-2. catch-all 必须在**现有 `/static` 挂载之后**（那个挂载在 Task 20 才删）。
+2. catch-all 必须在**现有 `/static` 挂载之后**（那个挂载在 **Task 19** 才删 —— 注意不是 Task 20）。
 3. **不要** `app.mount("/", ...)` —— `Mount("/")` 的路径正则 `^/(?P<path>.*)$` 会 FULL 匹配一切路径，
    注册在它之后的 catch-all 永远不会被命中（spec §4.2 B4）。
 
@@ -2250,7 +2382,7 @@ import 需要加 `from fastapi.responses import FileResponse`。
 .venv/bin/python -m pytest tests/web/test_spa.py -v
 ```
 
-Expected: PASS，5 个用例
+Expected: PASS，6 个用例（含路径穿越回归）
 
 - [ ] **Step 5: 跑全量测试**
 
@@ -2441,11 +2573,18 @@ frontend-build:
 	cd frontend && $(NPM) run build
 
 # dev：vite 与 uvicorn 两个进程并行。
-# ⚠️ vite 必须在**子 shell** 里 cd —— 否则外层 shell 的 cwd 停在 frontend/，
-#    而 CONFIG.data_dir = Path("data") 是相对 cwd 的，服务器会去读 frontend/data/。
+#
+# ⚠️ 两个坑：
+#  1. vite 必须在**子 shell** 里 cd —— 否则外层 shell 的 cwd 停在 frontend/，
+#     而 CONFIG.data_dir = Path("data") 是相对 cwd 的，服务器会去读 frontend/data/。
+#  2. `&` 起的后台任务要**杀整个进程组** —— 只 kill $! 杀的是 npm 的 wrapper，
+#     真正的 node vite 子进程会活下来占着 5173 端口。
+#     `set -m` 让后台任务自成一个进程组，然后 `kill -- -$$VPID` 整组收掉。
 dev:
-	@(cd frontend && $(NPM) run dev -- --port 5173 & echo $$! > /tmp/anomaly-lab-vite.pid) ; \
-	trap 'kill $$(cat /tmp/anomaly-lab-vite.pid) 2>/dev/null || true' EXIT INT TERM ; \
+	@set -m; \
+	(cd frontend && $(NPM) run dev -- --port 5173) & \
+	VPID=$$!; \
+	trap 'kill -- -$$VPID 2>/dev/null || true' EXIT INT TERM; \
 	$(PY) -m anomaly_lab.cli serve --port 8000
 ```
 
@@ -2472,11 +2611,12 @@ make serve
 
 Expected: 打开 `http://127.0.0.1:8000/` 是 SPA；刷新 `http://127.0.0.1:8000/jobs/1` 不 404。
 
-另外确认 cwd 没跑偏：
+另外确认 cwd 没跑偏、以及 vite 没被漏掉：
 
 ```bash
 make dev
 # 在另一个终端：ls / 应该有 repo 根的 data/ 与 reports/，而不是 frontend/data/
+# Ctrl-C 后：lsof -i :5173 应该没有输出（vite 已被整组收掉）
 ```
 
 - [ ] **Step 3: 去掉 jinja2 依赖（可选）**
@@ -2518,10 +2658,20 @@ def test_catalog_contract():
     body = client.get("/api/platform/catalog").json()
     for key in ("sources", "metrics", "jobs", "detectors"):
         assert key in body
-    for key in ("id", "name", "kind", "path", "created_at"):
-        assert key in body["sources"][0] if body["sources"] else True
-    for key in ("id", "name", "default_threshold", "score_type", "label"):
+    # ⚠️ detectors **没有 id** —— 它是按 name 索引的字典，不是表记录
+    for key in ("name", "default_threshold", "score_type", "label"):
         assert key in body["detectors"][0]
+    for key in ("id", "name", "kind", "path", "created_at"):
+        assert key in body["sources"][0]
+
+
+def test_series_contract():
+    client = TestClient(create_app())
+    body = client.get("/api/series").json()
+    if not body:
+        return  # 没有数据集时跳过
+    for key in ("series_id", "metric_class", "n", "n_anomalies"):
+        assert key in body[0]
 
 
 def test_summary_contract():
@@ -2529,12 +2679,23 @@ def test_summary_contract():
     body = client.get("/api/summary").json()
     assert "rows" in body
     assert "summary" in body
+    if body["rows"]:
+        for key in (
+            "series_id", "metric_class", "detector", "score_type", "threshold",
+            "precision", "recall", "f1", "range_f1", "n_truth", "n_pred", "elapsed_ms",
+        ):
+            assert key in body["rows"][0]
+
+
+def test_annotate_contract():
+    client = TestClient(create_app())
+    body = client.get("/api/annotate/任意序列").json()
+    assert "series_id" in body
+    assert "intervals" in body
 ```
 
 > `reports/latest/report.json` 不一定存在（CI 上可能没有），所以 `test_summary_contract`
-> 只断言顶层键。若 `rows` 非空，再逐字段断言 `series_id` / `metric_class` / `detector` /
-> `score_type` / `threshold` / `precision` / `recall` / `f1` / `range_f1` /
-> `n_truth` / `n_pred` / `elapsed_ms` 这 12 个字段。
+> 在 `rows` 为空时只断言顶层键。`/api/series` 在没有数据集时返回 `[]`，此时跳过字段断言。
 
 - [ ] **Step 2: 跑测试**
 
