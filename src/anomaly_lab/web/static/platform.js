@@ -113,7 +113,8 @@ async function loadPreview() {
     hint.textContent = `${data.series_id} · 数据不足：${data.insufficient_reason || '有效点太少'}`;
   } else {
     hint.textContent =
-      `${data.series_id} · ${data.detector} · ${data.score_type} · P1>${data.alert_threshold} · P0>${data.critical_threshold}`;
+      `${data.series_id} · ${data.detector} · ${data.score_type} · P1>${data.alert_threshold} · P0>${data.critical_threshold}`
+      + (data.sampled ? ` · 点数过多，已抽样 ${data.timestamps.length}/${data.original_n}` : '');
   }
   render(data);
 }

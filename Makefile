@@ -49,5 +49,5 @@ compliance-check:
 	$(PY) -m anomaly_lab.cli compliance-check
 
 clean:
-	rm -rf .pytest_cache .ruff_cache reports data/synthetic data/cache
+	rm -rf .pytest_cache .ruff_cache reports data/synthetic data/cache data/platform data/platform.db data/platform_smoke
 	find . -name __pycache__ -type d -exec rm -rf {} +

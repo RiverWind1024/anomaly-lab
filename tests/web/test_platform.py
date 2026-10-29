@@ -166,3 +166,45 @@ def test_runs_endpoint_lists_history(tmp_path):
     runs = client.get(f"/api/platform/jobs/{job_id}/runs").json()["runs"]
     assert len(runs) == 1
     assert runs[0]["status"] == "success"
+
+
+def test_preview_downsamples_long_series(tmp_path, monkeypatch):
+    """点数过多时预览要抽样，避免一次返回上兆的 JSON。"""
+    from anomaly_lab.web import platform_routes
+
+    monkeypatch.setattr(platform_routes, "MAX_PREVIEW_POINTS", 20)
+    client, _store = _client(tmp_path)
+    source = client.post(
+        "/api/platform/sources", json={"name": "local", "path": "platform/source.db"}
+    )
+    metric = client.post(
+        "/api/platform/metrics",
+        json={
+            "source_id": source.json()["id"],
+            "name": "demo",
+            "query": "SELECT ts, host, value FROM metrics WHERE $timefilter ORDER BY ts",
+            "time_column": "ts",
+            "value_column": "value",
+            "group_column": "host",
+            "time_format": "iso_utc",
+        },
+    )
+    job = client.post(
+        "/api/platform/jobs",
+        json={
+            "metric_id": metric.json()["id"],
+            "name": "job",
+            "detector": "iqr",
+            "alert_threshold": 1.0,
+            "critical_threshold": 2.0,
+            "window_points": 60,
+            "interval_seconds": 300,
+        },
+    )
+    job_id = job.json()["id"]
+    run_id = client.post(f"/api/platform/jobs/{job_id}/run").json()["run_id"]
+    body = client.get(f"/api/platform/jobs/{job_id}/preview?run_id={run_id}").json()
+    assert body["sampled"] is True
+    assert len(body["values"]) <= 20
+    assert body["original_n"] > 20
+    assert len(body["values"]) == len(body["scores"]) == len(body["severity"])

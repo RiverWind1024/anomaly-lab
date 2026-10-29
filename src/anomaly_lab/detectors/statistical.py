@@ -138,6 +138,7 @@ class SeasonalDetector(TimedDetector):
         self.period = int(period) if period is not None else 24
         self._auto = period is None
         self.default_threshold = float(k)
+        self._phase_cache: tuple | None = None
 
     def fit(self, series: SeriesBundle) -> SeasonalDetector:
         if self._auto:
@@ -156,6 +157,9 @@ class SeasonalDetector(TimedDetector):
 
     def _phase_center_scale(self, values: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """按相位分组求中位数与 MAD；样本不足或尺度为 0 的相位留空。"""
+        cached = self._phase_cache
+        if cached is not None and np.array_equal(cached[0], values):
+            return cached[1], cached[2]
         n = len(values)
         center = np.full(n, np.nan)
         scale = np.full(n, np.nan)
@@ -173,6 +177,7 @@ class SeasonalDetector(TimedDetector):
                 continue
             center[mask] = med
             scale[mask] = mad
+        self._phase_cache = (values.copy(), center, scale)
         return center, scale
 
     def bands(self, series: SeriesBundle, threshold: float) -> Bands:
@@ -204,6 +209,7 @@ class STLResidualDetector(TimedDetector):
             raise ValueError("period 必须大于 1")
         self.period = int(period)
         self.default_threshold = float(k)
+        self._residual_cache: tuple | None = None
 
     def fit(self, series: SeriesBundle) -> STLResidualDetector:
         return self
@@ -216,7 +222,10 @@ class STLResidualDetector(TimedDetector):
         return abs_resid / mad
 
     def _residual_parts(self, values: np.ndarray) -> tuple[np.ndarray, np.ndarray, float]:
-        """返回 (拟合曲线, 残差绝对值, 残差尺度)。"""
+        """返回 (拟合曲线, 残差绝对值, 残差尺度)。结果会缓存，score 与 bands 共用。"""
+        cached = self._residual_cache
+        if cached is not None and np.array_equal(cached[0], values):
+            return cached[1], cached[2], cached[3]
         from statsmodels.tsa.seasonal import STL
 
         fit = STL(values, period=self.period, robust=True).fit()
@@ -225,6 +234,7 @@ class STLResidualDetector(TimedDetector):
         mad = float(np.median(np.abs(abs_resid - np.median(abs_resid)))) * 1.4826
         if mad <= 0:
             mad = float(np.std(abs_resid))
+        self._residual_cache = (values.copy(), fitted, abs_resid, mad)
         return fitted, abs_resid, mad
 
     def bands(self, series: SeriesBundle, threshold: float) -> Bands:

@@ -62,6 +62,16 @@ def _clean(values: np.ndarray) -> list[float | None]:
     return result
 
 
+MAX_PREVIEW_POINTS = 2000
+
+
+def _sample_indices(n: int, max_points: int) -> np.ndarray | None:
+    """点数过多时等间隔抽样；返回 None 表示不需要抽样。"""
+    if n <= max_points:
+        return None
+    return np.unique(np.linspace(0, n - 1, max_points).round().astype(int))
+
+
 def build_router(
     get_store: Callable[[], PlatformStore], get_data_root: Callable[[], Path]
 ) -> APIRouter:
@@ -251,6 +261,22 @@ def build_router(
         lower = payload["lower"]
         upper = payload["upper"]
         has_bands = baseline.size > 0
+
+        values_all = payload["values"]
+        scores_all = payload["scores"]
+        severity_all = payload["severity"]
+        index = _sample_indices(len(values_all), MAX_PREVIEW_POINTS)
+        sampled = index is not None
+        if sampled:
+            values_all = values_all[index]
+            scores_all = scores_all[index]
+            severity_all = severity_all[index]
+            timestamps = timestamps[index]
+            if has_bands:
+                baseline = baseline[index]
+                lower = lower[index]
+                upper = upper[index]
+
         return {
             "run_id": chosen_run,
             "job_id": job.id,
@@ -265,13 +291,15 @@ def build_router(
             "n_p0": entry.get("n_p0", 0),
             "sufficient": bool(entry.get("sufficient", True)),
             "insufficient_reason": "",
+            "sampled": sampled,
+            "original_n": int(entry["n"]),
             "timestamps": [str(item) for item in timestamps.astype("datetime64[s]")],
-            "values": _clean(payload["values"]),
-            "scores": _clean(payload["scores"]),
+            "values": _clean(values_all),
+            "scores": _clean(scores_all),
             "baseline": _clean(baseline) if has_bands else None,
             "lower": _clean(lower) if has_bands else None,
             "upper": _clean(upper) if has_bands else None,
-            "severity": [int(item) for item in payload["severity"]],
+            "severity": [int(item) for item in severity_all],
             "alert_threshold": float(payload["alert_threshold"]),
             "critical_threshold": float(payload["critical_threshold"]),
             "series": entries,

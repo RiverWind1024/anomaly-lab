@@ -4,6 +4,15 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 PY=.venv/bin/python
 DATA_ROOT=${1:-data/platform_smoke}
+
+# 只允许删相对路径下的目录，避免误删
+case "$DATA_ROOT" in
+  ""|"/"|"."|".."|/*)
+    echo "拒绝使用危险的 DATA_ROOT: '$DATA_ROOT'" >&2
+    exit 2
+    ;;
+esac
+
 rm -rf "$DATA_ROOT"
 
 $PY -m anomaly_lab.cli platform-demo --data "$DATA_ROOT"
