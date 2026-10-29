@@ -10,6 +10,9 @@ data/synthetic/
 data/cache/
 data/annotations/
 data/smoke/
+data/platform/
+data/platform_smoke/
+data/platform.db
 .cache/
 notebooks/.ipynb_checkpoints/
 reports/

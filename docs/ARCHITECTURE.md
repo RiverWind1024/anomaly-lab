@@ -26,6 +26,13 @@ flowchart TD
   end
   subgraph Web
     W[web/app.py<br/>FastAPI] --> TPL[templates + static]
+    W --> PR[web/platform_routes.py<br/>平台 API]
+  end
+  subgraph Platform
+    PS[platform/store.py<br/>配置与调度状态] --> SRC[platform/sqlite_source.py<br/>只读取数/拆序列]
+    SRC --> RN[platform/runner.py<br/>检测/分级/落盘]
+    RN --> SCH[platform/scheduler.py<br/>定时调度]
+    SCH --> PS
   end
   L --> F
   L --> B
@@ -33,6 +40,8 @@ flowchart TD
   B --> BT
   W --> L
   W --> RP
+  PR --> PS
+  RN --> B
 ```
 
 ## 模块职责
@@ -45,7 +54,22 @@ flowchart TD
 | `classification/` | 特征、规则分类、推荐表 |
 | `detectors/` | 统一协议 + 统计/深度/预训练实现 |
 | `evaluation/` | 阈值、指标、回测、Bad Case、报告、对照 |
-| `web/` | 标注页、评估页、序列 API |
+| `web/` | 标注页、评估页、平台配置与预览页、序列 API |
+| `platform/` | 平台切片：元数据存储、只读取数、任务执行、定时调度 |
+
+## 平台切片的数据流
+
+```mermaid
+flowchart LR
+  CFG[数据源/指标/任务<br/>platform.db] --> SCH[scheduler<br/>到期执行]
+  SCH --> RUN[runner<br/>取数→检测→分级]
+  RUN --> SRC[sqlite_source<br/>$timefilter + group by 拆序列]
+  RUN --> NPZ[cache/platform/runs/<run_id><br/>index.json + npz]
+  NPZ --> UI[platform.js<br/>基线/上下界/告警点]
+```
+
+- 配置与结果分离：SQLite 只存配置与运行摘要，数组落 npz，避免大对象进数据库。
+- 取数与预处理第一版在进程内完成，边界是 `sqlite_source.load_series` → `SeriesBundle` → 检测器，后续可把前者换成独立 worker。
 
 ## 关键契约
 

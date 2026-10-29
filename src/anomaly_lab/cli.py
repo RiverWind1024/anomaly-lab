@@ -120,6 +120,14 @@ def _build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("serve", help="启动 Web")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8000)
+    p.add_argument(
+        "--no-scheduler",
+        action="store_true",
+        help="不启动内置定时调度（只跑 Web）",
+    )
+
+    p = sub.add_parser("platform-demo", help="生成平台 demo（SQLite 源 + 指标 + 任务）")
+    p.add_argument("--data", type=Path, default=None, help="数据根目录，默认 data")
 
     sub.add_parser("compliance-check", help="合规自检")
 
@@ -350,7 +358,25 @@ def _cmd_serve(args: argparse.Namespace) -> int:
 
     from anomaly_lab.web.app import create_app
 
-    uvicorn.run(create_app(), host=args.host, port=args.port)
+    uvicorn.run(
+        create_app(start_scheduler=not args.no_scheduler),
+        host=args.host,
+        port=args.port,
+    )
+    return 0
+
+
+def _cmd_platform_demo(args: argparse.Namespace) -> int:
+    from anomaly_lab.platform.demo import seed_demo
+
+    data_root = Path(args.data) if args.data else CONFIG.data_dir
+    info = seed_demo(data_root)
+    print(
+        "platform demo 已就绪："
+        f"source={info['source_id']} metric={info['metric_id']} job={info['job_id']} "
+        f"({info['n_points']} 个点, {info['source_path']})"
+    )
+    print("执行：anomaly-lab serve  # 打开 http://127.0.0.1:8000/platform")
     return 0
 
 
@@ -382,6 +408,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_compare(args)
     if args.command == "serve":
         return _cmd_serve(args)
+    if args.command == "platform-demo":
+        return _cmd_platform_demo(args)
     if args.command == "compliance-check":
         return _cmd_compliance(args)
     if args.command in _UNIMPLEMENTED:

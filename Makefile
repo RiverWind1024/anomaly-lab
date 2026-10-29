@@ -2,7 +2,7 @@ PY := .venv/bin/python
 PIP := uv pip
 PIP_INDEX ?= https://pypi.tuna.tsinghua.edu.cn/simple
 
-.PHONY: setup test lint generate classify detect evaluate compare report serve smoke compliance-check clean
+.PHONY: setup test lint generate classify detect evaluate compare report serve smoke platform-demo platform-smoke compliance-check clean
 
 setup:
 	uv python install 3.12
@@ -36,8 +36,14 @@ report:
 serve:
 	$(PY) -m anomaly_lab.cli serve --port 8000
 
+platform-demo:
+	$(PY) -m anomaly_lab.cli platform-demo --data data
+
 smoke:
 	./scripts/smoke.sh
+
+platform-smoke:
+	./scripts/platform_smoke.sh
 
 compliance-check:
 	$(PY) -m anomaly_lab.cli compliance-check

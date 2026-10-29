@@ -4,7 +4,7 @@
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-passing-brightgreen)]()
 
-一个端到端的时序异常检测实验室：**合成数据 → 形态分类 → 算法推荐 → 多类检测器 → 离线评测 → 回归报告 → Web 演示**。目标是完整走通工程闭环，并把每一步的取舍和数据都留下来。
+一个端到端的时序异常检测实验室：**合成数据 → 形态分类 → 算法推荐 → 多类检测器 → 离线评测 → 回归报告 → Web 演示**，外加一条**平台切片**：SQLite 数据源 → SQL 指标 → 定时拉取 → 基线/上下界 → P1/P0 分级 → 前端预览。目标是完整走通工程闭环，并把每一步的取舍和数据都留下来。
 
 > 结论先行：在自建合成集上，分类器 120/120 全对；检测器里去趋势 IQR 的总体 F1 最高（0.510），LSTM 次之（0.458），TCN 未跑赢简单基线（0.279）。这些数字只代表合成分布，不代表真实业务效果。
 
@@ -20,9 +20,14 @@ flowchart LR
   F --> G[回测 + Bad Case 归因]
   G --> H[JSON / Markdown / 图]
   H --> I[FastAPI 标注与评估页]
+  S[SQLite 数据源] --> SP[指标 SQL + $timefilter]
+  SP --> SPL[按 group by 拆序列]
+  SPL --> SCH[定时调度器]
+  SCH --> RUN[检测 + 基线/上下界 + P1/P0]
+  RUN --> PV[平台预览页]
 ```
 
-详见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)、[docs/ALGORITHMS.md](docs/ALGORITHMS.md)、[docs/DATA.md](docs/DATA.md)。
+详见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)、[docs/ALGORITHMS.md](docs/ALGORITHMS.md)、[docs/DATA.md](docs/DATA.md)、[docs/PLATFORM.md](docs/PLATFORM.md)。
 
 ## 5 分钟快速开始
 
@@ -42,10 +47,18 @@ make compare      # 统计 + 自训深度 + Chronos（不可用则跳过）对�
 make serve        # http://127.0.0.1:8000
 ```
 
+平台切片（定时检测）：
+
+```bash
+make platform-demo   # 生成 demo 的 SQLite 源库 + 指标 + 任务
+make serve           # 打开 http://127.0.0.1:8000/platform 配置与预览
+```
+
 端到端冒烟：
 
 ```bash
-./scripts/smoke.sh
+./scripts/smoke.sh          # 离线全流程
+./scripts/platform_smoke.sh # 平台链路：建配置 → 跑任务 → 有告警
 # 或离线模式：ANOMALY_LAB_OFFLINE=1 ./scripts/smoke.sh
 ```
 
@@ -122,12 +135,24 @@ print(diff_reports("reports/iteration/before/report.json",
                    "reports/iteration/after/report.json"))
 ```
 
+## 平台切片（定时检测）
+
+一条可运行的链路：**SQLite 数据源 → 指标 SQL（`$timefilter`）→ 按 group by 拆序列 → 定时拉取 → 基线与双向上下界 → P1/P0 分级 → 前端预览**。
+
+- 配置分三层：数据源 → 指标 → 检测任务，都存在 `data/platform.db`。
+- 任务自己配 P1/P0 分数阈值：分数 > P1 记 P1，> P0 记 P0；「10 突增到 50 算 P0 还是 P1」没有通用答案，所以交给用户配置。
+- 调度器内置在 `serve` 里，重启后错过的窗口只补跑一次；`--no-scheduler` 可关闭。
+- group by 在加载层就拆好，检测器永远只面对一条序列。
+
+细节与限制见 [docs/PLATFORM.md](docs/PLATFORM.md)。
+
 ## 项目边界
 
 - 不接实时流、不做在线学习、不做告警编排；只做离线可复现的检测与评测。
 - 合成集的 100% 分类准确率不代表真实指标；真实场景需要重新标注、校准阈值。
 - 公开集只做泛化验证，UCR 单序列 URL 尚未校准，默认离线缓存模式。
 - Chronos 权重未纳入本次对比；`compare` 会显式记录跳过原因。
+- 平台切片目前只有 SQLite 数据源、进程内预处理、无认证，不适合直接对外提供服务。
 - 不使用任何现职公司的内部数据、代码、文档或系统命名；`compliance-check` 会扫描仓库。
 
 ## License
