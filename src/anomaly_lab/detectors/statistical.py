@@ -111,3 +111,186 @@ class ZScoreDetector(_WindowedDetector):
             center = rolling.mean().shift(1).to_numpy()
             scale = rolling.std(ddof=0).shift(1).to_numpy()
         return center, np.where(scale > 0, scale, np.nan)
+
+
+class SeasonalDetector(TimedDetector):
+    """按周期相位分组，用该相位的中位数/MAD 做稳健标准化。"""
+
+    name = "seasonal"
+    score_type = "zscore"
+    default_threshold = 2.5
+
+    def __init__(self, period: int, k: float = 2.5) -> None:
+        if period <= 1:
+            raise ValueError("period 必须大于 1")
+        self.period = int(period)
+        self.default_threshold = float(k)
+
+    def fit(self, series: SeriesBundle) -> "SeasonalDetector":
+        return self
+
+    def score(self, series: SeriesBundle) -> np.ndarray:
+        values = np.asarray(series.values, dtype=float)
+        n = len(values)
+        scores = np.zeros(n)
+        phases = np.arange(n) % self.period
+        for phase in range(self.period):
+            mask = phases == phase
+            if mask.sum() < 2:
+                continue
+            group = values[mask]
+            center = float(np.median(group))
+            mad = float(np.median(np.abs(group - center))) * 1.4826
+            if mad <= 0:
+                mad = float(np.std(group))
+            if mad <= 0:
+                continue
+            scores[mask] = np.abs(group - center) / mad
+        return np.where(np.isfinite(scores), scores, 0.0)
+
+    def detect(
+        self, series: SeriesBundle, threshold: float | None = None
+    ) -> DetectionResult:
+        return self._timed_detect(series, threshold)
+
+
+class STLResidualDetector(TimedDetector):
+    """STL 分解后的残差绝对值 / 残差 MAD。"""
+
+    name = "stl_residual"
+    score_type = "residual_ratio"
+    default_threshold = 3.5
+
+    def __init__(self, period: int, k: float = 3.5) -> None:
+        if period <= 1:
+            raise ValueError("period 必须大于 1")
+        self.period = int(period)
+        self.default_threshold = float(k)
+
+    def fit(self, series: SeriesBundle) -> "STLResidualDetector":
+        return self
+
+    def score(self, series: SeriesBundle) -> np.ndarray:
+        from statsmodels.tsa.seasonal import STL
+
+        values = np.asarray(series.values, dtype=float)
+        residuals = STL(values, period=self.period, robust=True).fit().resid
+        resid = np.abs(np.asarray(residuals, dtype=float))
+        mad = float(np.median(np.abs(resid - np.median(resid)))) * 1.4826
+        if mad <= 0:
+            mad = float(np.std(resid))
+        if mad <= 0:
+            return np.zeros_like(values)
+        return resid / mad
+
+    def detect(
+        self, series: SeriesBundle, threshold: float | None = None
+    ) -> DetectionResult:
+        return self._timed_detect(series, threshold)
+
+
+class DeseasonalizedIQRDetector(TimedDetector):
+    """先去线性趋势，再对残差跑 IQR。"""
+
+    name = "deseasonalized_iqr"
+    score_type = "zscore"
+    default_threshold = 2.5
+
+    def __init__(self, k: float = 2.5) -> None:
+        self.k = float(k)
+        self.default_threshold = float(k)
+
+    def fit(self, series: SeriesBundle) -> "DeseasonalizedIQRDetector":
+        return self
+
+    def score(self, series: SeriesBundle) -> np.ndarray:
+        values = np.asarray(series.values, dtype=float)
+        t = np.arange(len(values), dtype=float)
+        slope, intercept = np.polyfit(t, values, 1)
+        residuals = values - (slope * t + intercept)
+        return IQRDetector(k=self.k).score(
+            SeriesBundle(
+                series_id=series.series_id,
+                values=residuals,
+                timestamps=series.timestamps,
+                freq=series.freq,
+            )
+        )
+
+    def detect(
+        self, series: SeriesBundle, threshold: float | None = None
+    ) -> DetectionResult:
+        return self._timed_detect(series, threshold)
+
+
+class ChangePointDetector(TimedDetector):
+    """滑窗双样本 t 检验，score = 1 - p 值。"""
+
+    name = "changepoint"
+    score_type = "prob"
+    default_threshold = 0.99
+
+    def __init__(self, min_seg: int = 20, threshold: float = 0.99) -> None:
+        if min_seg < 3:
+            raise ValueError("min_seg 至少为 3")
+        self.min_seg = int(min_seg)
+        self.default_threshold = float(threshold)
+
+    def fit(self, series: SeriesBundle) -> "ChangePointDetector":
+        return self
+
+    def score(self, series: SeriesBundle) -> np.ndarray:
+        from scipy.stats import ttest_ind
+
+        values = np.asarray(series.values, dtype=float)
+        n = len(values)
+        scores = np.zeros(n)
+        w = self.min_seg
+        for cut in range(w, n - w + 1):
+            left = values[cut - w : cut]
+            right = values[cut : cut + w]
+            result = ttest_ind(left, right, equal_var=False)
+            pvalue = float(result.pvalue)
+            scores[cut] = 0.0 if not np.isfinite(pvalue) else 1.0 - pvalue
+        return scores
+
+    def detect(
+        self, series: SeriesBundle, threshold: float | None = None
+    ) -> DetectionResult:
+        return self._timed_detect(series, threshold)
+
+
+class EventCountDetector(TimedDetector):
+    """滑动窗口非零事件数 vs 泊松基线，score = P(基线事件数 < 实际计数)。"""
+
+    name = "event_count"
+    score_type = "prob"
+    default_threshold = 0.99
+
+    def __init__(self, window: int = 50, threshold: float = 0.99) -> None:
+        if window < 2:
+            raise ValueError("window 至少为 2")
+        self.window = int(window)
+        self.default_threshold = float(threshold)
+
+    def fit(self, series: SeriesBundle) -> "EventCountDetector":
+        return self
+
+    def score(self, series: SeriesBundle) -> np.ndarray:
+        from scipy.stats import poisson
+
+        values = np.asarray(series.values, dtype=float)
+        nonzero = (values != 0).astype(float)
+        counts = (
+            pd.Series(nonzero)
+            .rolling(window=self.window, center=True, min_periods=1)
+            .sum()
+            .to_numpy()
+        )
+        lam = max(1e-6, float(nonzero.mean()) * self.window)
+        return poisson.cdf(counts - 1, lam)
+
+    def detect(
+        self, series: SeriesBundle, threshold: float | None = None
+    ) -> DetectionResult:
+        return self._timed_detect(series, threshold)
