@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import json
 import os
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel
 from starlette.requests import Request
 
 from anomaly_lab.config import CONFIG
@@ -26,6 +29,20 @@ def _dataset_dir() -> Path:
     root = _data_root()
     synthetic = root / "synthetic"
     return synthetic if synthetic.exists() else root
+
+
+class AnnotationInterval(BaseModel):
+    start: int
+    end: int
+    type: str = "spike"
+
+
+class AnnotationPayload(BaseModel):
+    intervals: list[AnnotationInterval]
+
+
+def _annotations_path(series_id: str) -> Path:
+    return _data_root() / "annotations" / f"{series_id}.jsonl"
 
 
 def _series_map() -> dict:
@@ -60,6 +77,37 @@ def create_app() -> FastAPI:
             }
             for s in _series_map().values()
         ]
+
+    @app.get("/annotate", response_class=HTMLResponse)
+    def annotate_page(request: Request):
+        return _TEMPLATES.TemplateResponse(request, "annotate.html", {})
+
+    @app.post("/api/annotate/{series_id}")
+    def save_annotation(series_id: str, payload: AnnotationPayload) -> dict:
+        path = _annotations_path(series_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        created_at = datetime.now(UTC).isoformat()
+        with path.open("a", encoding="utf-8") as handle:
+            for item in payload.intervals:
+                record = {
+                    "series_id": series_id,
+                    "start": item.start,
+                    "end": item.end,
+                    "type": item.type,
+                    "created_at": created_at,
+                }
+                handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+        return {"saved": len(payload.intervals), "path": str(path)}
+
+    @app.get("/api/annotate/{series_id}")
+    def list_annotations(series_id: str) -> dict:
+        path = _annotations_path(series_id)
+        records = []
+        if path.exists():
+            for line in path.read_text(encoding="utf-8").splitlines():
+                if line.strip():
+                    records.append(json.loads(line))
+        return {"series_id": series_id, "intervals": records}
 
     @app.get("/api/series/{series_id}/values")
     def series_values(series_id: str) -> dict:
