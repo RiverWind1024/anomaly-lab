@@ -1,0 +1,188 @@
+/**
+ * anomaly-lab 前端设计 token —— 唯一视觉来源。
+ *
+ * 来源：open-design design system `dashboard`（云平台暗色，Professional & Corporate）。
+ * 组件、AntD ConfigProvider、ECharts 配色**只能**引用这里的变量名，不得写死色值。
+ *
+ * ── 主题切换 ────────────────────────────────────────────────
+ * `<html data-theme="dark|light">`
+ *   - 无属性 / dark = dashboard 原设的暗色云平台
+ *   - light = 暗底亮字反相而来的浅色版；语义色按浅底重新取可读值
+ *
+ * ── 颜色的三种角色（取值标准不同，勿混用） ──────────────────
+ *   ink  —— 文字色，落在面板底上，须 ≥4.5:1（WCAG AA）
+ *           对应 --text-* / --accent-text / --status-*
+ *   fill —— 实底色，其上压反色文字，须 ≥4.5:1（与反色文字比）
+ *           对应 --accent（按钮实底）、--surface-*
+ *   mark —— 图表色块（散点/折线），须 ≥3.0:1（图形元素）
+ *           对应 --series-*
+ *
+ * ── 命名对照（AntD token ← 本文件） ─────────────────────────
+ *   colorPrimary       ← --accent
+ *   colorSuccess       ← --status-normal
+ *   colorWarning       ← --status-p1
+ *   colorError         ← --status-p0
+ *   colorInfo          ← --status-info
+ *   colorBgBase        ← --surface-canvas
+ *   colorBgContainer   ← --surface-panel
+ *   colorBorder        ← --border-subtle
+ *   colorText          ← --text-primary
+ *   colorTextSecondary ← --text-secondary
+ *   colorTextTertiary  ← --text-tertiary
+ *
+ * ⚠️ 告警三档（normal / p1 / p0）**只有这三个**，任何地方都不得另起告警色。
+ *    旧代码 `COMPARE_COLORS` 里的 #d97706 与 P1 撞色，已在 --series-* 上规避。
+ */
+
+/* ============================================================ 暗色（默认） */
+:root,
+[data-theme='dark'] {
+  /* ---- 表面 ---- */
+  --surface-canvas: #09090b; /* 页面底色（design system: Surface） */
+  --surface-panel: #111113; /* 面板 / 卡片 */
+  --surface-raised: #1a1a1e; /* 悬浮 / 选中 / 表头 */
+  --surface-sunken: #101012; /* 输入框等内嵌表面 */
+  --border-subtle: #26262b; /* 常规描边 */
+  --border-strong: #3f3f46; /* 强调描边 / focus */
+
+  /* ---- 文本（ink） ---- */
+  --text-primary: #fafafa; /* design system: Text */
+  --text-secondary: #a1a1aa;
+  --text-tertiary: #7f7f8b;
+  --text-inverse: #ffffff; /* 落在 --accent 实底上的文字 */
+
+  /* ---- 语义色 ---- */
+  --accent: #0c5cab; /* design system: Primary —— 主操作实底，白字压其上 6.70:1 */
+  --accent-hover: #0a4a8a; /* design system: Secondary */
+  --accent-text: #6da8e3; /* accent 作文字用（链接）时的可读值 */
+  --accent-subtle: rgba(12, 92, 171, 0.24); /* 选中底 / 徽章底 */
+
+  --status-normal: #10b981; /* design system: Success —— severity 0 */
+  --status-p1: #f59e0b; /* design system: Warning —— severity 1 */
+  --status-p0: #ef4444; /* design system: Danger  —— severity 2 */
+  --status-info: #3b82f6;
+
+  --status-normal-subtle: rgba(16, 185, 129, 0.16);
+  --status-p1-subtle: rgba(245, 158, 11, 0.16);
+  --status-p0-subtle: rgba(239, 68, 68, 0.16);
+  --status-info-subtle: rgba(59, 130, 246, 0.16);
+
+  /* ---- 图表分类色（mark） ----
+     刻意与告警三档错开 ≥35° 色相 —— 分类色是「算法身份」，
+     若与 P1/P0 撞色，读图的人会把某条算法线误当成告警。 */
+  --series-1: #7acd51;
+  --series-2: #81c4da;
+  --series-3: #6161d1;
+  --series-4: #c079d8;
+  --series-5: #ca4994;
+
+  /* ---- 提示条 ---- */
+  --hint-bg: rgba(59, 130, 246, 0.08);
+  --hint-border: rgba(59, 130, 246, 0.25);
+  --warn-bg: rgba(245, 158, 11, 0.09);
+  --warn-border: rgba(245, 158, 11, 0.3);
+
+  /* ---- 阴影（暗底下用描边 + 微光，不用重投影） ---- */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 8px 28px rgba(0, 0, 0, 0.6);
+  --focus-ring: 0 0 0 2px var(--surface-canvas), 0 0 0 4px var(--accent);
+}
+
+/* ============================================================ 浅色 */
+[data-theme='light'] {
+  /* ---- 表面 ---- */
+  --surface-canvas: #f5f5f6;
+  --surface-panel: #ffffff;
+  --surface-raised: #efeff1;
+  --surface-sunken: #ffffff;
+  --border-subtle: #e2e2e5;
+  --border-strong: #c7c7cd;
+
+  /* ---- 文本（ink） ---- */
+  --text-primary: #18181b;
+  --text-secondary: #52525b;
+  --text-tertiary: #71717d;
+  --text-inverse: #ffffff;
+
+  /* ---- 语义色（浅底重新取值以保对比度） ---- */
+  --accent: #0c5cab;
+  --accent-hover: #0a4a8a;
+  --accent-text: #1d66af;
+  --accent-subtle: rgba(12, 92, 171, 0.1);
+
+  --status-normal: #218362;
+  --status-p1: #a06a0d;
+  --status-p0: #ca1616;
+  --status-info: #1d66af;
+
+  --status-normal-subtle: rgba(33, 131, 98, 0.12);
+  --status-p1-subtle: rgba(160, 106, 13, 0.12);
+  --status-p0-subtle: rgba(202, 22, 22, 0.1);
+  --status-info-subtle: rgba(29, 102, 175, 0.1);
+
+  /* ---- 图表分类色（mark，浅底取深一档） ---- */
+  --series-1: #59a333;
+  --series-2: #3c9dbe;
+  --series-3: #6464ce;
+  --series-4: #bd77d4;
+  --series-5: #c74d94;
+
+  /* ---- 提示条 ---- */
+  --hint-bg: rgba(37, 99, 235, 0.06);
+  --hint-border: rgba(37, 99, 235, 0.22);
+  --warn-bg: rgba(160, 106, 13, 0.08);
+  --warn-border: rgba(160, 106, 13, 0.28);
+
+  /* ---- 阴影（浅底下才有投影的用武之地） ---- */
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
+  --shadow-md: 0 2px 8px rgba(16, 24, 40, 0.08);
+  --shadow-lg: 0 8px 28px rgba(16, 24, 40, 0.12);
+  --focus-ring: 0 0 0 2px var(--surface-canvas), 0 0 0 4px var(--accent);
+}
+
+/* ============================================================ 排版 */
+:root {
+  --font-sans: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* design system 字号刻度 12 / 14 / 16 / 20 / 24 / 32 */
+  --text-xs: 12px;
+  --text-sm: 14px;
+  --text-md: 16px;
+  --text-lg: 20px;
+  --text-xl: 24px;
+
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  --line-height-tight: 1.2;
+  --line-height-normal: 1.5;
+}
+
+/* ============================================================ 间距与圆角 */
+:root {
+  /* 8pt baseline grid */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-full: 999px;
+
+  --layout-sidebar-width: 232px;
+  --layout-max-width: 1560px;
+
+  --motion-fast: 150ms;
+  --motion-normal: 250ms;
+  --ease: cubic-bezier(0.2, 0, 0.2, 1);
+}
