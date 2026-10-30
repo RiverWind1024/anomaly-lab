@@ -346,6 +346,19 @@ export interface EvaluationRow {
   n_truth: number
   n_pred: number
   elapsed_ms: number
+  /** 序列的时间范围（秒精度）—— 用于按时间筛选。 */
+  start_ts?: string
+  end_ts?: string
+  /** 数据来源维度 —— 用于按来源聚合。 */
+  source?: string
+}
+
+/** 被排除的检测记录（评估报告里可恢复）。 */
+export interface Exclusion {
+  key: string
+  series_id: string
+  detector: string
+  excluded_at: string
 }
 
 export interface Summary {
@@ -357,6 +370,8 @@ export interface Summary {
     by_metric_class?: Record<string, EvalBucket>
   }
   rows: EvaluationRow[]
+  /** 被排除的检测记录（可在「已排除记录」里恢复）。 */
+  excluded?: Exclusion[]
 }
 
 // ─────────────────────────────────────────── Bad Case /api/badcases

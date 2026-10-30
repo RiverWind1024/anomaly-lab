@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import type { ReactElement } from 'react'
 import { describe, expect, it } from 'vitest'
@@ -56,9 +56,20 @@ function renderTable(node: ReactElement) {
 }
 
 describe('EvaluationTable', () => {
-  it('9 列一个都不能少', () => {
-    renderTable(<EvaluationTable isLoading={false} error={null} summary={summary} />)
-    const headers = screen
+  it('原有 9 列一个都不能少（另加一列操作）', () => {
+    renderTable(
+      <EvaluationTable
+        isLoading={false}
+        error={null}
+        summary={summary}
+        excludedCount={0}
+        onOpenExcluded={() => {}}
+        onExclude={() => {}}
+      />,
+    )
+    // 明细表与聚合表都有表头 —— 只看明细表的
+    const detail = document.querySelector('.evaluation__detail') as HTMLElement
+    const headers = within(detail)
       .getAllByRole('columnheader')
       .map((th) => th.textContent ?? '')
       .filter((text, index, all) => all.indexOf(text) === index)
@@ -72,11 +83,21 @@ describe('EvaluationTable', () => {
       'Range-F1',
       '真值点',
       '预测点',
+      '操作',
     ])
   })
 
   it('总体行显示 precision / recall / f1 / range_f1', () => {
-    renderTable(<EvaluationTable isLoading={false} error={null} summary={summary} />)
+    renderTable(
+      <EvaluationTable
+        isLoading={false}
+        error={null}
+        summary={summary}
+        excludedCount={0}
+        onOpenExcluded={() => {}}
+        onExclude={() => {}}
+      />,
+    )
     const overall = document.querySelector('.evaluation__overall')
     expect(overall?.textContent).toContain('0.500')
     expect(overall?.textContent).toContain('0.400')
@@ -88,13 +109,25 @@ describe('EvaluationTable', () => {
         isLoading={false}
         error={null}
         summary={{ ...summary, rows: [], summary: {} }}
+        excludedCount={0}
+        onOpenExcluded={() => {}}
+        onExclude={() => {}}
       />,
     )
     expect(screen.getByText('暂无报告，请先运行 evaluate')).toBeTruthy()
   })
 
   it('序列列链到检测记录页', () => {
-    renderTable(<EvaluationTable isLoading={false} error={null} summary={summary} />)
+    renderTable(
+      <EvaluationTable
+        isLoading={false}
+        error={null}
+        summary={summary}
+        excludedCount={0}
+        onOpenExcluded={() => {}}
+        onExclude={() => {}}
+      />,
+    )
     const link = screen.getByText('demo-1') as HTMLAnchorElement
     expect(link.getAttribute('href')).toBe('/detections?series_id=demo-1')
   })

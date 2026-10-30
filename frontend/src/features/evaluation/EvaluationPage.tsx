@@ -1,16 +1,22 @@
-import { useMemo } from 'react'
-import { Space, Table, Tag } from 'antd'
+import { useMemo, useState } from 'react'
+import { Button, DatePicker, Drawer, Popconfirm, Select, Space, Table, Tag } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { Link } from 'react-router-dom'
 import { StateBoundary } from '../../components/StateBoundary'
-import type { EvaluationRow, Summary } from '../../api/types'
+import { aggregateBy } from './aggregate'
+import { DIMENSIONS, distinctValues, filterRows, type DimensionKey, type EvaluationFilters } from './filters'
+import { useExcludeEvaluationRow, useRestoreEvaluationRow, useSummary } from './queries'
 import { metricClassLabel } from '../jobs/ClassificationCard'
-import { useSummary } from './queries'
+import type { EvaluationRow, Exclusion, Summary as SummaryType } from '../../api/types'
 
 export interface EvaluationTableProps {
   isLoading: boolean
   error: unknown
-  summary: Summary | undefined
+  summary: SummaryType | undefined
+  /** 已排除的记录 —— 详情抽屉里可以恢复。 */
+  excludedCount: number
+  onOpenExcluded: () => void
+  onExclude: (row: EvaluationRow) => void
 }
 
 /** 数值格式化：非有限值显示「—」（旧版 report.js 的 fmt）。 */
@@ -24,7 +30,22 @@ export function fmtMetric(value: number | null | undefined): string {
  * 列（照搬旧 `report.js` 的 9 列，**一列都不能少**）：
  * 序列 / 形态 / 检测器 / Precision / Recall / F1 / Range-F1 / 真值点 / 预测点
  */
-export function EvaluationTable({ isLoading, error, summary }: EvaluationTableProps) {
+export function EvaluationTable({
+  isLoading,
+  error,
+  summary,
+  excludedCount,
+  onOpenExcluded,
+  onExclude,
+}: EvaluationTableProps) {
+  const [filters, setFilters] = useState<EvaluationFilters>({})
+  const [dimension, setDimension] = useState<DimensionKey>('metric_class')
+
+  const rows = summary?.rows ?? []
+  const filtered = useMemo(() => filterRows(rows, filters), [rows, filters])
+  const buckets = useMemo(() => aggregateBy(filtered, dimension), [filtered, dimension])
+  const overall = summary?.summary?.overall
+
   const columns: ColumnsType<EvaluationRow> = useMemo(
     () => [
       {
@@ -103,11 +124,84 @@ export function EvaluationTable({ isLoading, error, summary }: EvaluationTablePr
         align: 'right',
         render: (value: number) => <span className="mono">{value}</span>,
       },
+      {
+        title: '操作',
+        key: 'actions',
+        width: 110,
+        render: (_value, row) => (
+          <Popconfirm
+            title="排除这条检测记录？"
+            description="它会从报告里移除，可以在「已排除记录」里恢复。"
+            okText="排除"
+            cancelText="取消"
+            onConfirm={() => onExclude(row)}
+          >
+            <Button size="small">删除</Button>
+          </Popconfirm>
+        ),
+      },
     ],
-    [],
+    [onExclude],
   )
 
-  const overall = summary?.summary?.overall
+  const bucketColumns: ColumnsType<(typeof buckets)[number]> = [
+    { title: '分组', dataIndex: 'key', key: 'key', width: 200 },
+    {
+      title: '序列数',
+      dataIndex: 'n_series',
+      key: 'n_series',
+      width: 100,
+      align: 'right',
+    },
+    {
+      title: 'Precision',
+      dataIndex: 'precision',
+      key: 'precision',
+      width: 110,
+      align: 'right',
+      render: (value: number) => <span className="mono">{fmtMetric(value)}</span>,
+    },
+    {
+      title: 'Recall',
+      dataIndex: 'recall',
+      key: 'recall',
+      width: 110,
+      align: 'right',
+      render: (value: number) => <span className="mono">{fmtMetric(value)}</span>,
+    },
+    {
+      title: 'F1',
+      dataIndex: 'f1',
+      key: 'f1',
+      width: 100,
+      align: 'right',
+      render: (value: number) => <span className="mono">{fmtMetric(value)}</span>,
+    },
+    {
+      title: 'Range-F1',
+      dataIndex: 'range_f1',
+      key: 'range_f1',
+      width: 120,
+      align: 'right',
+      render: (value: number) => <span className="mono">{fmtMetric(value)}</span>,
+    },
+    {
+      title: '真值点',
+      dataIndex: 'n_truth',
+      key: 'n_truth',
+      width: 100,
+      align: 'right',
+    },
+    {
+      title: '预测点',
+      dataIndex: 'n_pred',
+      key: 'n_pred',
+      width: 100,
+      align: 'right',
+    },
+  ]
+
+  const hasFilters = Object.values(filters).some((value) => value !== undefined)
 
   return (
     <StateBoundary
@@ -140,14 +234,98 @@ export function EvaluationTable({ isLoading, error, summary }: EvaluationTablePr
               </span>
             </div>
           )}
-          <Table<EvaluationRow>
-            rowKey="series_id"
-            columns={columns}
-            dataSource={data.rows}
-            size="middle"
-            pagination={{ pageSize: 20, showSizeChanger: true }}
-            scroll={{ x: 'max-content' }}
-          />
+          <div className="evaluation__toolbar">
+            <Space wrap>
+              <DatePicker.RangePicker
+                showTime
+                placeholder={['开始时间', '结束时间']}
+                onChange={(range) => {
+                  const [from, to] = range ?? []
+                  setFilters((prev) => ({
+                    ...prev,
+                    since: from ? from.format('YYYY-MM-DDTHH:mm:ss') : undefined,
+                    until: to ? to.format('YYYY-MM-DDTHH:mm:ss') : undefined,
+                  }))
+                }}
+              />
+              <Select
+                allowClear
+                placeholder="全部算法"
+                style={{ width: 150 }}
+                value={filters.detector}
+                onChange={(value) => setFilters((prev) => ({ ...prev, detector: value }))}
+                options={distinctValues(rows, (row) => row.detector).map((v) => ({
+                  value: v,
+                  label: v,
+                }))}
+              />
+              <Select
+                allowClear
+                placeholder="全部形态"
+                style={{ width: 150 }}
+                value={filters.metricClass}
+                onChange={(value) => setFilters((prev) => ({ ...prev, metricClass: value }))}
+                options={distinctValues(rows, (row) => row.metric_class).map((v) => ({
+                  value: v,
+                  label: v,
+                }))}
+              />
+              <Select
+                allowClear
+                placeholder="全部来源"
+                style={{ width: 150 }}
+                value={filters.source}
+                onChange={(value) => setFilters((prev) => ({ ...prev, source: value }))}
+                options={distinctValues(rows, (row) => row.source ?? '').map((v) => ({
+                  value: v,
+                  label: v,
+                }))}
+              />
+              {hasFilters ? (
+                <Button size="small" onClick={() => setFilters({})}>
+                  重置
+                </Button>
+              ) : null}
+              <Button size="small" onClick={onOpenExcluded}>
+                已排除记录{excludedCount > 0 ? `（${excludedCount}）` : ''}
+              </Button>
+            </Space>
+          </div>
+
+          <div className="evaluation__meta muted">
+            筛选后 {filtered.length} / {data.rows.length} 条记录
+          </div>
+
+          <section className="evaluation__aggregate">
+            <div className="evaluation__aggregate-head">
+              <h2 className="section__title">聚合统计</h2>
+              <Select
+                value={dimension}
+                style={{ width: 160 }}
+                onChange={setDimension}
+                options={DIMENSIONS.map((item) => ({ value: item.key, label: `按${item.label}` }))}
+              />
+            </div>
+            <Table<(typeof buckets)[number]>
+              rowKey="key"
+              columns={bucketColumns}
+              dataSource={buckets}
+              size="small"
+              pagination={false}
+              scroll={{ x: 'max-content' }}
+            />
+          </section>
+
+          <div className="evaluation__detail">
+            <Table<EvaluationRow>
+              rowKey={(row) => `${row.series_id}-${row.detector}`}
+              columns={columns}
+              dataSource={filtered}
+              size="middle"
+              pagination={{ pageSize: 20, showSizeChanger: true }}
+              scroll={{ x: 'max-content' }}
+            />
+          </div>
         </div>
       )}
     </StateBoundary>
@@ -157,6 +335,12 @@ export function EvaluationTable({ isLoading, error, summary }: EvaluationTablePr
 /** 评估报告页。路由级组件 —— 取数 + 传参。 */
 export function EvaluationPage() {
   const summary = useSummary()
+  const exclude = useExcludeEvaluationRow()
+  const restore = useRestoreEvaluationRow()
+  const [excludedOpen, setExcludedOpen] = useState(false)
+
+  const excluded: Exclusion[] = summary.data?.excluded ?? []
+
   return (
     <div className="page">
       <header className="page__header">
@@ -170,7 +354,44 @@ export function EvaluationPage() {
         isLoading={summary.isPending}
         error={summary.error}
         summary={summary.data}
+        excludedCount={excluded.length}
+        onOpenExcluded={() => setExcludedOpen(true)}
+        onExclude={(row) => exclude.mutate({ series_id: row.series_id, detector: row.detector })}
       />
+
+      <Drawer
+        open={excludedOpen}
+        onClose={() => setExcludedOpen(false)}
+        title="已排除的检测记录"
+        width={520}
+      >
+        {excluded.length === 0 ? (
+          <p className="muted">还没有排除任何记录。</p>
+        ) : (
+          <ul className="excluded-list">
+            {excluded.map((item) => (
+              <li key={item.key}>
+                <Space size="small" wrap>
+                  <span className="mono">{item.series_id}</span>
+                  <Tag>{item.detector}</Tag>
+                  <Button
+                    size="small"
+                    loading={restore.isPending}
+                    onClick={() =>
+                      restore.mutate({
+                        series_id: item.series_id,
+                        detector: item.detector,
+                      })
+                    }
+                  >
+                    恢复
+                  </Button>
+                </Space>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Drawer>
     </div>
   )
 }

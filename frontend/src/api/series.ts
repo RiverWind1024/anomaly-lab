@@ -1,5 +1,5 @@
 import { request, postJson } from './client'
-import type { Badcases, SeriesMeta, SeriesValues, Summary } from './types'
+import type { Badcases, Exclusion, SeriesMeta, SeriesValues, Summary } from './types'
 
 /** `/api/series*` 与 `/api/summary`、`/api/badcases` 的端点封装。 */
 
@@ -12,14 +12,6 @@ export const getSummary = () => request<Summary>('/api/summary')
 
 export const getBadcases = (seriesId: string) =>
   request<Badcases>(`/api/badcases?series_id=${encodeURIComponent(seriesId)}`)
-
-/** 被排除的检测记录。 */
-export interface Exclusion {
-  key: string
-  series_id: string
-  detector: string
-  excluded_at: string
-}
 
 export const getExclusions = () =>
   request<{ excluded: Exclusion[] }>('/api/evaluation/exclusions')

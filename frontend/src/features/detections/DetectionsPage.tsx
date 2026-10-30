@@ -5,7 +5,7 @@ import { DetectionChart } from './DetectionChart'
 import { badcaseLabel } from './detectionChart'
 import { useDetectionDetail } from './queries'
 import { useSummary } from '../evaluation/queries'
-import type { Badcase } from '../../api/types'
+import type { Badcase, EvaluationRow } from '../../api/types'
 
 /**
  * 检测记录页。
@@ -48,7 +48,7 @@ export function DetectionsPage() {
             {(data) => (
               <List
                 size="small"
-                dataSource={data.rows}
+                dataSource={data.rows as EvaluationRow[]}
                 renderItem={(row) => (
                   <List.Item
                     className={row.series_id === seriesId ? 'is-active' : undefined}
