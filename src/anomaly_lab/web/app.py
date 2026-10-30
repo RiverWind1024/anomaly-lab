@@ -17,6 +17,7 @@ from anomaly_lab.config import CONFIG
 from anomaly_lab.contracts import DetectionResult
 from anomaly_lab.data.loader import load_dataset
 from anomaly_lab.evaluation.badcases import attribute_badcases
+from anomaly_lab.evaluation.exclusions import ExclusionStore, exclusion_key
 from anomaly_lab.platform.store import PlatformStore
 from anomaly_lab.web.biz_state import biz_headers
 from anomaly_lab.web.platform_routes import build_router
@@ -40,6 +41,17 @@ class AnnotationInterval(BaseModel):
 
 class AnnotationPayload(BaseModel):
     intervals: list[AnnotationInterval]
+
+
+class ExclusionIn(BaseModel):
+    """要排除的一条检测记录（序列 + 算法）。"""
+
+    series_id: str
+    detector: str
+
+
+def _exclusions(data_root: Path) -> ExclusionStore:
+    return ExclusionStore(Path(data_root) / "evaluation_exclusions.json")
 
 
 def _report_path() -> Path:
@@ -160,9 +172,41 @@ def create_app(
     @app.get("/api/summary")
     def summary() -> dict:
         path = _report_path()
+        excluded = _exclusions(data_root).list()
         if not path.exists():
-            return {"generated_at": None, "title": "", "summary": {}, "rows": []}
-        return json.loads(path.read_text(encoding="utf-8"))
+            return {
+                "generated_at": None,
+                "title": "",
+                "summary": {},
+                "rows": [],
+                "excluded": excluded,
+            }
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        # 被排除的记录不展示 —— 但清单要一起给前端，
+        # 好让用户看到「我排除了哪些」并能恢复。
+        keys = {item["key"] for item in excluded}
+        payload["rows"] = [
+            row
+            for row in payload.get("rows", [])
+            if exclusion_key(str(row.get("series_id", "")), str(row.get("detector", "")))
+            not in keys
+        ]
+        payload["excluded"] = excluded
+        return payload
+
+    @app.get("/api/evaluation/exclusions")
+    def list_exclusions() -> dict:
+        return {"excluded": _exclusions(data_root).list()}
+
+    @app.post("/api/evaluation/exclusions")
+    def add_exclusion(payload: ExclusionIn) -> dict:
+        return _exclusions(data_root).add(payload.series_id, payload.detector)
+
+    @app.delete("/api/evaluation/exclusions/{series_id}/{detector}")
+    def remove_exclusion(series_id: str, detector: str) -> dict:
+        if not _exclusions(data_root).remove(series_id, detector):
+            raise HTTPException(status_code=404, detail="该记录不在排除清单里")
+        return {"restored": True}
 
     @app.get("/api/badcases")
     def badcases(series_id: str) -> dict:

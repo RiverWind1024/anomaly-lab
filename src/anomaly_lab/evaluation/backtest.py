@@ -27,6 +27,23 @@ class BacktestRow:
     n_truth: int
     n_pred: int
     elapsed_ms: float
+    #: 序列的时间范围（ISO 秒精度）—— 前端按它筛时间
+    start_ts: str = ""
+    end_ts: str = ""
+    #: 数据来源维度 —— 前端按它聚合（形态 / 算法 / 来源）
+    source: str = ""
+
+
+def series_span(series: SeriesBundle) -> tuple[str, str]:
+    """序列的时间范围（ISO 秒精度）。
+
+    ⚠️ datetime64[ns] 直接 str() 会带上 9 位纳秒 —— 前端按字符串比较
+    时间范围时格式必须一致，所以统一截到秒。
+    """
+    stamps = series.timestamps
+    if len(stamps) == 0:
+        return "", ""
+    return str(stamps[0])[:19], str(stamps[-1])[:19]
 
 
 def _mask_to_intervals(mask: np.ndarray) -> list[tuple[int, int]]:
@@ -58,6 +75,7 @@ def backtest_detector(
         _, _, range_f1 = range_based_prf(
             _mask_to_intervals(pred), _mask_to_intervals(truth)
         )
+        start_ts, end_ts = series_span(series)
         rows.append(
             BacktestRow(
                 series_id=series.series_id,
@@ -72,6 +90,9 @@ def backtest_detector(
                 n_truth=int(truth.sum()),
                 n_pred=int(pred.sum()),
                 elapsed_ms=float(result.elapsed_ms),
+                start_ts=start_ts,
+                end_ts=end_ts,
+                source=str(series.meta.get("source", "synthetic")),
             )
         )
     return rows

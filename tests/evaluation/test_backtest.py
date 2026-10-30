@@ -18,6 +18,17 @@ def test_backtest_returns_one_row_per_series():
         assert r.elapsed_ms >= 0
 
 
+def test_backtest_rows_carry_time_range_and_source():
+    """回测记录要带时间范围与来源维度 —— 前端按它们筛选与聚合。"""
+    series = [generate_series("stationary", n=300, seed=71)]
+    row = backtest_detector(series, IQRDetector)[0]
+    assert row.start_ts and row.end_ts
+    assert row.start_ts <= row.end_ts
+    # 秒精度（不带纳秒）—— 前端按字符串比时间，格式必须统一
+    assert len(row.start_ts) == 19
+    assert row.source
+
+
 def test_badcase_attribution_produces_reasons():
     s = generate_series(
         "periodic", n=600, seed=61, n_anomalies=1, anomaly_types=["spike"]

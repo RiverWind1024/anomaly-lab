@@ -23,7 +23,7 @@ from anomaly_lab.detectors.statistical import (
     STLResidualDetector,
     ZScoreDetector,
 )
-from anomaly_lab.evaluation.backtest import BacktestRow, _mask_to_intervals
+from anomaly_lab.evaluation.backtest import BacktestRow, _mask_to_intervals, series_span
 from anomaly_lab.evaluation.compare import CompareRow, compare_detectors
 from anomaly_lab.evaluation.metrics import precision_recall_f1, range_based_prf
 from anomaly_lab.evaluation.report import build_report
@@ -68,6 +68,7 @@ def _load_rows(data_dir: Path) -> list[BacktestRow]:
             _, _, range_f1 = range_based_prf(
                 _mask_to_intervals(pred), _mask_to_intervals(truth)
             )
+            start_ts, end_ts = series_span(series)
             rows.append(
                 BacktestRow(
                     series_id=series.series_id,
@@ -82,6 +83,9 @@ def _load_rows(data_dir: Path) -> list[BacktestRow]:
                     n_truth=int(truth.sum()),
                     n_pred=int(pred.sum()),
                     elapsed_ms=float(data["elapsed_ms"]),
+                    start_ts=start_ts,
+                    end_ts=end_ts,
+                    source=str(series.meta.get("source", "synthetic")),
                 )
             )
     return rows

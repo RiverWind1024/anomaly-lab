@@ -6,7 +6,7 @@
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { getCatalog, createSource, createMetric, createJob, toggleJob, runJob, getRuns, getPreview, getCompare, createFeedback, getFeedback, getSuggestion, applySuggestion, getAlerts, deleteJob, deleteMetric, deleteSource, updateSource, updateMetric } from './platform'
-import { getSeries, getSeriesValues, getSummary, getBadcases } from './series'
+import { getSeries, getSeriesValues, getSummary, getBadcases, getExclusions, excludeEvaluationRow, restoreEvaluationRow } from './series'
 import { getAnnotations, saveAnnotations } from './annotate'
 
 /**
@@ -41,6 +41,8 @@ const EXPECTED_PATHS = [
   '/api/series/{id}/values',
   '/api/summary',
   '/api/badcases',
+  '/api/evaluation/exclusions',
+  '/api/evaluation/exclusions/{id}/{id}',
   '/api/annotate/{id}',
 ]
 
@@ -60,6 +62,11 @@ function normalize(url: string): string {
   // 形如 /api/series/<something>/values 里的 <something>
   path = path.replace(/\/api\/series\/[^/]+\/values/, '/api/series/{id}/values')
   path = path.replace(/\/api\/annotate\/[^/]+$/, '/api/annotate/{id}')
+  // 排除端点有两个动态段（序列 + 算法）
+  path = path.replace(
+    /\/api\/evaluation\/exclusions\/[^/]+\/[^/]+$/,
+    '/api/evaluation/exclusions/{id}/{id}',
+  )
   // 纯数字的路径段（job id 等）→ {id}
   path = path.replace(/\/\d+(?=\/|$)/g, '/{id}')
   return path
@@ -108,6 +115,9 @@ describe('端点封装层', () => {
     await getSeriesValues('a:b')
     await getSummary()
     await getBadcases('a:b')
+    await getExclusions()
+    await excludeEvaluationRow('a:b', 'iqr')
+    await restoreEvaluationRow('a:b', 'iqr')
     await getAnnotations('a:b')
     await saveAnnotations('a:b', [{ start: 0, end: 1, type: 'anomaly' }])
 
