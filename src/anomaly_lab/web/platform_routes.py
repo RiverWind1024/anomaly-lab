@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from anomaly_lab.platform import runner as runner_module
+from anomaly_lab.platform.alert_events import collect_alert_events
 from anomaly_lab.platform.alerts import (
     band_multiplier,
     band_multiplier_or_none,
@@ -150,6 +151,38 @@ def build_router(
             "metrics": [asdict(item) for item in store.list_metrics()],
             "jobs": [asdict(item) for item in store.list_jobs()],
             "detectors": detector_catalog(),
+        }
+
+    @router.get("/api/platform/alerts")
+    def alerts(
+        job_id: int | None = None,
+        level: str | None = None,
+        series_id: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+    ) -> dict:
+        """跨任务汇总告警事件。
+
+        ⚠️ 以每个任务的**最新一次运行**为准 —— 滚动窗口下同一段异常会被
+        连续多次运行重复报出，扫全部历史 run 会刷屏。
+        """
+        store = _store()
+        events, skipped = collect_alert_events(store, get_data_root())
+        if job_id is not None:
+            events = [item for item in events if item.job_id == job_id]
+        if level:
+            events = [item for item in events if item.level == level]
+        if series_id:
+            events = [item for item in events if item.series_id == series_id]
+        if since:
+            events = [item for item in events if item.start_ts >= since]
+        if until:
+            events = [item for item in events if item.start_ts <= until]
+        return {
+            "events": [asdict(item) for item in events],
+            "levels": sorted({item.level for item in events}),
+            "jobs": [{"id": job.id, "name": job.name} for job in store.list_jobs()],
+            "skipped": skipped,
         }
 
     @router.post("/api/platform/sources")

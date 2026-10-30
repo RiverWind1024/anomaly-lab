@@ -10,11 +10,14 @@ npz 里（逐点的 `severity` 数组），本模块负责把它读出来、聚�
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 
 from anomaly_lab.platform.alerts import SEVERITY_NORMAL
+from anomaly_lab.platform.runner import read_run_index, run_dir
 
 
 @dataclass(frozen=True)
@@ -114,3 +117,89 @@ def events_from_series(
             )
         )
     return events
+
+
+def collect_alert_events(
+    store, data_root: Path
+) -> tuple[list[AlertEvent], list[dict]]:
+    """汇总所有任务的告警事件。
+
+    返回 `(events, skipped)`：
+    - `events` 按开始时间**倒序**（新的在前）
+    - `skipped` 列出没被纳入统计的任务与原因 —— **不能静默消失**
+
+    ⚠️ 以每个任务的**最新一次运行**为准 —— 滚动窗口下同一段异常会被
+    连续多次运行重复报出。
+    """
+    events: list[AlertEvent] = []
+    skipped: list[dict] = []
+    for job in store.list_jobs():
+        try:
+            metric = store.get_metric(job.metric_id)
+        except ValueError:
+            skipped.append(
+                {"job_id": job.id, "name": job.name, "reason": "指标已不存在"}
+            )
+            continue
+        run = store.latest_run(job.id)
+        if run is None:
+            skipped.append(
+                {"job_id": job.id, "name": job.name, "reason": "还没有运行记录"}
+            )
+            continue
+        if run.status == "failed":
+            skipped.append(
+                {
+                    "job_id": job.id,
+                    "name": job.name,
+                    "reason": f"最近一次运行失败：{run.error or '未知原因'}",
+                }
+            )
+            continue
+        if run.status == "running":
+            skipped.append(
+                {"job_id": job.id, "name": job.name, "reason": "最近一次运行尚未结束"}
+            )
+            continue
+        try:
+            index = read_run_index(data_root, run.id)
+        except (FileNotFoundError, OSError):
+            skipped.append(
+                {"job_id": job.id, "name": job.name, "reason": "运行结果文件缺失"}
+            )
+            continue
+        for entry in index.get("series", []):
+            file_name = entry.get("file")
+            if file_name is None:
+                # 数据不足的序列没有检测结果 —— 不是告警，但也不是「一切正常」
+                continue
+            path = run_dir(data_root, run.id) / file_name
+            if not path.exists():
+                skipped.append(
+                    {
+                        "job_id": job.id,
+                        "name": job.name,
+                        "reason": f"序列结果文件缺失：{entry.get('series_id')}",
+                    }
+                )
+                continue
+            with np.load(path, allow_pickle=False) as payload:
+                events.extend(
+                    events_from_series(
+                        severity=payload["severity"],
+                        timestamps=payload["timestamps"].astype("datetime64[ns]"),
+                        scores=payload["scores"],
+                        levels=json.loads(str(payload["levels"])),
+                        job_id=job.id,
+                        job_name=job.name,
+                        metric_id=metric.id,
+                        metric_name=metric.name,
+                        series_id=str(payload["series_id"]),
+                        group=entry.get("group"),
+                        detector=str(payload["detector"]),
+                        score_type=str(payload["score_type"]),
+                        run_id=run.id,
+                    )
+                )
+    events.sort(key=lambda item: (item.start_ts, item.job_id), reverse=True)
+    return events, skipped
