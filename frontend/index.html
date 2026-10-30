@@ -4,6 +4,20 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>anomaly-lab</title>
+    <script>
+      // 在首屏绘制前定好主题，避免闪烁。
+      // 优先级与 useThemeMode.ts 的 readInitialMode 一致。
+      ;(function () {
+        var mode = 'dark'
+        try {
+          var saved = localStorage.getItem('anomaly-lab-theme')
+          if (saved === 'dark' || saved === 'light') mode = saved
+          else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches)
+            mode = 'light'
+        } catch (e) {}
+        document.documentElement.setAttribute('data-theme', mode)
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>
