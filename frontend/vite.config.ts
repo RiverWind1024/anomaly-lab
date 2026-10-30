@@ -53,5 +53,10 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
+    // 限制 worker 数：机器负载高时（CPU 抢占 / I/O 繁忙），
+    // 默认按 CPU 核数开 worker 会让测试进程抢不到调度而**卡住**
+    // （实测 load average 88 时，默认 16 worker 直接挂住不退出）。
+    // 2 个 worker 跑完 78 个用例只要 6 秒，没必要开更多。
+    maxWorkers: 2,
   },
 })

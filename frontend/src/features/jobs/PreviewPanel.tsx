@@ -1,8 +1,9 @@
 import { Alert, Button, Space, Tag } from 'antd'
 import { StateBoundary } from '../../components/StateBoundary'
 import type { Preview } from '../../api/types'
+import { AlertRulesView } from './AlertRulesView'
+import { DetectionConclusion } from './ClassificationCard'
 import { PreviewChart } from './PreviewChart'
-import { formatRules } from './rules'
 
 export interface PreviewPanelProps {
   isLoading: boolean
@@ -48,8 +49,19 @@ export function PreviewPanel({ isLoading, error, preview, onRun, running = false
                 </Tag>
               )}
             </Space>
-            <span className="muted">规则 {formatRules(p.alert_rules)}</span>
           </div>
+
+          {/* 检测结论：形态 / 回退 / score_type / 推荐理由（旧 UI 的 hint 主体） */}
+          <DetectionConclusion
+            requestedDetector={p.requested_detector}
+            detector={p.detector}
+            metricClass={p.metric_class}
+            fallback={p.detector_fallback}
+            scoreType={p.score_type}
+            rationale={p.detector_rationale}
+          />
+
+          <AlertRulesView rules={p.alert_rules} />
 
           {p.sampled && (
             <Alert

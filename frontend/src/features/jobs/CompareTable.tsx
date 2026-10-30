@@ -147,25 +147,3 @@ export function CompareTable({
   )
 }
 
-/** 对比区上方的结论摘要（照搬旧 `renderCompareTable` 的 hint 文案）。 */
-export function CompareSummary({
-  metricClass,
-  confidence,
-  autoDetector,
-  autoFallback,
-  recommended,
-}: {
-  metricClass: string | null
-  confidence: number | null
-  autoDetector: string
-  autoFallback: boolean
-  recommended: string[]
-}) {
-  const confidenceText = confidence === null ? '—' : confidence.toFixed(2)
-  return (
-    <p className="muted compare-summary">
-      形态 {metricClass || '未判定'}（置信度 {confidenceText}） · auto 选用 {autoDetector}
-      {autoFallback ? '（回退）' : ''} · 推荐候选 {recommended.join('/') || '—'}
-    </p>
-  )
-}

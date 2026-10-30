@@ -3,7 +3,8 @@ import { useParams } from 'react-router-dom'
 import { message } from 'antd'
 import { CompareChart } from '../features/jobs/CompareChart'
 import { ComparePicker } from '../features/jobs/ComparePicker'
-import { CompareSummary, CompareTable } from '../features/jobs/CompareTable'
+import { CompareTable } from '../features/jobs/CompareTable'
+import { ClassificationCard } from '../features/jobs/ClassificationCard'
 import { PreviewPanel } from '../features/jobs/PreviewPanel'
 import { RunsView, SeriesSelect } from '../features/jobs/RunsView'
 import {
@@ -109,12 +110,20 @@ export function JobDetailPage() {
 
         {compare.data && (
           <>
-            <CompareSummary
-              metricClass={compare.data.metric_class}
-              confidence={compare.data.confidence}
+            <ClassificationCard
+              metricClass={compare.data.metric_class ?? ''}
+              confidence={compare.data.confidence ?? 0}
+              reasons={compare.data.reasons}
               autoDetector={compare.data.auto_detector}
+              autoRationale={compare.data.auto_rationale}
               autoFallback={compare.data.auto_fallback}
-              recommended={compare.data.recommendation.detectors}
+              /* 分数类型要取 **auto 选中的那个算法** 的 ——
+                 卡片讲的是 auto 推荐，不能拿 detectors[0] 的（顺序不保证是 auto）。 */
+              scoreType={
+                compare.data.detectors.find((d) => d.is_auto)?.score_type ??
+                compare.data.detectors[0]?.score_type ??
+                ''
+              }
             />
             <CompareChart
               timestamps={compare.data.timestamps}
@@ -124,7 +133,9 @@ export function JobDetailPage() {
             <CompareTable
               detectors={compare.data.detectors}
               levels={compare.data.levels}
-              applyingDetector={toggleJob.isPending ? toggleJob.variables?.payload.detector ?? null : null}
+              applyingDetector={
+                toggleJob.isPending ? toggleJob.variables?.payload.detector ?? null : null
+              }
               onApplyDetector={handleApplyDetector}
             />
           </>
