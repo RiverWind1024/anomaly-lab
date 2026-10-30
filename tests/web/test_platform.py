@@ -9,7 +9,7 @@ from anomaly_lab.platform.timeutil import to_iso, utcnow
 from anomaly_lab.web.app import create_app
 
 
-def _client(tmp_path):
+def _client(tmp_path, frontend_dist=None):
     db = tmp_path / "platform" / "source.db"
     db.parent.mkdir()
     conn = sqlite3.connect(db)
@@ -24,7 +24,11 @@ def _client(tmp_path):
     conn.commit()
     conn.close()
     store = PlatformStore(tmp_path / "platform.db")
-    app = create_app(platform_store=store, platform_data_root=tmp_path)
+    app = create_app(
+        platform_store=store,
+        platform_data_root=tmp_path,
+        frontend_dist=frontend_dist,
+    )
     return TestClient(app), store
 
 
@@ -81,11 +85,12 @@ def test_create_source_metric_job_run_and_preview(tmp_path):
     assert body["alert_threshold"] == 1.0
 
 
-def test_platform_page_and_catalog(tmp_path):
-    client, _ = _client(tmp_path)
+def test_platform_page_and_catalog(tmp_path, make_dist):
+    client, _ = _client(tmp_path, frontend_dist=make_dist())
+    # 旧 Jinja 页面已退役，/platform 由 SPA 提供（深链接不 404）
     page = client.get("/platform")
     assert page.status_code == 200
-    assert "定时检测" in page.text
+    assert "根" in page.text
     catalog = client.get("/api/platform/catalog").json()
     assert "seasonal" in [item["name"] for item in catalog["detectors"]]
     assert catalog["sources"] == []
