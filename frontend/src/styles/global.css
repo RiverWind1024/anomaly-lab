@@ -83,6 +83,44 @@ pre {
   font-size: var(--text-sm);
 }
 
+/* 任务列表的规则列 —— 过长时省略，tooltip 里看全 */
+.job-list__rules {
+  display: inline-block;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+.job-list__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+/* 告警规则输入 */
+.rules-input {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.rules-input__errors {
+  margin-top: var(--space-1);
+}
+
+.rules-input__error-list {
+  margin: 0;
+  padding-left: var(--space-4);
+}
+
+.rules-input__hint,
+.rules-input__parsed {
+  margin: 0;
+}
+
 /* 弱化文字 */
 .muted {
   color: var(--text-tertiary);

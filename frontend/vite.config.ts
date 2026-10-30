@@ -1,16 +1,18 @@
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 
+/** 后端地址。可用 `API_TARGET` 覆盖（默认 8000 = make serve 的端口）。 */
+const API_TARGET = process.env.API_TARGET ?? 'http://127.0.0.1:8000'
+
 export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
     proxy: {
       // dev 时前端与 API 同源（浏览器只跟 :5173 说话），所以不需要 CORS
-      '/api': { target: 'http://127.0.0.1:8000', changeOrigin: true },
+      '/api': { target: API_TARGET, changeOrigin: true },
     },
-  },
-  build: {
+  },  build: {
     outDir: 'dist',
     emptyOutDir: true,
     rollupOptions: {
