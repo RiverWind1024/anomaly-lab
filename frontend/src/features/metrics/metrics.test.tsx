@@ -63,6 +63,7 @@ describe('MetricList', () => {
     catalog: undefined,
     onDelete: () => {},
     deletingId: null,
+    onEdit: () => {},
   }
 
   it('列：ID / 名称 / 数据源 / 分组列 / 频率 / 操作', () => {

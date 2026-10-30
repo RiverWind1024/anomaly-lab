@@ -4,11 +4,13 @@ import { SourceCreateButton, SourceForm } from '../features/sources/SourceForm'
 import { SourceList } from '../features/sources/SourceList'
 import { useCatalog } from '../features/jobs/queries'
 import { useDeleteSource } from '../features/delete/queries'
+import type { CatalogSource } from '../api/types'
 
 /** 数据源页。 */
 export function SourcesPage() {
   const catalog = useCatalog()
   const [formOpen, setFormOpen] = useState(false)
+  const [editing, setEditing] = useState<CatalogSource | null>(null)
   const deleteSource = useDeleteSource()
 
   const handleDelete = (sourceId: number) => {
@@ -39,9 +41,20 @@ export function SourcesPage() {
         catalog={catalog.data}
         onDelete={handleDelete}
         deletingId={deleteSource.isPending ? (deleteSource.variables ?? null) : null}
+        onEdit={(source) => {
+          setEditing(source)
+          setFormOpen(true)
+        }}
       />
 
-      <SourceForm open={formOpen} onCancel={() => setFormOpen(false)} />
+      <SourceForm
+        open={formOpen}
+        editing={editing}
+        onCancel={() => {
+          setFormOpen(false)
+          setEditing(null)
+        }}
+      />
     </div>
   )
 }

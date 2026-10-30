@@ -1,4 +1,4 @@
-import { Table } from 'antd'
+import { Button, Space, Table } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { StateBoundary } from '../../components/StateBoundary'
 import { DeleteButton } from '../delete/DeleteButton'
@@ -13,6 +13,8 @@ export interface MetricListProps {
   catalog: Catalog | undefined
   onDelete: (metricId: number) => void
   deletingId: number | null
+  /** 点「编辑」时把整行交给页面（页面负责打开弹窗）。 */
+  onEdit: (metric: CatalogMetric) => void
 }
 
 /**
@@ -26,6 +28,7 @@ export function MetricList({
   catalog,
   onDelete,
   deletingId,
+  onEdit,
 }: MetricListProps) {
   const sourceNameById = new Map((sources ?? []).map((s) => [s.id, s.name]))
 
@@ -70,16 +73,21 @@ export function MetricList({
     {
       title: '操作',
       key: 'actions',
-      width: 100,
+      width: 160,
       render: (_value, row) => (
-        <DeleteButton
-          target="metric"
-          id={row.id}
-          name={row.name}
-          catalog={catalog}
-          loading={deletingId === row.id}
-          onConfirm={() => onDelete(row.id)}
-        />
+        <Space size="small">
+          <Button size="small" onClick={() => onEdit(row)}>
+            编辑
+          </Button>
+          <DeleteButton
+            target="metric"
+            id={row.id}
+            name={row.name}
+            catalog={catalog}
+            loading={deletingId === row.id}
+            onConfirm={() => onDelete(row.id)}
+          />
+        </Space>
       ),
     },
   ]

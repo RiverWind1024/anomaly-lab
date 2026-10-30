@@ -1,7 +1,8 @@
 import { Button, Form, Input, Modal, Space } from 'antd'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { createSource } from '../../api/platform'
+import { createSource, updateSource } from '../../api/platform'
 import { catalogKey } from '../jobs/queries'
+import type { CatalogSource } from '../../api/types'
 
 export interface SourceFormValues {
   name: string
@@ -10,24 +11,33 @@ export interface SourceFormValues {
 }
 
 /**
- * 新增数据源表单。
+ * 数据源表单 —— 新增与编辑共用。
  *
  * ⚠️ 后端 `SourceIn` 只有三个字段：name / path / kind（默认 sqlite）。
+ *
+ * 编辑时**提交全量字段**（后端只改传了的，但全量更简单也更不容易出错）。
  */
 export function SourceForm({
   open,
+  editing,
   onCancel,
   onSuccess,
 }: {
   open: boolean
+  /** 传了就是编辑模式；不传是新增。 */
+  editing?: CatalogSource | null
   onCancel: () => void
   onSuccess?: () => void
 }) {
   const [form] = Form.useForm<SourceFormValues>()
   const qc = useQueryClient()
+  const isEditing = Boolean(editing)
 
-  const create = useMutation({
-    mutationFn: (payload: Parameters<typeof createSource>[0]) => createSource(payload),
+  const save = useMutation({
+    mutationFn: (payload: { name: string; path: string; kind: string }) =>
+      isEditing && editing
+        ? updateSource(editing.id, payload)
+        : createSource(payload),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: catalogKey })
       form.resetFields()
@@ -38,7 +48,7 @@ export function SourceForm({
 
   const handleOk = async () => {
     const values = await form.validateFields()
-    create.mutate({
+    save.mutate({
       name: values.name.trim(),
       path: values.path.trim(),
       kind: values.kind,
@@ -48,17 +58,26 @@ export function SourceForm({
   return (
     <Modal
       open={open}
-      title="新增数据源"
+      title={isEditing ? '编辑数据源' : '新增数据源'}
       onCancel={onCancel}
       onOk={handleOk}
-      okText="新增"
+      okText={isEditing ? '保存' : '新增'}
       cancelText="取消"
-      confirmLoading={create.isPending}
+      confirmLoading={save.isPending}
       destroyOnClose
       width={560}
     >
-      {create.error instanceof Error && <p className="form-error">{create.error.message}</p>}
-      <Form form={form} layout="vertical" requiredMark="optional">
+      {save.error instanceof Error && <p className="form-error">{save.error.message}</p>}
+      <Form
+        form={form}
+        layout="vertical"
+        requiredMark="optional"
+        initialValues={
+          editing
+            ? { name: editing.name, path: editing.path, kind: editing.kind }
+            : { kind: 'sqlite' }
+        }
+      >
         <Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入名称' }]}>
           <Input placeholder="local" />
         </Form.Item>
@@ -70,7 +89,7 @@ export function SourceForm({
         >
           <Input placeholder="platform/source.db" spellCheck={false} />
         </Form.Item>
-        <Form.Item name="kind" label="类型" initialValue="sqlite">
+        <Form.Item name="kind" label="类型">
           <Input placeholder="sqlite" spellCheck={false} />
         </Form.Item>
       </Form>

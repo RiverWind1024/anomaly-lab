@@ -4,11 +4,13 @@ import { MetricForm } from '../features/metrics/MetricForm'
 import { MetricList } from '../features/metrics/MetricList'
 import { useCatalog } from '../features/jobs/queries'
 import { useDeleteMetric } from '../features/delete/queries'
+import type { CatalogMetric } from '../api/types'
 
 /** 指标页。 */
 export function MetricsPage() {
   const catalog = useCatalog()
   const [formOpen, setFormOpen] = useState(false)
+  const [editing, setEditing] = useState<CatalogMetric | null>(null)
   const deleteMetric = useDeleteMetric()
 
   const sources = catalog.data?.sources ?? []
@@ -47,12 +49,20 @@ export function MetricsPage() {
         catalog={catalog.data}
         onDelete={handleDelete}
         deletingId={deleteMetric.isPending ? (deleteMetric.variables ?? null) : null}
+        onEdit={(metric) => {
+          setEditing(metric)
+          setFormOpen(true)
+        }}
       />
 
       <MetricForm
         open={formOpen}
         sources={sources}
-        onCancel={() => setFormOpen(false)}
+        editing={editing}
+        onCancel={() => {
+          setFormOpen(false)
+          setEditing(null)
+        }}
       />
     </div>
   )

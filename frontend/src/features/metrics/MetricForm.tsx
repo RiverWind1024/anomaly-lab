@@ -1,7 +1,7 @@
 import { Form, Input, Modal, Select } from 'antd'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { createMetric } from '../../api/platform'
-import type { CatalogSource } from '../../api/types'
+import { createMetric, updateMetric } from '../../api/platform'
+import type { CatalogMetric, CatalogSource } from '../../api/types'
 import { catalogKey } from '../jobs/queries'
 import { freqValidator } from './freq'
 
@@ -42,26 +42,33 @@ export const MISSING_POLICY_OPTIONS = [
 export const DEFAULT_METRIC_QUERY = 'SELECT ts, host, value FROM metrics WHERE $timefilter ORDER BY ts'
 
 /**
- * 新增指标表单。
+ * 指标表单 —— 新增与编辑共用。
  *
  * 字段照搬旧 `platform.html` 的全部字段，一个都不能少。
  */
 export function MetricForm({
   open,
   sources,
+  editing,
   onCancel,
   onSuccess,
 }: {
   open: boolean
   sources: CatalogSource[]
+  /** 传了就是编辑模式；不传是新增。 */
+  editing?: CatalogMetric | null
   onCancel: () => void
   onSuccess?: () => void
 }) {
   const [form] = Form.useForm<MetricFormValues>()
   const qc = useQueryClient()
+  const isEditing = Boolean(editing)
 
-  const create = useMutation({
-    mutationFn: (payload: Parameters<typeof createMetric>[0]) => createMetric(payload),
+  const save = useMutation({
+    mutationFn: (payload: Parameters<typeof createMetric>[0]) =>
+      isEditing && editing
+        ? updateMetric(editing.id, payload)
+        : createMetric(payload),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: catalogKey })
       form.resetFields()
@@ -81,13 +88,14 @@ export function MetricForm({
       return
     }
     const group = values.group_column?.trim()
-    create.mutate({
+    save.mutate({
       source_id: values.source_id,
       name: values.name.trim(),
       query: values.query,
       time_column: values.time_column.trim(),
       value_column: values.value_column.trim(),
       // 分组列可空 —— 留空就传 null，别传空串
+      // （后端用 exclude_unset，null 表示**显式清空**）
       group_column: group ? group : null,
       time_format: values.time_format as Parameters<typeof createMetric>[0]['time_format'],
       source_timezone: values.source_timezone.trim() || 'UTC',
@@ -101,29 +109,44 @@ export function MetricForm({
   return (
     <Modal
       open={open}
-      title="新增指标"
+      title={isEditing ? '编辑指标' : '新增指标'}
       onCancel={onCancel}
       onOk={handleOk}
-      okText="新增"
+      okText={isEditing ? '保存' : '新增'}
       cancelText="取消"
-      confirmLoading={create.isPending}
+      confirmLoading={save.isPending}
       destroyOnClose
       width={760}
     >
-      {create.error instanceof Error && <p className="form-error">{create.error.message}</p>}
+      {save.error instanceof Error && <p className="form-error">{save.error.message}</p>}
       <Form
         form={form}
         layout="vertical"
         requiredMark="optional"
-        initialValues={{
-          time_column: 'ts',
-          value_column: 'value',
-          time_format: 'iso_utc',
-          source_timezone: 'UTC',
-          missing_policy: 'drop',
-          freq: '5min',
-          query: DEFAULT_METRIC_QUERY,
-        }}
+        initialValues={
+          editing
+            ? {
+                source_id: editing.source_id,
+                name: editing.name,
+                query: editing.query,
+                time_column: editing.time_column,
+                value_column: editing.value_column,
+                group_column: editing.group_column ?? '',
+                time_format: editing.time_format,
+                source_timezone: editing.source_timezone,
+                missing_policy: editing.missing_policy,
+                freq: editing.freq,
+              }
+            : {
+                time_column: 'ts',
+                value_column: 'value',
+                time_format: 'iso_utc',
+                source_timezone: 'UTC',
+                missing_policy: 'drop',
+                freq: '5min',
+                query: DEFAULT_METRIC_QUERY,
+              }
+        }
       >
         <div className="metric-form__grid">
           <Form.Item

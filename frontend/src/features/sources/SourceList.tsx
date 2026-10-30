@@ -1,4 +1,4 @@
-import { Table } from 'antd'
+import { Button, Space, Table } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { StateBoundary } from '../../components/StateBoundary'
 import { DeleteButton } from '../delete/DeleteButton'
@@ -12,6 +12,8 @@ export interface SourceListProps {
   catalog: Catalog | undefined
   onDelete: (sourceId: number) => void
   deletingId: number | null
+  /** 点「编辑」时把整行交给页面（页面负责打开弹窗）。 */
+  onEdit: (source: CatalogSource) => void
 }
 
 /**
@@ -24,6 +26,7 @@ export function SourceList({
   catalog,
   onDelete,
   deletingId,
+  onEdit,
 }: SourceListProps) {
   const columns: ColumnsType<CatalogSource> = [
     {
@@ -55,16 +58,21 @@ export function SourceList({
     {
       title: '操作',
       key: 'actions',
-      width: 100,
+      width: 160,
       render: (_value, row) => (
-        <DeleteButton
-          target="source"
-          id={row.id}
-          name={row.name}
-          catalog={catalog}
-          loading={deletingId === row.id}
-          onConfirm={() => onDelete(row.id)}
-        />
+        <Space size="small">
+          <Button size="small" onClick={() => onEdit(row)}>
+            编辑
+          </Button>
+          <DeleteButton
+            target="source"
+            id={row.id}
+            name={row.name}
+            catalog={catalog}
+            loading={deletingId === row.id}
+            onConfirm={() => onDelete(row.id)}
+          />
+        </Space>
       ),
     },
   ]
