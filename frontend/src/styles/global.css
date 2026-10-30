@@ -422,3 +422,24 @@ html.theme-switching *::after {
 .suggestion__candidates p {
   margin: 0 0 var(--space-1);
 }
+
+/* 页面工具条 */
+.page__toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* 表单里的错误提示（提交失败时） */
+.form-error {
+  margin: 0 0 var(--space-3);
+  color: var(--status-p0);
+  font-size: var(--text-sm);
+}
+
+/* 指标表单的字段网格 */
+.metric-form__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0 var(--space-3);
+}

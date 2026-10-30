@@ -13,6 +13,12 @@ const SeriesOverviewPage = lazy(() =>
   import('./pages/SeriesOverviewPage').then((m) => ({ default: m.SeriesOverviewPage })),
 )
 const JobsPage = lazy(() => import('./pages/JobsPage').then((m) => ({ default: m.JobsPage })))
+const SourcesPage = lazy(() =>
+  import('./pages/SourcesPage').then((m) => ({ default: m.SourcesPage })),
+)
+const MetricsPage = lazy(() =>
+  import('./pages/MetricsPage').then((m) => ({ default: m.MetricsPage })),
+)
 const JobDetailPage = lazy(() =>
   import('./pages/JobDetailPage').then((m) => ({ default: m.JobDetailPage })),
 )
@@ -31,8 +37,8 @@ export function AppRoutes() {
     <Suspense fallback={<Skeleton active paragraph={{ rows: 8 }} />}>
       <Routes>
         <Route path="/" element={<SeriesOverviewPage />} />
-        <Route path="/sources" element={<Placeholder title="数据源" />} />
-        <Route path="/metrics" element={<Placeholder title="指标" />} />
+        <Route path="/sources" element={<SourcesPage />} />
+        <Route path="/metrics" element={<MetricsPage />} />
         <Route path="/jobs" element={<JobsPage />} />
         <Route path="/jobs/:jobId" element={<JobDetailPage />} />
         <Route path="/evaluation" element={<EvaluationPage />} />
