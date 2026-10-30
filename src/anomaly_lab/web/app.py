@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -66,10 +66,23 @@ def _series_map() -> dict:
         return {}
 
 
+def _find_frontend_dist() -> Path | None:
+    """从本文件向上找 frontend/dist。
+
+    比写死 parents[3] 稳 —— wheel 安装下 parents[3] 指向 site-packages。
+    """
+    for parent in Path(__file__).resolve().parents:
+        candidate = parent / "frontend" / "dist"
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
 def create_app(
     platform_store: PlatformStore | None = None,
     platform_data_root: Path | None = None,
     start_scheduler: bool = False,
+    frontend_dist: Path | None = None,
 ) -> FastAPI:
     data_root = Path(platform_data_root or _data_root())
     store = platform_store
@@ -218,5 +231,38 @@ def create_app(
             "values": [float(v) for v in series.values],
             "labels": [int(v) for v in series.labels],
         }
+
+    # ---------- SPA 托管 ----------
+    # ⚠️ 必须在所有 /api/* 路由与 /static 挂载之后（Starlette 按注册顺序匹配）。
+    # ⚠️ 不要用 app.mount("/", ...)：Mount("/") 的正则会 FULL 匹配一切路径，
+    #    注册在它之后的 catch-all 永远不会被命中。
+    dist = frontend_dist if frontend_dist is not None else _find_frontend_dist()
+    has_dist = dist is not None and dist.is_dir()
+    assets_dir = dist / "assets" if has_dist else None
+
+    # /assets 只在目录存在时挂载。
+    # ⚠️ 不要用 check_dir=False 当安全网：Starlette 只跳过构造期检查，
+    #    首次请求时 check_config() 仍会抛 RuntimeError。
+    if assets_dir is not None and assets_dir.is_dir():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
+
+    @app.get("/{full_path:path}")
+    def spa(full_path: str):
+        # 拼错的 API 不该拿到 HTML —— 这个判断要在 503 之前
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Not Found")
+        if not has_dist:
+            raise HTTPException(
+                status_code=503,
+                detail="前端未构建，请先执行 make frontend-build",
+            )
+        # ⚠️ 安全：必须把 target 限制在 dist 之内。
+        # 直接 dist / full_path 会形成任意文件读取：
+        # GET /..%2fsecret.txt → full_path='../secret.txt' → dist/../secret.txt 存在
+        # （字面量 '..' 会被 httpx 规范化掉，但百分号编码的 %2f 会原样到达 Starlette。）
+        target = (dist / full_path).resolve()
+        if full_path and target.is_file() and target.is_relative_to(dist.resolve()):
+            return FileResponse(target)
+        return FileResponse(dist / "index.html")
 
     return app
