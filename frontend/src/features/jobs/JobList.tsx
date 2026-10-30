@@ -100,7 +100,9 @@ export function JobList({
     {
       title: '操作',
       key: 'actions',
-      width: 240,
+      width: 300,
+      // ⚠️ 固定在右侧 —— 三个按钮 + 横向滚动，不固定的话「删除」会被推出屏幕外
+      fixed: 'right',
       render: (_value, row) => (
         <Space size="small">
           <Button
