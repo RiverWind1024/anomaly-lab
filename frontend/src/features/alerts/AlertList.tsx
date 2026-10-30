@@ -1,7 +1,9 @@
-import { Alert, Select, Space, Table, Tag } from 'antd'
+import { useState } from 'react'
+import { Alert, Button, DatePicker, Select, Space, Table, Tag } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { Link } from 'react-router-dom'
 import { StateBoundary } from '../../components/StateBoundary'
+import { AlertDetailDrawer } from './AlertDetailDrawer'
 import type { AlertEvent, AlertListResponse } from '../../api/types'
 import type { AlertFilters } from './queries'
 
@@ -30,6 +32,8 @@ function fmtTime(value: string): string {
 }
 
 export function AlertList({ isLoading, error, data, filters, onFiltersChange }: AlertListProps) {
+  const [detail, setDetail] = useState<AlertEvent | null>(null)
+
   const columns: ColumnsType<AlertEvent> = [
     {
       title: '等级',
@@ -86,7 +90,24 @@ export function AlertList({ isLoading, error, data, filters, onFiltersChange }: 
       width: 130,
       render: (value: string) => <span className="mono">{value}</span>,
     },
+    {
+      title: '操作',
+      key: 'actions',
+      width: 90,
+      render: (_value, row) => (
+        <Button size="small" onClick={() => setDetail(row)}>
+          详情
+        </Button>
+      ),
+    },
   ]
+
+  const hasFilters =
+    filters.jobId !== undefined ||
+    filters.level !== undefined ||
+    filters.seriesId !== undefined ||
+    filters.since !== undefined ||
+    filters.until !== undefined
 
   return (
     <StateBoundary
@@ -101,11 +122,11 @@ export function AlertList({ isLoading, error, data, filters, onFiltersChange }: 
       {(d) => (
         <>
           <div className="alert-list__toolbar">
-            <Space>
+            <Space wrap>
               <Select
                 allowClear
                 placeholder="全部任务"
-                style={{ width: 200 }}
+                style={{ width: 180 }}
                 value={filters.jobId}
                 onChange={(value) => onFiltersChange({ ...filters, jobId: value })}
                 options={d.jobs.map((job) => ({ value: job.id, label: job.name }))}
@@ -113,11 +134,48 @@ export function AlertList({ isLoading, error, data, filters, onFiltersChange }: 
               <Select
                 allowClear
                 placeholder="全部等级"
-                style={{ width: 140 }}
+                style={{ width: 130 }}
                 value={filters.level}
                 onChange={(value) => onFiltersChange({ ...filters, level: value })}
                 options={d.levels.map((level) => ({ value: level, label: level }))}
               />
+              <Select
+                allowClear
+                showSearch
+                placeholder="全部序列"
+                style={{ width: 220 }}
+                value={filters.seriesId}
+                onChange={(value) => onFiltersChange({ ...filters, seriesId: value })}
+                options={d.series.map((series) => ({ value: series, label: series }))}
+              />
+              <DatePicker.RangePicker
+                showTime
+                placeholder={['开始时间', '结束时间']}
+                onChange={(range) => {
+                  const [from, to] = range ?? []
+                  onFiltersChange({
+                    ...filters,
+                    since: from ? from.toISOString() : undefined,
+                    until: to ? to.toISOString() : undefined,
+                  })
+                }}
+              />
+              {hasFilters ? (
+                <Button
+                  size="small"
+                  onClick={() =>
+                    onFiltersChange({
+                      jobId: undefined,
+                      level: undefined,
+                      seriesId: undefined,
+                      since: undefined,
+                      until: undefined,
+                    })
+                  }
+                >
+                  重置
+                </Button>
+              ) : null}
             </Space>
           </div>
           {d.events.length === 0 ? (
@@ -154,6 +212,7 @@ export function AlertList({ isLoading, error, data, filters, onFiltersChange }: 
             pagination={{ pageSize: 20, showSizeChanger: true }}
             scroll={{ x: 'max-content' }}
           />
+          <AlertDetailDrawer event={detail} onClose={() => setDetail(null)} />
         </>
       )}
     </StateBoundary>

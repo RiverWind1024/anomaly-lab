@@ -4,6 +4,7 @@ import { getAlerts } from '../../api/platform'
 export interface AlertFilters {
   jobId?: number
   level?: string
+  seriesId?: string
   since?: string
   until?: string
 }

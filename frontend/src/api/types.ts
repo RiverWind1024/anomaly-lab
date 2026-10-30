@@ -112,6 +112,8 @@ export interface SkippedJob {
 export interface AlertListResponse {
   events: AlertEvent[]
   levels: string[]
+  /** 序列候选 —— 来自**未筛选**的集合，否则筛选器会把自己锁死。 */
+  series: string[]
   jobs: { id: number; name: string }[]
   skipped: SkippedJob[]
 }

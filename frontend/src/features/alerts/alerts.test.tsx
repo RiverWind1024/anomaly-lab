@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
@@ -23,17 +24,23 @@ const event: AlertEvent = {
 }
 
 function renderList(data: AlertListResponse) {
-  // AlertList 里有 react-router 的 Link —— 必须包 Router
+  // AlertList 里有 react-router 的 Link（必须包 Router）
+  // 与告警详情抽屉里的 react-query（必须包 QueryClientProvider）
+  const qc = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  })
   return render(
-    <MemoryRouter>
-      <AlertList
-        isLoading={false}
-        error={null}
-        data={data}
-        filters={{ jobId: undefined, level: undefined }}
-        onFiltersChange={() => {}}
-      />
-    </MemoryRouter>,
+    <QueryClientProvider client={qc}>
+      <MemoryRouter>
+        <AlertList
+          isLoading={false}
+          error={null}
+          data={data}
+          filters={{ jobId: undefined, level: undefined }}
+          onFiltersChange={() => {}}
+        />
+      </MemoryRouter>
+    </QueryClientProvider>,
   )
 }
 
@@ -42,6 +49,7 @@ describe('AlertList', () => {
     renderList({
       events: [event],
       levels: ['P0'],
+      series: ['demo-metric:web-api'],
       jobs: [{ id: 1, name: 'demo-job' }],
       skipped: [],
     })
@@ -53,6 +61,7 @@ describe('AlertList', () => {
     renderList({
       events: [event],
       levels: ['P0'],
+      series: ['demo-metric:web-api'],
       jobs: [{ id: 1, name: 'demo-job' }],
       skipped: [],
     })
@@ -64,6 +73,7 @@ describe('AlertList', () => {
     renderList({
       events: [event],
       levels: ['P0'],
+      series: ['demo-metric:web-api'],
       jobs: [{ id: 1, name: 'demo-job' }],
       skipped: [],
     })
@@ -75,6 +85,7 @@ describe('AlertList', () => {
     renderList({
       events: [],
       levels: [],
+      series: [],
       jobs: [{ id: 1, name: 'demo-job' }],
       skipped: [],
     })
@@ -82,7 +93,7 @@ describe('AlertList', () => {
   })
 
   it('一个任务都没有时显示「还没有检测任务」', () => {
-    renderList({ events: [], levels: [], jobs: [], skipped: [] })
+    renderList({ events: [], levels: [], series: [], jobs: [], skipped: [] })
     expect(screen.getByText('还没有检测任务')).toBeTruthy()
   })
 
@@ -90,6 +101,7 @@ describe('AlertList', () => {
     renderList({
       events: [],
       levels: [],
+      series: [],
       jobs: [{ id: 1, name: 'demo-job' }],
       skipped: [{ job_id: 1, name: 'demo-job', reason: '还没有运行记录' }],
     })
