@@ -59,6 +59,30 @@ pre {
   font-variant-numeric: tabular-nums;
 }
 
+/* 页面级布局 —— 所有路由页面共用的骨架 */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: var(--layout-max-width);
+}
+
+.page__header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.page__title {
+  font-size: var(--text-xl);
+  letter-spacing: -0.01em;
+}
+
+.page__subtitle {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
 /* 弱化文字 */
 .muted {
   color: var(--text-tertiary);

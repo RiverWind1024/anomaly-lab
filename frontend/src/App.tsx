@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { App as AntApp, ConfigProvider } from 'antd'
+import { ConfigProvider } from 'antd'
 import zhCN from 'antd/locale/zh_CN'
 import { BrowserRouter } from 'react-router-dom'
 import { useMemo } from 'react'
@@ -15,6 +15,10 @@ import { useThemeMode } from './theme/useThemeMode'
  *
  * ⚠️ `buildAntdTheme` 必须在 `data-theme` 写好之后调用 —— AntD 不吃 CSS 变量，
  *    要运行时读实际色值（见 theme/antdTheme.ts 的说明）。
+ *
+ * ⚠️ **刻意不用 antd 的 `App` 组件** —— 它会连带引入 message/modal/notification
+ *    三个组件族，实测让 bundle 从 218 KB 涨到 396 KB（+178 KB）。
+ *    我们用不到 `App.useApp()`，用 `message` 静态方法就够了。
  */
 export function App() {
   const [themeMode, toggleTheme] = useThemeMode()
@@ -38,13 +42,11 @@ export function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ConfigProvider locale={zhCN} theme={theme}>
-        <AntApp>
-          <BrowserRouter>
-            <AppLayout themeMode={themeMode} onToggleTheme={toggleTheme}>
-              <AppRoutes />
-            </AppLayout>
-          </BrowserRouter>
-        </AntApp>
+        <BrowserRouter>
+          <AppLayout themeMode={themeMode} onToggleTheme={toggleTheme}>
+            <AppRoutes />
+          </AppLayout>
+        </BrowserRouter>
       </ConfigProvider>
     </QueryClientProvider>
   )
