@@ -1,1 +1,1 @@
-"""Web 展示层：FastAPI + Jinja2 + 本地 ECharts。"""
+"""Web 层：FastAPI 出 JSON API，前端为独立 React 工程（frontend/）。"""
