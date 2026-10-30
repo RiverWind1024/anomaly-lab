@@ -11,6 +11,7 @@ import {
   getSuggestion,
   runJob,
   toggleJob,
+  updateJob,
 } from '../../api/platform'
 import type { CatalogJob } from '../../api/types'
 
@@ -142,6 +143,24 @@ export function useToggleJob() {
       payload: { enabled?: boolean; detector?: string }
     }) => toggleJob(jobId, payload),
     onSuccess: () => void qc.invalidateQueries({ queryKey: catalogKey }),
+  })
+}
+
+/**
+ * 改任务配置。
+ *
+ * 成功后要失效的不只是 catalog —— 预览与对比的响应里带着**当前的**
+ * 告警规则与倍数，不刷新就会拿旧规则解读新结果（spec §7.2）。
+ */
+export function useUpdateJob(jobId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (payload: Parameters<typeof updateJob>[1]) => updateJob(jobId, payload),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: catalogKey })
+      void qc.invalidateQueries({ queryKey: ['preview', jobId] })
+      void qc.invalidateQueries({ queryKey: ['compare', jobId] })
+    },
   })
 }
 

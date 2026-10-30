@@ -44,6 +44,9 @@ export function AppRoutes() {
         <Route path="/metrics" element={<MetricsPage />} />
         <Route path="/jobs" element={<JobsPage />} />
         <Route path="/jobs/:jobId" element={<JobDetailPage />} />
+        <Route path="/jobs/:jobId/runs" element={<JobDetailPage />} />
+        <Route path="/jobs/:jobId/detections" element={<JobDetailPage />} />
+        <Route path="/jobs/:jobId/feedback" element={<JobDetailPage />} />
         <Route path="/alerts" element={<AlertsPage />} />
         <Route path="/evaluation" element={<EvaluationPage />} />
         <Route path="/detections" element={<DetectionsPage />} />

@@ -100,13 +100,36 @@ export const createJob = (payload: {
   alert_rules?: AlertRule[] | null
 }) => postJson<{ id: number }>('/api/platform/jobs', payload)
 
-/** PATCH 只支持 enabled 与 detector —— 告警规则**不能**自由编辑（spec §8.3）。 */
-export const toggleJob = (jobId: number, payload: { enabled?: boolean; detector?: string }) =>
+/**
+ * 改任务配置。
+ *
+ * ⚠️ 告警规则**不能**自由编辑（spec §8.3）——
+ *    只能通过「应用反馈建议」按比例缩放。
+ * ⚠️ 改了阈值会**重算规则表**（两者必须一致）；
+ *    改其它字段时规则表不动。
+ */
+export const updateJob = (
+  jobId: number,
+  payload: {
+    name?: string
+    metric_id?: number
+    enabled?: boolean
+    detector?: string
+    alert_threshold?: number
+    critical_threshold?: number
+    window_points?: number
+    interval_seconds?: number
+  },
+) =>
   request<unknown>(`/api/platform/jobs/${jobId}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   })
+
+/** 只改启用状态 / 算法 —— updateJob 的特例。 */
+export const toggleJob = (jobId: number, payload: { enabled?: boolean; detector?: string }) =>
+  updateJob(jobId, payload)
 
 export const runJob = (jobId: number) =>
   postJson<{ run_id: number }>(`/api/platform/jobs/${jobId}/run`, {})

@@ -1,142 +1,79 @@
-import { useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
-import { Alert, message } from 'antd'
-import { CompareChart } from '../features/jobs/CompareChart'
-import { ComparePicker } from '../features/jobs/ComparePicker'
-import { CompareTable } from '../features/jobs/CompareTable'
-import { ClassificationCard } from '../features/jobs/ClassificationCard'
-import { FeedbackHistory } from '../features/jobs/FeedbackHistory'
-import { FeedbackPanel, type FeedbackFormValues } from '../features/jobs/FeedbackPanel'
-import { PreviewPanel } from '../features/jobs/PreviewPanel'
-import { RunsView, SeriesSelect } from '../features/jobs/RunsView'
-import {
-  useApplySuggestion,
-  useCatalog,
-  useCompare,
-  useCreateFeedback,
-  useFeedback,
-  usePreview,
-  useRunJob,
-  useRuns,
-  useSuggestion,
-  useToggleJob,
-} from '../features/jobs/queries'
-import type { Suggestion } from '../api/types'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { Tabs } from 'antd'
+import { useCatalog, useFeedback, useRuns } from '../features/jobs/queries'
+import { JobConfigPanel } from './job/JobConfigPanel'
+import { JobDetectionsPanel } from './job/JobDetectionsPanel'
+import { JobFeedbackPanel } from './job/JobFeedbackPanel'
+import { JobRunsPanel } from './job/JobRunsPanel'
+import { JobSummary } from './job/JobSummary'
+
+/** 详情页的四个分区。各自独立成路由，不再挤在一页里。 */
+export type JobSection = 'config' | 'runs' | 'detections' | 'feedback'
+
+const SECTIONS: Array<{ key: JobSection; suffix: string; label: string }> = [
+  { key: 'config', suffix: '', label: '任务配置' },
+  { key: 'runs', suffix: '/runs', label: '运行记录' },
+  { key: 'detections', suffix: '/detections', label: '检测结果' },
+  { key: 'feedback', suffix: '/feedback', label: '人工反馈' },
+]
+
+/** 从路径判断当前分区。 */
+export function sectionFromPath(pathname: string): JobSection {
+  for (const item of SECTIONS) {
+    if (item.suffix && pathname.endsWith(item.suffix)) return item.key
+  }
+  return 'config'
+}
 
 /**
- * 任务详情页（预览部分）。
+ * 检测任务详情页 —— **布局壳**。
  *
- * Task 10~12 会补上运行记录下拉、序列切换、多算法对比、分类结论。
+ * 之前这一个页面把配置表单、运行记录、预览图、多算法对比、
+ * 分类结论、反馈历史全堆在一起，什么都看不清楚。
+ *
+ * 现在：
+ *   /jobs/:id              → 任务配置（主体）
+ *   /jobs/:id/runs         → 运行记录
+ *   /jobs/:id/detections   → 检测结果
+ *   /jobs/:id/feedback     → 人工反馈
+ *
+ * 顶部摘要卡给出「在干什么、跑到哪一步」，细节各自去对应分区看。
  */
 export function JobDetailPage() {
   const params = useParams<{ jobId: string }>()
   const jobId = Number(params.jobId ?? 0)
+  const location = useLocation()
+  const navigate = useNavigate()
 
-  // runId / seriesId 留空 = 不带参数，后端会取最新运行与首个序列
-  const [runId, setRunId] = useState<number | undefined>(undefined)
-  const [seriesId, setSeriesId] = useState<string | undefined>(undefined)
-  // 对比勾选的算法；留空 = 用默认勾选（候选 ≤4 全勾，否则只勾 auto）
-  const [detectors, setDetectors] = useState<string[]>([])
+  const section = sectionFromPath(location.pathname)
 
   const catalog = useCatalog()
+  const job = catalog.data?.jobs.find((item) => item.id === jobId)
+  const metric = catalog.data?.metrics.find((item) => item.id === job?.metric_id)
 
-  /**
-   * 任务不存在时**不要发那 5 个请求**。
-   *
-   * 详情页要 runs / preview / compare / feedback / suggestion 五个请求，
-   * 任务不存在时它们会全部 404 —— 页面上刷出好几个红色错误框，
-   * 而用户真正需要知道的只有一句话：任务没了。
-   *
-   * catalog 已经带了全部任务，判存在性是**零成本**的（不用多发一个请求）。
-   * ⚠️ catalog 没加载完时不能下结论（那会误报「不存在」）。
-   */
-  const jobExists = catalog.data ? catalog.data.jobs.some((j) => j.id === jobId) : null
+  // 任务不存在时**一个请求都不发** ——
+  // 否则会刷出一屏红色错误框（runs / preview / compare / feedback / suggestion）。
+  const jobExists = catalog.data ? job !== undefined : null
+  const enabled = jobExists === true
 
-  const runs = useRuns(jobId, jobExists === true)
-  const preview = usePreview(jobId, runId, seriesId, jobExists === true)
-  const compare = useCompare(jobId, seriesId, detectors, jobExists === true)
-  const runJob = useRunJob()
-  const toggleJob = useToggleJob()
-  const feedback = useFeedback(jobId, jobExists === true)
-  const createFeedback = useCreateFeedback()
-  const applySuggestion = useApplySuggestion(jobId)
+  // 摘要卡要用的数据
+  const runs = useRuns(jobId, enabled)
+  const feedback = useFeedback(jobId, enabled)
+  const latestRun = runs.data?.runs?.[0]
 
-  // 下拉要显示一个具体的值：没手动选过时用最新运行 / 后端挑中的序列
-  const effectiveRunId = runId ?? runs.data?.runs[0]?.id
-  const effectiveSeriesId = seriesId ?? preview.data?.series_id
+  // 「检测结果」分区默认看最近一次运行
+  const effectiveRunId = latestRun?.id
 
-  // 建议要按选中的那次运行评估
-  const suggestion = useSuggestion(jobId, effectiveRunId, jobExists === true)
-
-  /**
-   * 换运行要清掉序列选择 —— 每次运行的序列集合不同，
-   * 带着旧 series_id 请求会拿到 404「序列不存在」。
-   */
-  const handleSelectRun = (nextRunId: number) => {
-    setRunId(nextRunId)
-    setSeriesId(undefined)
-  }
-
-  const handleRun = () => {
-    runJob.mutate(jobId, {
-      onSuccess: () => message.success(`任务 ${jobId} 已触发立即运行`),
-      onError: (err) => message.error(err instanceof Error ? err.message : '运行失败'),
-    })
-  }
-
-  const handleApplyDetector = (name: string) => {
-    toggleJob.mutate(
-      { jobId, payload: { detector: name } },
-      {
-        onSuccess: () => message.success(`任务 ${jobId} 的算法已设为 ${name}`),
-        onError: (err) => message.error(err instanceof Error ? err.message : '设置失败'),
-      },
-    )
-  }
-
-  const handleSubmitFeedback = (values: FeedbackFormValues) => {
-    createFeedback.mutate(
-      {
-        job_id: jobId,
-        series_id: values.series_id,
-        start_ts: values.start_ts,
-        end_ts: values.end_ts,
-        kind: values.kind,
-        note: values.note,
-        run_id: effectiveRunId ?? null,
-      },
-      {
-        onSuccess: () => message.success('反馈已提交'),
-        onError: (err) => message.error(err instanceof Error ? err.message : '提交失败'),
-      },
-    )
-  }
-
-  const handleApplySuggestion = (s: Suggestion) => {
-    applySuggestion.mutate(
-      { multiplier: s.suggested_multiplier, detector: s.suggested_detector },
-      {
-        onSuccess: () => message.success('建议已应用，新的告警倍数见任务列表'),
-        onError: (err) => message.error(err instanceof Error ? err.message : '应用失败'),
-      },
-    )
-  }
-
-  // ---------- 任务不存在 ----------
-  //
-  // catalog 加载完才能下结论（没加载完就显示「不存在」是误报）。
   if (catalog.data && jobExists === false) {
     return (
       <div className="page">
         <header className="page__header">
-          <h1 className="page__title">检测任务 · 详情与预览</h1>
+          <h1 className="page__title">检测任务</h1>
           <p className="page__subtitle">任务 #{jobId}</p>
         </header>
         <div className="empty-state">
           <p className="empty-state__title">任务不存在或已被删除</p>
-          <p className="muted">
-            它可能刚被删掉了，或者链接里的编号不对。
-          </p>
+          <p className="muted">它可能刚被删掉了，或者链接里的编号不对。</p>
           <Link to="/jobs">← 回到检测任务列表</Link>
         </div>
       </div>
@@ -146,117 +83,54 @@ export function JobDetailPage() {
   return (
     <div className="page">
       <header className="page__header">
-        <h1 className="page__title">检测任务 · 详情与预览</h1>
-        <p className="page__subtitle">任务 #{jobId}</p>
+        <h1 className="page__title">检测任务</h1>
+        <p className="page__subtitle">
+          {job ? job.name : `任务 #${jobId}`}
+        </p>
       </header>
 
-      <div className="runs-view__bar">
-        <RunsView
-          runs={runs.data?.runs ?? []}
-          selectedRunId={effectiveRunId}
-          onSelect={handleSelectRun}
-          loading={runs.isPending}
+      {job ? (
+        <JobSummary
+          job={job}
+          metricName={metric?.name ?? String(job.metric_id)}
+          latestRun={latestRun}
+          feedbackCount={feedback.data?.feedback?.length ?? 0}
         />
-        <SeriesSelect
-          series={preview.data?.series ?? []}
-          selectedSeriesId={effectiveSeriesId}
-          onSelect={setSeriesId}
-          loading={preview.isPending}
-        />
-      </div>
+      ) : null}
 
-      <PreviewPanel
-        isLoading={preview.isPending}
-        error={preview.error}
-        preview={preview.data}
-        onRun={handleRun}
-        running={runJob.isPending}
+      <Tabs
+        className="job-tabs"
+        activeKey={section}
+        items={SECTIONS.map((item) => ({ key: item.key, label: item.label }))}
+        onChange={(key) => {
+          const target = SECTIONS.find((item) => item.key === key)
+          navigate(`/jobs/${jobId}${target?.suffix ?? ''}`)
+        }}
       />
 
-      <section className="compare-section">
-        <h2 className="section__title">多算法对比</h2>
-        <ComparePicker
-          available={compare.data?.available ?? []}
-          fallbackNames={(catalog.data?.detectors ?? []).map((d) => d.name)}
-          autoDetector={compare.data?.auto_detector ?? 'auto'}
-          selected={detectors}
-          onChange={setDetectors}
+      {section === 'config' && job ? (
+        <JobConfigPanel
+          job={job}
+          metrics={catalog.data?.metrics ?? []}
           detectors={catalog.data?.detectors ?? []}
+          enabled={enabled}
         />
+      ) : null}
 
-        {/* 被跳过的算法：当前环境不可用（如缺 chronos 依赖/权重） */}
-        {(compare.data?.skipped ?? []).map((item) => (
-          <Alert
-            key={item.name}
-            type="warning"
-            showIcon
-            message={`${item.name} 已跳过`}
-            description={item.reason}
-            style={{ marginBottom: 12 }}
-          />
-        ))}
+      {section === 'runs' ? <JobRunsPanel jobId={jobId} enabled={enabled} /> : null}
 
-        {compare.data && (
-          <>
-            <ClassificationCard
-              metricClass={compare.data.metric_class ?? ''}
-              confidence={compare.data.confidence ?? 0}
-              reasons={compare.data.reasons}
-              autoDetector={compare.data.auto_detector}
-              autoRationale={compare.data.auto_rationale}
-              autoFallback={compare.data.auto_fallback}
-              /* 分数类型要取 **auto 选中的那个算法** 的 ——
-                 卡片讲的是 auto 推荐，不能拿 detectors[0] 的（顺序不保证是 auto）。 */
-              scoreType={
-                compare.data.detectors.find((d) => d.is_auto)?.score_type ??
-                compare.data.detectors[0]?.score_type ??
-                ''
-              }
-            />
-            <CompareChart
-              timestamps={compare.data.timestamps}
-              values={compare.data.values}
-              detectors={compare.data.detectors}
-            />
-            <CompareTable
-              detectors={compare.data.detectors}
-              levels={compare.data.levels}
-              applyingDetector={
-                toggleJob.isPending ? toggleJob.variables?.payload.detector ?? null : null
-              }
-              onApplyDetector={handleApplyDetector}
-            />
-          </>
-        )}
-      </section>
-
-      <section className="feedback-section">
-        <h2 className="section__title">人工反馈与调参</h2>
-        <p className="muted feedback-section__hint">
-          反馈用于给出「用哪个算法 + 用哪个倍数」的建议 ——
-          漏报与误报才参与调参，「正确」「其他」只留档。
-        </p>
-
-        <FeedbackPanel
-          seriesId={effectiveSeriesId}
-          startTs={preview.data?.timestamps[0]}
-          endTs={preview.data?.timestamps[preview.data.timestamps.length - 1]}
-          onSubmit={handleSubmitFeedback}
-          submitting={createFeedback.isPending}
-          error={createFeedback.error instanceof Error ? createFeedback.error.message : undefined}
-          suggestion={suggestion.data}
-          suggestionLoading={suggestion.isPending || suggestion.isFetching}
-          onEvaluate={() => void suggestion.refetch()}
-          onApply={handleApplySuggestion}
-          applying={applySuggestion.isPending}
+      {section === 'detections' ? (
+        <JobDetectionsPanel
+          jobId={jobId}
+          runId={effectiveRunId}
+          detectors={catalog.data?.detectors ?? []}
+          enabled={enabled}
         />
+      ) : null}
 
-        <FeedbackHistory
-          isLoading={feedback.isPending}
-          error={feedback.error}
-          feedback={feedback.data?.feedback}
-        />
-      </section>
+      {section === 'feedback' ? (
+        <JobFeedbackPanel jobId={jobId} runId={effectiveRunId} enabled={enabled} />
+      ) : null}
     </div>
   )
 }
