@@ -55,15 +55,14 @@ export function cssVar(name: string, fallback: string): string {
 }
 
 /**
- * 读一个颜色变量并附加透明度。
+ * 给一个色值加透明度。
  *
  * CSS 变量里可能是 hex（`#ef4444`）也可能是 rgba（`rgba(59,130,246,0.08)`）。
  * hex 要转成 rgba 才能加透明度。
  */
-export function cssVarAlpha(name: string, alpha: number, fallback: string): string {
-  const raw = cssVar(name, fallback)
-  if (raw.startsWith('#')) {
-    const h = raw.slice(1)
+export function withAlpha(color: string, alpha: number): string {
+  if (color.startsWith('#')) {
+    const h = color.slice(1)
     const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h
     const r = parseInt(full.slice(0, 2), 16)
     const g = parseInt(full.slice(2, 4), 16)
@@ -71,8 +70,15 @@ export function cssVarAlpha(name: string, alpha: number, fallback: string): stri
     return `rgba(${r}, ${g}, ${b}, ${alpha})`
   }
   // 已经是 rgba/rgb —— 用正则替换 alpha
-  return raw.replace(/rgba?\(([^)]+)\)/, (_m, inner: string) => {
+  return color.replace(/rgba?\(([^)]+)\)/, (_m, inner: string) => {
     const parts = inner.split(',').map((p) => p.trim())
     return `rgba(${parts[0]}, ${parts[1]}, ${parts[2]}, ${alpha})`
   })
+}
+
+/**
+ * 读一个颜色变量并附加透明度。
+ */
+export function cssVarAlpha(name: string, alpha: number, fallback: string): string {
+  return withAlpha(cssVar(name, fallback), alpha)
 }

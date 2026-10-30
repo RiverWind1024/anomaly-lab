@@ -23,10 +23,10 @@ const JobDetailPage = lazy(() =>
   import('./pages/JobDetailPage').then((m) => ({ default: m.JobDetailPage })),
 )
 const EvaluationPage = lazy(() =>
-  import('./pages/EvaluationPage').then((m) => ({ default: m.EvaluationPage })),
+  import('./features/evaluation/EvaluationPage').then((m) => ({ default: m.EvaluationPage })),
 )
 const BadCasesPage = lazy(() =>
-  import('./pages/BadCasesPage').then((m) => ({ default: m.BadCasesPage })),
+  import('./features/evaluation/BadcasesPage').then((m) => ({ default: m.BadcasesPage })),
 )
 const AnnotatePage = lazy(() =>
   import('./features/annotate/AnnotatePage').then((m) => ({ default: m.AnnotatePage })),
