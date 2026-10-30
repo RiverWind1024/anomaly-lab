@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
@@ -601,6 +602,53 @@ def build_router(
         }
 
     # ---------- 人工反馈与阈值建议 ----------
+
+    # ---------- 删除 ----------
+
+    def _delete_run_dirs(run_ids: list[int]) -> None:
+        """删掉 run 目录 —— 数据库外键管不到文件系统。
+
+        不清的话 `cache/platform/runs/{run_id}/` 会变成孤儿垃圾。
+        删失败不回滚数据库：DB 一致性优先，文件残留只是占地方。
+        """
+        for run_id in run_ids:
+            directory = runner_module.run_dir(get_data_root(), run_id)
+            if directory.exists():
+                shutil.rmtree(directory, ignore_errors=True)
+
+    @router.delete("/api/platform/jobs/{job_id}")
+    def delete_job(job_id: int) -> dict:
+        store = _store()
+        if runner_module.is_running(job_id):
+            raise HTTPException(
+                status_code=409, detail="任务正在运行中，请等本次运行结束后再删除"
+            )
+        try:
+            stats = store.delete_job(job_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        _delete_run_dirs(stats.pop("run_ids", []))
+        return {"deleted": stats}
+
+    @router.delete("/api/platform/metrics/{metric_id}")
+    def delete_metric(metric_id: int) -> dict:
+        store = _store()
+        try:
+            stats = store.delete_metric(metric_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        _delete_run_dirs(stats.pop("run_ids", []))
+        return {"deleted": stats}
+
+    @router.delete("/api/platform/sources/{source_id}")
+    def delete_source(source_id: int) -> dict:
+        store = _store()
+        try:
+            stats = store.delete_source(source_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        _delete_run_dirs(stats.pop("run_ids", []))
+        return {"deleted": stats}
 
     @router.post("/api/platform/feedback")
     def create_feedback(payload: FeedbackIn) -> dict:

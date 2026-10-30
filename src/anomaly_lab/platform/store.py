@@ -498,3 +498,96 @@ class PlatformStore:
                 (rules_json, alert, critical, job_id),
             )
         return self.get_job(job_id)
+
+    # ---------- 删除 ----------
+
+    def delete_job(self, job_id: int) -> dict:
+        """删一个任务（连带 runs / feedback），返回删除统计。
+
+        ⚠️ 返回值里的 `run_ids` 是**内部用**的 —— 路由层要据此删 run 目录
+        文件（数据库外键管不到文件系统）。路由层构造响应前要把它 pop 掉。
+        """
+        with self._conn() as conn:
+            row = conn.execute("SELECT id FROM jobs WHERE id=?", (job_id,)).fetchone()
+            if row is None:
+                raise ValueError(f"任务不存在: {job_id}")
+            stats = self._cascade_stats(conn, [job_id])
+            conn.execute("DELETE FROM jobs WHERE id=?", (job_id,))
+        stats["jobs"] = 1
+        return stats
+
+    def delete_metric(self, metric_id: int) -> dict:
+        """删一个指标（连带它下面的任务、运行、反馈）。"""
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT id FROM metrics WHERE id=?", (metric_id,)
+            ).fetchone()
+            if row is None:
+                raise ValueError(f"指标不存在: {metric_id}")
+            job_ids = [
+                item["id"]
+                for item in conn.execute(
+                    "SELECT id FROM jobs WHERE metric_id=?", (metric_id,)
+                )
+            ]
+            stats = self._cascade_stats(conn, job_ids)
+            conn.execute("DELETE FROM metrics WHERE id=?", (metric_id,))
+        stats["metrics"] = 1
+        return stats
+
+    def delete_source(self, source_id: int) -> dict:
+        """删一个数据源（连带它下面的指标、任务、运行、反馈）。"""
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT id FROM sources WHERE id=?", (source_id,)
+            ).fetchone()
+            if row is None:
+                raise ValueError(f"数据源不存在: {source_id}")
+            metric_ids = [
+                item["id"]
+                for item in conn.execute(
+                    "SELECT id FROM metrics WHERE source_id=?", (source_id,)
+                )
+            ]
+            job_ids: list[int] = []
+            if metric_ids:
+                placeholders = ",".join("?" * len(metric_ids))
+                job_ids = [
+                    item["id"]
+                    for item in conn.execute(
+                        f"SELECT id FROM jobs WHERE metric_id IN ({placeholders})",
+                        metric_ids,
+                    )
+                ]
+            stats = self._cascade_stats(conn, job_ids)
+            conn.execute("DELETE FROM sources WHERE id=?", (source_id,))
+        stats["metrics"] = len(metric_ids)
+        stats["sources"] = 1
+        return stats
+
+    @staticmethod
+    def _cascade_stats(conn: sqlite3.Connection, job_ids: list[int]) -> dict:
+        """统计要连带删掉多少任务 / 运行 / 反馈，并收集 run_id。
+
+        ⚠️ 必须在删除**之前**统计 —— `runs` 表有 `ON DELETE CASCADE`，
+        删完就查不到了。
+        """
+        if not job_ids:
+            return {"jobs": 0, "runs": 0, "feedback": 0, "run_ids": []}
+        placeholders = ",".join("?" * len(job_ids))
+        run_ids = [
+            item["id"]
+            for item in conn.execute(
+                f"SELECT id FROM runs WHERE job_id IN ({placeholders})", job_ids
+            )
+        ]
+        feedback = conn.execute(
+            f"SELECT COUNT(*) AS c FROM feedback WHERE job_id IN ({placeholders})",
+            job_ids,
+        ).fetchone()["c"]
+        return {
+            "jobs": len(job_ids),
+            "runs": len(run_ids),
+            "feedback": feedback,
+            "run_ids": run_ids,
+        }

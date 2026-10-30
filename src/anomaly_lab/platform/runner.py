@@ -52,6 +52,16 @@ def job_rules(job) -> list:
     return default_rules(job.alert_threshold, job.critical_threshold)
 
 
+def is_running(job_id: int) -> bool:
+    """任务是不是正在跑。
+
+    手动触发与调度到点都登记在 `_INFLIGHT` 里，所以这里能覆盖两种来源。
+    删除任务前要检查 —— 否则 run 还在写、文件已经被删掉了。
+    """
+    with _INFLIGHT_LOCK:
+        return job_id in _INFLIGHT
+
+
 def _file_name(series_id: str) -> str:
     digest = hashlib.sha1(series_id.encode("utf-8")).hexdigest()[:16]
     return f"{digest}.npz"
