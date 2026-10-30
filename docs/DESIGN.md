@@ -32,12 +32,8 @@
 
 ### 1.3 非目标（明确不做）
 
-- **不做** Agent / RAG / LLM / MCP（与本项目无关，另案）
 - **不做** 分布式、微服务、消息队列、K8s、CI/CD 流水线（个人学习项目的复杂度陷阱）
-- **不做** 真实监控数据接入、告警联动、IM 通知、权限体系（YAGNI + 合规）
 - **不做** 在线 / 流式检测（v1 只做离线批量；数据流接口在 v2 预留）
-- **不做** 前端框架工程（单页 + ECharts CDN，够用即可）
-- **不做** 数据库服务（SQLite 单文件足够，不引入 Postgres/pgvector）
 
 ### 1.4 合规红线（不可越过）
 
@@ -80,7 +76,7 @@
 ┌──────────────────────────────────────────────────────────────────┐
 │ L5 交付层                                                          │
 │   Web 标注页 / Web 评估页  │  CLI（7 个子命令）  │  报告生成器        │
-│   FastAPI + 单页 HTML(ECharts CDN)                                 │
+│   FastAPI(JSON API) + 独立 React 前端工程                            │
 ├──────────────────────────────────────────────────────────────────┤
 │ L4 评估闭环层  ★ 本项目的心脏                                      │
 │   AnnotationStore(JSONL) → Backtester → Metrics(P/R/F1/延迟)       │
@@ -121,7 +117,7 @@
 | D5 | **合成数据优先**（形态可控、异常位置已知），公开集做泛化验证 | 分类逻辑和算法适配只有在"形态可控 + 真值已知"时才能被定量验证；公开集形态不可控 |
 | D6 | **无网络也能跑通主流程**（合成 + 统计基线） | 实测下载源仅 10 KB/s 且 GitHub/HF 时通时不通。合成 + 统计基线 100% 离线 → 学习不被网络绑架 |
 | D7 | **不做数据库**，用 SQLite + JSONL 文件 | 个人项目引入数据库服务是复杂度陷阱；标注用 JSONL 便于 git diff 与人工审阅 |
-| D8 | **FastAPI + 单页 HTML + ECharts CDN**，不引前端框架 | 前端只需"画波形 + 刷选区间 + 看表格"，引入构建链是纯负担 |
+| D8 | **前后端分离**：独立前端工程（React 18 + TypeScript + Vite + AntD），后端只出 JSON API，构建产物由 FastAPI 托管 | v1 的理由是"只需波形 + 刷选 + 表格"，但实际做下来 4 个页面共 20+ 交互状态（加载/空/错误/数据不足 × 多页），手写命令式 DOM 已不可维护。分离后：**后端不返 HTML**、前端能独立跑测试与构建、AntD 提供一致的交互与无障碍基线 |
 
 ### 3.4 数据契约
 
@@ -257,8 +253,10 @@ data/
 
 ### 6.3 技术约束
 
-- FastAPI + Jinja2 模板 + 单页 HTML + ECharts（CDN）
-- **不引 React/Vue/构建链**（D8）
+- FastAPI（只提供 JSON API，不返 HTML 页面）
+- **前端：独立工程** —— React 18 + TypeScript + Vite + Ant Design v5 + TanStack Query + react-router-dom + ECharts
+- 构建产物 `frontend/dist` 由 FastAPI 托管（SPA fallback 走 `index.html`）
+- 开发期用 vite proxy 把 `/api` 转发到后端，**不引 CORS**
 - 后台任务用 `BackgroundTasks` 或简单线程池（无需 Celery）
 - Web 只做只读 + 写 JSONL，**不做用户体系/权限**
 
@@ -275,7 +273,9 @@ data/
 | 评估/ML | scikit-learn | 指标、分组对比 |
 | 深度 | **PyTorch（CPU 版）** | 16 核 / 14 GB 内存，CPU 足够；CPU wheel 体积小 |
 | 预训练模型 | chronos-forecasting 2.3.2 | Apache-2.0 |
-| Web | FastAPI + uvicorn + Jinja2 | 已装 fastapi 0.136 |
+| Web 后端 | FastAPI + uvicorn（**只出 JSON API**） | 已装 fastapi 0.136 |
+| Web 前端 | **React 18 + TypeScript + Vite + Ant Design v5 + TanStack Query + react-router-dom** | 独立工程，`frontend/dist` 由后端托管（D8） |
+| 图表（前端） | ECharts 5 + echarts-for-react | 波形/分数曲线/多算法对比；配色从 `tokens.css` 派生 |
 | 测试 | pytest + hypothesis（属性测试，用于分类器） | |
 | 并行 | joblib | 替代 Ray，16 核够用 |
 | 图表 | matplotlib（离线出图）+ ECharts（Web 交互） | 报告图要能离线生成 |
@@ -375,9 +375,12 @@ anomaly-lab/
 │   │   └── report.py         # 回归报告（JSON + Markdown + 图）
 │   ├── cli.py                # 7 个子命令
 │   └── web/
-│       ├── app.py            # FastAPI
-│       ├── templates/        # Jinja2
-│       └── static/
+│       ├── app.py            # FastAPI（JSON API + 托管 frontend/dist）
+│       ├── platform_routes.py
+│       └── static/           # 阶段 4 退役（旧前端）
+├── frontend/                 # 独立前端工程（React+TS+Vite，D8）
+│   ├── src/                  # 组件 / 页面 / API 层 / 样式
+│   └── dist/                 # .gitignore 产物，由 FastAPI 托管
 ├── tests/                    # pytest（含 hypothesis 属性测试）
 ├── notebooks/                # 关键实验记录（少量）
 ├── data/                     # .gitignore 产物 + .gitkeep
@@ -413,7 +416,7 @@ anomaly-lab/
 | ADR-3 | UCR 惰性单文件下载，不拉全量 | 已定 | 实测 10 KB/s |
 | ADR-4 | 统一分数语义 + 按语义分桶搜阈值 | 已定 | 公平对比的前提 |
 | ADR-5 | SQLite + JSONL，不引入数据库服务 | 已定 | 复杂度陷阱 |
-| ADR-6 | FastAPI + ECharts 单页，不引前端框架 | 已定 | 只需波形 + 刷选 + 表格 |
+| ADR-6 | ~~FastAPI + ECharts 单页，不引前端框架~~ → **前后端分离：独立 React+TS+Vite 前端工程，FastAPI 只出 JSON API 并托管 `dist`** | **已推翻**（原决策已定） | v1 判断"只需波形+刷选+表格"低估了交互状态数量。20+ 个状态要各自处理加载/空/错误/数据不足，手写命令式 DOM 不可维护。分离后前端能独立跑测试与构建，AntD 兜住交互与无障碍 |
 | ADR-7 | Chronos 可降级跳过 | 已定 | HF 权重下载不稳定，不能阻塞主流程 |
 | ADR-8 | 不做在线/流式（v1） | 已定 | YAGNI，接口预留 |
 | ADR-9 | 范围蔓延防护：想法入 ROADMAP 不插队 | 已定 | 烂尾是最大风险 |
