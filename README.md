@@ -19,12 +19,14 @@ flowchart LR
   E --> F[点级 / 区间级指标]
   F --> G[回测 + Bad Case 归因]
   G --> H[JSON / Markdown / 图]
-  H --> I[FastAPI 标注与评估页]
+  H --> I[FastAPI JSON API]
   S[SQLite 数据源] --> SP[指标 SQL + $timefilter]
   SP --> SPL[按 group by 拆序列]
   SPL --> SCH[定时调度器]
   SCH --> RUN[检测 + 基线/上下界 + P1/P0]
-  RUN --> PV[平台预览页]
+  RUN --> PV[任务详情页 /jobs/:id]
+  I --> FE[React SPA（frontend/）]
+  PV --> FE
 ```
 
 详见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)、[docs/ALGORITHMS.md](docs/ALGORITHMS.md)、[docs/DATA.md](docs/DATA.md)、[docs/PLATFORM.md](docs/PLATFORM.md)。
@@ -41,17 +43,26 @@ make setup
 # 深度模型需要 CPU 版 torch（可选；不装则自动跳过 TCN/LSTM）
 uv pip install torch --index-url https://download.pytorch.org/whl/cpu
 
+# 前端依赖（React 工程，首次或 package-lock.json 变更后执行）
+make frontend-install
+
 make generate     # 生成 120 条合成序列
 make evaluate     # 用 IQR 检测并产出 reports/latest/report.md
 make compare      # 统计 + 自训深度 + Chronos（不可用则跳过）对照表
-make serve        # http://127.0.0.1:8000
+make serve        # 构建前端并起服务：http://127.0.0.1:8000
+```
+
+开发时前后端分开跑（vite 热更新 + `/api` 代理到 8000）：
+
+```bash
+make dev          # vite :5173 + uvicorn :8000
 ```
 
 平台切片（定时检测）：
 
 ```bash
 make platform-demo   # 生成 demo 的 SQLite 源库 + 指标 + 任务
-make serve           # 打开 http://127.0.0.1:8000/platform 配置与预览
+make serve           # 打开 http://127.0.0.1:8000/jobs 配置与预览
 ```
 
 端到端冒烟：

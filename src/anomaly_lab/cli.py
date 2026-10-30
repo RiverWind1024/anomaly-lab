@@ -532,7 +532,7 @@ def _cmd_platform_demo(args: argparse.Namespace) -> int:
         f"source={info['source_id']} metric={info['metric_id']} job={info['job_id']} "
         f"({info['n_points']} 个点, {info['source_path']})"
     )
-    print("执行：anomaly-lab serve  # 打开 http://127.0.0.1:8000/platform")
+    print("执行：make serve  # 打开 http://127.0.0.1:8000/jobs")
     return 0
 
 
