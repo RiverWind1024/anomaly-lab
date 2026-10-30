@@ -20,6 +20,7 @@ from anomaly_lab.contracts import DetectionResult
 from anomaly_lab.data.loader import load_dataset
 from anomaly_lab.evaluation.badcases import attribute_badcases
 from anomaly_lab.platform.store import PlatformStore
+from anomaly_lab.web.biz_state import biz_headers
 from anomaly_lab.web.platform_routes import build_router
 
 _WEB_DIR = Path(__file__).parent
@@ -169,7 +170,11 @@ def create_app(
         detection_dir = _detections_root() / "iqr"
         path = detection_dir / f"{series_id}.npz"
         if not path.exists():
-            raise HTTPException(status_code=404, detail="该序列还没有检测结果")
+            raise HTTPException(
+                status_code=404,
+                detail="该序列还没有检测结果",
+                headers=biz_headers("no_result"),
+            )
         import numpy as np
 
         data = np.load(path, allow_pickle=False)

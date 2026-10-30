@@ -38,6 +38,7 @@ from anomaly_lab.platform.feedback import (
 from anomaly_lab.platform.sqlite_source import load_series
 from anomaly_lab.platform.store import PlatformStore
 from anomaly_lab.platform.timeutil import freq_delta, utcnow
+from anomaly_lab.web.biz_state import biz_headers
 
 TimeFormat = Literal["iso_utc", "iso_naive", "epoch_s", "epoch_ms"]
 MissingPolicy = Literal["drop", "interpolate", "error"]
@@ -284,7 +285,11 @@ def build_router(
         if chosen_run is None:
             latest = store.latest_run(job.id)
             if latest is None:
-                raise HTTPException(status_code=404, detail="该任务还没有运行记录")
+                raise HTTPException(
+                    status_code=404,
+                    detail="该任务还没有运行记录",
+                    headers=biz_headers("no_run"),
+                )
             chosen_run = latest.id
         try:
             run = store.get_run(chosen_run)
@@ -301,7 +306,11 @@ def build_router(
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         entries = index.get("series", [])
         if not entries:
-            raise HTTPException(status_code=404, detail="该次运行没有序列结果")
+            raise HTTPException(
+                status_code=404,
+                detail="该次运行没有序列结果",
+                headers=biz_headers("no_series"),
+            )
         entry = entries[0]
         if series_id:
             matched = next((item for item in entries if item["series_id"] == series_id), None)
@@ -430,7 +439,11 @@ def build_router(
         source_path = runner_module.resolve_source_path(source.path, get_data_root())
         series_list = load_series(metric, source_path, start_time, end_time)
         if not series_list:
-            raise HTTPException(status_code=404, detail="该窗口内没有取到数据")
+            raise HTTPException(
+                status_code=404,
+                detail="该窗口内没有取到数据",
+                headers=biz_headers("no_data"),
+            )
         series = series_list[0]
         if series_id:
             matched = next((item for item in series_list if item.series_id == series_id), None)
@@ -442,6 +455,7 @@ def build_router(
             raise HTTPException(
                 status_code=404,
                 detail=f"序列 {series.series_id} 有效点仅 {n_valid} 个，不足以做检测",
+                headers=biz_headers("insufficient_data"),
             )
 
         resolution = resolve_detector(AUTO_DETECTOR, series)
@@ -465,7 +479,11 @@ def build_router(
             if name in DETECTOR_FACTORIES and name not in seen:
                 seen.append(name)
         if not seen:
-            raise HTTPException(status_code=400, detail="没有可对比的算法")
+            raise HTTPException(
+                status_code=400,
+                detail="没有可对比的算法",
+                headers=biz_headers("no_algorithms"),
+            )
 
         outcomes = compare_series(series, seen, rules, band_width)
         index = _sample_indices(len(series.values), MAX_PREVIEW_POINTS)
