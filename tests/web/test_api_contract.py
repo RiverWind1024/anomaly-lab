@@ -44,6 +44,33 @@ def test_catalog_contract():
             assert key in body["jobs"][0]
 
 
+def test_alerts_contract():
+    """告警中心的事件字段 —— 前端 types.ts 是手写的，这里防漂移。"""
+    client = TestClient(create_app())
+    body = client.get("/api/platform/alerts").json()
+    for key in ("events", "levels", "jobs", "skipped"):
+        assert key in body
+    if body["events"]:
+        for key in (
+            "job_id",
+            "job_name",
+            "metric_id",
+            "metric_name",
+            "series_id",
+            "group",
+            "level",
+            "level_index",
+            "start_ts",
+            "end_ts",
+            "n_points",
+            "max_score",
+            "detector",
+            "score_type",
+            "run_id",
+        ):
+            assert key in body["events"][0]
+
+
 def test_series_contract():
     client = TestClient(create_app())
     body = client.get("/api/series").json()
