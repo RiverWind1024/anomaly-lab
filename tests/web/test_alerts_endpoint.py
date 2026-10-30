@@ -180,3 +180,57 @@ def test_alerts_levels_are_derived_from_actual_data(tmp_path):
     body = client.get("/api/platform/alerts").json()
     assert body["levels"] == ["P1"]
     assert body["jobs"] == [{"id": body["jobs"][0]["id"], "name": "demo-job"}]
+
+
+def test_alerts_candidates_cover_unfiltered_events(tmp_path):
+    """筛选后，下拉候选仍要能看到**全部**选项。
+
+    ⚠️ 候选要是从筛选后的结果里汇总的，选了 P1 之后下拉里就只剩 P1，
+       用户再也改不回去 —— 筛选器把自己锁死了。
+    """
+    client, _store = _client_with_data(tmp_path)
+    _run_job(client)
+    body = client.get("/api/platform/alerts?level=P0").json()
+    assert body["events"] == []
+    # 一个都不剩，但候选仍然在
+    assert body["levels"] == ["P1"]
+    assert body["series"], "序列候选也必须来自未筛选的集合"
+
+
+def test_alerts_exposes_series_candidates(tmp_path):
+    client, _store = _client_with_data(tmp_path)
+    _run_job(client)
+    body = client.get("/api/platform/alerts").json()
+    expected = sorted({item["series_id"] for item in body["events"]})
+    assert body["series"] == expected
+
+
+def test_alerts_time_filter_handles_browser_iso_format(tmp_path):
+    """浏览器给的是 `...00.000Z`，事件时间戳是 `...00` —— 不能靠字符串比较。
+
+    ⚠️ 字符串比较时 `'2026-10-30T07:23:00' >= '2026-10-30T07:23:00.000Z'`
+       是 False（前者是后者的前缀），边界上的事件会被漏掉。
+    """
+    client, _store = _client_with_data(tmp_path)
+    _run_job(client)
+    events = client.get("/api/platform/alerts").json()["events"]
+    assert events
+
+    first = events[0]["start_ts"]
+    # 用同一时刻的两种写法，边界上的事件都要在
+    exact_z = first.replace("T", "T").replace("+00:00", "Z")
+    body = client.get(f"/api/platform/alerts?since={exact_z}").json()
+    assert any(item["start_ts"] == first for item in body["events"])
+
+    # 毫秒写法也要能命中
+    exact_ms = first + ".000Z"
+    body = client.get(f"/api/platform/alerts?since={exact_ms}").json()
+    assert any(item["start_ts"] == first for item in body["events"])
+
+
+def test_alerts_invalid_time_filter_is_ignored(tmp_path):
+    """解析不了的时间参数不该把整个列表清空。"""
+    client, _store = _client_with_data(tmp_path)
+    _run_job(client)
+    body = client.get("/api/platform/alerts?since=不是时间").json()
+    assert body["events"]

@@ -6,6 +6,7 @@ import json
 import shutil
 from collections.abc import Callable
 from dataclasses import asdict
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -167,6 +168,45 @@ def _not_found(exc: ValueError) -> HTTPException:
     return HTTPException(status_code=404, detail=str(exc))
 
 
+def _parse_ts(value: str | None) -> datetime | None:
+    """解析 ISO 时间戳；解析不了就返回 None（当作没这个筛选条件）。
+
+    ⚠️ **不能直接拿字符串比较时间** —— 事件的时间戳是 `2026-10-30T07:23:00`，
+       浏览器给的可能是 `2026-10-30T07:23:00.000Z`，
+       两种格式字典序一比就错了。
+    """
+    if not value:
+        return None
+    text = value.strip().replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    # 没带时区的按 UTC 解释（平台侧的时间一律是 UTC）
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed
+
+
+def _at_or_after(event_ts: str, moment: datetime) -> bool:
+    """事件时间是否在 moment 之后（含）。
+
+    事件时间解析不出来时**保留**该事件 —— 宁可多给一条，
+    也不要因为格式问题把用户的告警藏起来。
+    """
+    parsed = _parse_ts(event_ts)
+    if parsed is None:
+        return True
+    return parsed >= moment
+
+
+def _at_or_before(event_ts: str, moment: datetime) -> bool:
+    parsed = _parse_ts(event_ts)
+    if parsed is None:
+        return True
+    return parsed <= moment
+
+
 MAX_PREVIEW_POINTS = 2000
 
 
@@ -210,19 +250,26 @@ def build_router(
         """
         store = _store()
         events, skipped = collect_alert_events(store, get_data_root())
+        # ⚠️ 候选值（档位 / 序列）必须从**未筛选**的集合里汇总 ——
+        #    否则选了 P1 之后下拉里就只剩 P1，用户再也改不回去，
+        #    筛选器把自己锁死了。
+        candidates = events
         if job_id is not None:
             events = [item for item in events if item.job_id == job_id]
         if level:
             events = [item for item in events if item.level == level]
         if series_id:
             events = [item for item in events if item.series_id == series_id]
-        if since:
-            events = [item for item in events if item.start_ts >= since]
-        if until:
-            events = [item for item in events if item.start_ts <= until]
+        since_dt = _parse_ts(since)
+        until_dt = _parse_ts(until)
+        if since_dt is not None:
+            events = [item for item in events if _at_or_after(item.start_ts, since_dt)]
+        if until_dt is not None:
+            events = [item for item in events if _at_or_before(item.start_ts, until_dt)]
         return {
             "events": [asdict(item) for item in events],
-            "levels": sorted({item.level for item in events}),
+            "levels": sorted({item.level for item in candidates}),
+            "series": sorted({item.series_id for item in candidates}),
             "jobs": [{"id": job.id, "name": job.name} for job in store.list_jobs()],
             "skipped": skipped,
         }
