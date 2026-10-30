@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from anomaly_lab.platform.store import PlatformStore
 from anomaly_lab.web.app import create_app
 
 
@@ -91,3 +92,62 @@ def test_delete_response_does_not_leak_internal_run_ids(tmp_path):
     source_id, _, _job_id = _seed(client)
     body = client.delete(f"/api/platform/sources/{source_id}").json()
     assert "run_ids" not in body["deleted"]
+
+
+def test_deleting_job_removes_run_directory_files(tmp_path):
+    """⚠️ 数据库外键管不到文件系统 —— run 目录必须跟着删，否则留垃圾。"""
+    client = _client(tmp_path)
+    _, _, job_id = _seed(client)
+    run_root = tmp_path / "cache" / "platform" / "runs" / "42"
+    run_root.mkdir(parents=True)
+    (run_root / "index.json").write_text("{}", encoding="utf-8")
+    (run_root / "abc.npz").write_bytes(b"x")
+
+    # 让 store 知道这个 run 属于该任务
+    store = PlatformStore(tmp_path / "platform.db")
+    with store._conn() as conn:
+        conn.execute(
+            "INSERT INTO runs (id, job_id, status, started_at, n_series, n_alerts)"
+            " VALUES (42, ?, 'success', '2026-10-30T00:00:00+00:00', 1, 0)",
+            (job_id,),
+        )
+
+    client.delete(f"/api/platform/jobs/{job_id}")
+    assert not run_root.exists()
+
+
+def test_deleting_source_removes_run_directory_files(tmp_path):
+    """删数据源时，下属任务的 run 目录也要清掉。"""
+    client = _client(tmp_path)
+    source_id, _, job_id = _seed(client)
+    run_root = tmp_path / "cache" / "platform" / "runs" / "7"
+    run_root.mkdir(parents=True)
+    (run_root / "index.json").write_text("{}", encoding="utf-8")
+
+    store = PlatformStore(tmp_path / "platform.db")
+    with store._conn() as conn:
+        conn.execute(
+            "INSERT INTO runs (id, job_id, status, started_at, n_series, n_alerts)"
+            " VALUES (7, ?, 'success', '2026-10-30T00:00:00+00:00', 1, 0)",
+            (job_id,),
+        )
+
+    client.delete(f"/api/platform/sources/{source_id}")
+    assert not run_root.exists()
+
+
+def test_deleting_running_job_returns_409(tmp_path):
+    """运行中的任务不能删 —— 否则 run 还在写、文件已被删掉。"""
+    from anomaly_lab.platform import runner as runner_module
+
+    client = _client(tmp_path)
+    _, _, job_id = _seed(client)
+    runner_module._INFLIGHT[job_id] = 99
+    try:
+        response = client.delete(f"/api/platform/jobs/{job_id}")
+    finally:
+        runner_module._INFLIGHT.pop(job_id, None)
+    assert response.status_code == 409
+    assert "运行" in response.json()["detail"]
+    # 拒删之后任务还在
+    assert len(client.get("/api/platform/catalog").json()["jobs"]) == 1
