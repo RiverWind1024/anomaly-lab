@@ -5,7 +5,7 @@
  * EXPECTED_PATHS，缺失即失败。
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { getCatalog, createSource, createMetric, createJob, toggleJob, runJob, getRuns, getPreview, getCompare, createFeedback, getFeedback, getSuggestion, applySuggestion } from './platform'
+import { getCatalog, createSource, createMetric, createJob, toggleJob, runJob, getRuns, getPreview, getCompare, createFeedback, getFeedback, getSuggestion, applySuggestion, getAlerts, deleteJob, deleteMetric, deleteSource } from './platform'
 import { getSeries, getSeriesValues, getSummary, getBadcases } from './series'
 import { getAnnotations, saveAnnotations } from './annotate'
 
@@ -14,11 +14,19 @@ import { getAnnotations, saveAnnotations } from './annotate'
  *
  * `/api/health` **故意不封装** —— 它是给运维探针用的，前端不消费。
  * 若哪天前端要展示后端健康状态，再加进来。
+ *
+ * ⚠️ 这份清单是**手写**的，所以它只保证「列出来的前端都封装了」。
+ *    反向保证（后端有、这里漏了）由后端的守卫负责：
+ *    `tests/web/test_api_contract.py::test_frontend_covers_all_backend_endpoints`。
+ *    两条合起来才是完整的双向覆盖。
  */
 const EXPECTED_PATHS = [
   '/api/platform/catalog',
+  '/api/platform/alerts',
   '/api/platform/sources',
+  '/api/platform/sources/{id}',
   '/api/platform/metrics',
+  '/api/platform/metrics/{id}',
   '/api/platform/jobs',
   '/api/platform/jobs/{id}',
   '/api/platform/jobs/{id}/run',
@@ -89,6 +97,11 @@ describe('端点封装层', () => {
     await getSuggestion(7)
     await getSuggestion(7, 3)
     await applySuggestion(7, { multiplier: 2.5 })
+    await getAlerts()
+    await getAlerts({ jobId: 1, level: 'P0' })
+    await deleteJob(7)
+    await deleteMetric(1)
+    await deleteSource(1)
     await getSeries()
     await getSeriesValues('a:b')
     await getSummary()

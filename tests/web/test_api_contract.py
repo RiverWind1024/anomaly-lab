@@ -159,3 +159,49 @@ def test_frontend_limits_match_backend_validation():
     assert validate_interval_seconds(interval_min) == interval_min
     with pytest.raises(ValueError):
         validate_interval_seconds(interval_min - 1)
+
+
+#: 前端**故意不封装**的端点 —— 各自有理由，不是漏掉。
+_FRONTEND_SKIPPED_ENDPOINTS = {
+    "/api/health",  # 运维探针用的，前端不消费
+}
+
+
+def _backend_api_endpoints() -> set[str]:
+    """从后端源码 grep 出全部 /api/* 端点（路径参数归一成 {id}）。"""
+    root = Path(__file__).resolve().parents[2] / "src/anomaly_lab/web"
+    pattern = re.compile(
+        r'@\w+\.(?:get|post|patch|put|delete)\(\s*"(?P<path>/api/[^"]*)"'
+    )
+    found: set[str] = set()
+    for path in sorted(root.glob("*.py")):
+        for match in pattern.finditer(path.read_text(encoding="utf-8")):
+            route = match.group("path")
+            # 路径参数统一归一：{job_id} / {series_id} → {id}
+            found.add(re.sub(r"\{[^}]+\}", "{id}", route))
+    return found
+
+
+def _frontend_expected_paths() -> set[str]:
+    """从前端 endpoints.test.ts 里读 EXPECTED_PATHS 清单。"""
+    path = (
+        Path(__file__).resolve().parents[2]
+        / "frontend/src/api/endpoints.test.ts"
+    )
+    text = path.read_text(encoding="utf-8")
+    block = re.search(r"const EXPECTED_PATHS = \[(.*?)\]", text, re.DOTALL)
+    assert block, "endpoints.test.ts 里找不到 EXPECTED_PATHS"
+    return set(re.findall(r"'([^']+)'", block.group(1)))
+
+
+def test_frontend_covers_all_backend_endpoints():
+    """反向守卫：后端每个端点都要出现在前端的端点清单里。
+
+    ⚠️ 前端那个 `endpoints.test.ts` 只保证「清单里的都封装了」，
+       方向是单向的 —— 后端加了新端点而忘了更新清单，它不会红。
+       这个测试补上另一半，两个方向合起来才是完整覆盖。
+    """
+    backend = _backend_api_endpoints() - _FRONTEND_SKIPPED_ENDPOINTS
+    frontend = _frontend_expected_paths()
+    missing = sorted(backend - frontend)
+    assert not missing, f"后端有但前端端点清单漏了：{missing}"
