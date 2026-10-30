@@ -6,6 +6,7 @@ import { useMemo } from 'react'
 import { AppLayout } from './components/AppLayout'
 import { AppRoutes } from './router'
 import { buildAntdTheme } from './theme/antdTheme'
+import { ThemeModeContext } from './theme/ThemeModeContext'
 import { useThemeMode } from './theme/useThemeMode'
 
 /**
@@ -42,11 +43,14 @@ export function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ConfigProvider locale={zhCN} theme={theme}>
-        <BrowserRouter>
-          <AppLayout themeMode={themeMode} onToggleTheme={toggleTheme}>
-            <AppRoutes />
-          </AppLayout>
-        </BrowserRouter>
+        {/* 主题模式进 context —— ECharts 之类的库要靠它知道该重画了 */}
+        <ThemeModeContext.Provider value={themeMode}>
+          <BrowserRouter>
+            <AppLayout themeMode={themeMode} onToggleTheme={toggleTheme}>
+              <AppRoutes />
+            </AppLayout>
+          </BrowserRouter>
+        </ThemeModeContext.Provider>
       </ConfigProvider>
     </QueryClientProvider>
   )
