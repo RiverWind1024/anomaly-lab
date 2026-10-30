@@ -29,7 +29,7 @@ const BadCasesPage = lazy(() =>
   import('./pages/BadCasesPage').then((m) => ({ default: m.BadCasesPage })),
 )
 const AnnotatePage = lazy(() =>
-  import('./pages/AnnotatePage').then((m) => ({ default: m.AnnotatePage })),
+  import('./features/annotate/AnnotatePage').then((m) => ({ default: m.AnnotatePage })),
 )
 
 export function AppRoutes() {
