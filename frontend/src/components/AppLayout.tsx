@@ -13,6 +13,7 @@ const { Sider, Content } = Layout
  *    指标页的入口在数据源详情里（/sources/:id → 指标列表 → /metrics/:id）。
  */
 export const NAV_ITEMS = [
+  { key: '/', label: '概览' },
   { key: '/sources', label: '数据源' },
   { key: '/jobs', label: '检测任务' },
   { key: '/alerts', label: '告警中心' },
@@ -34,8 +35,8 @@ export function AppLayout({ themeMode, onToggleTheme, children }: AppLayoutProps
   // 详情页 /jobs/3 的高亮要落在 /jobs 上；
   // 指标页 /metrics/3 的高亮要落在 /sources 上（指标是数据源的子级）
   const selectedKey =
-    NAV_ITEMS.find((item) => location.pathname.startsWith(item.key))?.key ??
-    (location.pathname.startsWith('/metrics') ? '/sources' : '')
+    NAV_ITEMS.find((item) => item.key !== '/' && location.pathname.startsWith(item.key))?.key ??
+    (location.pathname.startsWith('/metrics') ? '/sources' : '/')
 
   return (
     <Layout className="app-layout">

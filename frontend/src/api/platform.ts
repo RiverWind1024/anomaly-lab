@@ -5,6 +5,7 @@ import type {
   Catalog,
   Compare,
   FeedbackList,
+  Overview,
   Preview,
   RunSummary,
   Suggestion,
@@ -17,6 +18,13 @@ import type {
  */
 
 export const getCatalog = () => request<Catalog>('/api/platform/catalog')
+
+/**
+ * 平台运行概况（概览页）。
+ *
+ * ⚠️ 一次请求拿全 —— 让前端自己拼的话，每个任务都要单独查 runs 与 feedback。
+ */
+export const getOverview = () => request<Overview>('/api/platform/overview')
 
 /**
  * 跨任务汇总告警事件。

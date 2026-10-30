@@ -225,6 +225,100 @@ def build_router(
     def _store() -> PlatformStore:
         return get_store()
 
+    @router.get("/api/platform/overview")
+    def overview() -> dict:
+        """整个平台的运行概况 —— 概览页一次请求拿全。
+
+        ⚠️ 别让前端自己去拼：那样每个任务都要单独查 runs 与 feedback，
+           概览页（登录后第一屏）会发出 N+1 个请求。
+        """
+        store = _store()
+        jobs = store.list_jobs()
+        latest = store.latest_runs()
+        run_stats = store.run_stats()
+        feedback_stats = store.feedback_stats()
+
+        events, skipped = collect_alert_events(store, get_data_root())
+
+        by_level: dict[str, int] = {}
+        by_job: dict[int, int] = {}
+        by_series: dict[str, int] = {}
+        for event in events:
+            by_level[event.level] = by_level.get(event.level, 0) + 1
+            by_job[event.job_id] = by_job.get(event.job_id, 0) + 1
+            by_series[event.series_id] = by_series.get(event.series_id, 0) + 1
+
+        job_name_by_id = {job.id: job.name for job in jobs}
+        total_runs = sum(run_stats.values())
+        return {
+            "counts": {
+                "sources": len(store.list_sources()),
+                "metrics": len(store.list_metrics()),
+                "jobs": len(jobs),
+                "enabled_jobs": sum(1 for job in jobs if job.enabled),
+            },
+            "runs": {
+                "total": total_runs,
+                "success": run_stats.get("success", 0),
+                "failed": run_stats.get("failed", 0),
+                "running": run_stats.get("running", 0),
+            },
+            "alerts": {
+                "total": len(events),
+                "by_level": [
+                    {"level": level, "count": count}
+                    for level, count in sorted(
+                        by_level.items(), key=lambda kv: (-kv[1], kv[0])
+                    )
+                ],
+                "by_job": [
+                    {"job_id": job_id, "job_name": job_name_by_id.get(job_id, str(job_id)),
+                     "count": count}
+                    for job_id, count in sorted(by_job.items(), key=lambda kv: (-kv[1], kv[0]))
+                ],
+                # 告警最多的序列 —— 用户最关心的就是「哪条序列在告」
+                "top_series": [
+                    {"series_id": series_id, "count": count}
+                    for series_id, count in sorted(
+                        by_series.items(), key=lambda kv: (-kv[1], kv[0])
+                    )[:10]
+                ],
+                "skipped": len(skipped),
+            },
+            "feedback": {
+                "total": sum(feedback_stats.values()),
+                "by_kind": [
+                    {"kind": kind, "count": count}
+                    for kind, count in sorted(
+                        feedback_stats.items(), key=lambda kv: (-kv[1], kv[0])
+                    )
+                ],
+            },
+            "jobs": [
+                {
+                    "id": job.id,
+                    "name": job.name,
+                    "enabled": job.enabled,
+                    "detector": job.detector,
+                    "metric_id": job.metric_id,
+                    "last_run": (
+                        {
+                            "id": run.id,
+                            "status": run.status,
+                            "started_at": run.started_at,
+                            "finished_at": run.finished_at,
+                            "n_series": run.n_series,
+                            "n_alerts": run.n_alerts,
+                            "error": run.error,
+                        }
+                        if (run := latest.get(job.id)) is not None
+                        else None
+                    ),
+                }
+                for job in jobs
+            ],
+        }
+
     @router.get("/api/platform/catalog")
     def catalog() -> dict:
         store = _store()

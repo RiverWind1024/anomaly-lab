@@ -5,7 +5,7 @@
  * EXPECTED_PATHS，缺失即失败。
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { getCatalog, createSource, createMetric, createJob, toggleJob, runJob, getRuns, getPreview, getCompare, createFeedback, getFeedback, getSuggestion, applySuggestion, getAlerts, deleteJob, deleteMetric, deleteSource, updateSource, updateMetric } from './platform'
+import { getCatalog, getOverview, createSource, createMetric, createJob, toggleJob, runJob, getRuns, getPreview, getCompare, createFeedback, getFeedback, getSuggestion, applySuggestion, getAlerts, deleteJob, deleteMetric, deleteSource, updateSource, updateMetric } from './platform'
 import { getSeries, getSeriesValues, getSummary, getBadcases, getExclusions, excludeEvaluationRow, restoreEvaluationRow } from './series'
 import { getAnnotations, saveAnnotations } from './annotate'
 
@@ -22,6 +22,7 @@ import { getAnnotations, saveAnnotations } from './annotate'
  */
 const EXPECTED_PATHS = [
   '/api/platform/catalog',
+  '/api/platform/overview',
   '/api/platform/alerts',
   '/api/platform/sources',
   '/api/platform/sources/{id}',
@@ -89,6 +90,7 @@ afterEach(() => {
 describe('端点封装层', () => {
   it('每个封装函数都打到后端真实存在的路径上', async () => {
     await getCatalog()
+    await getOverview()
     await createSource({ name: 's', path: '/p' })
     await createMetric({ source_id: 1, name: 'm', query: 'q', time_column: 't', value_column: 'v' })
     await createJob({ metric_id: 1, name: 'j' })

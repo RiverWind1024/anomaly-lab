@@ -109,6 +109,59 @@ export interface SkippedJob {
   reason: string
 }
 
+// ─────────────────────────────────────────── 概览 /api/platform/overview
+
+export interface OverviewCounts {
+  sources: number
+  metrics: number
+  jobs: number
+  enabled_jobs: number
+}
+
+export interface OverviewRuns {
+  total: number
+  success: number
+  failed: number
+  running: number
+}
+
+export interface OverviewLatestRun {
+  id: number
+  status: string
+  started_at: string
+  finished_at: string | null
+  n_series: number
+  n_alerts: number
+  error: string | null
+}
+
+export interface OverviewJob {
+  id: number
+  name: string
+  enabled: boolean
+  detector: string
+  metric_id: number
+  last_run: OverviewLatestRun | null
+}
+
+export interface Overview {
+  counts: OverviewCounts
+  runs: OverviewRuns
+  alerts: {
+    total: number
+    by_level: Array<{ level: string; count: number }>
+    by_job: Array<{ job_id: number; job_name: string; count: number }>
+    top_series: Array<{ series_id: string; count: number }>
+    /** 没纳入统计的任务数（没跑过 / 失败 / 运行中）。 */
+    skipped: number
+  }
+  feedback: {
+    total: number
+    by_kind: Array<{ kind: string; count: number }>
+  }
+  jobs: OverviewJob[]
+}
+
 export interface AlertListResponse {
   events: AlertEvent[]
   levels: string[]

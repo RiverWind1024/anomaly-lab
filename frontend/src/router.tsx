@@ -13,6 +13,9 @@ import { Placeholder } from './pages/Placeholder'
  * 指标是数据源的子级，平铺成两个一级页面会丢掉这层关系。
  */
 const JobsPage = lazy(() => import('./pages/JobsPage').then((m) => ({ default: m.JobsPage })))
+const DashboardPage = lazy(() =>
+  import('./pages/DashboardPage').then((m) => ({ default: m.DashboardPage })),
+)
 const AlertsPage = lazy(() =>
   import('./pages/AlertsPage').then((m) => ({ default: m.AlertsPage })),
 )
@@ -42,8 +45,8 @@ export function AppRoutes() {
   return (
     <Suspense fallback={<Skeleton active paragraph={{ rows: 8 }} />}>
       <Routes>
-        {/* 旧的「序列总览」已删 —— 合成序列并入「检测记录」页 */}
-        <Route path="/" element={<Navigate to="/sources" replace />} />
+        {/* 旧的「序列总览」已删 —— 合成序列并入「检测记录」页；首页是概览 */}
+        <Route path="/" element={<DashboardPage />} />
         <Route path="/sources" element={<SourcesPage />} />
         <Route path="/sources/:sourceId" element={<SourceDetailPage />} />
         <Route path="/metrics/:metricId" element={<MetricDetailPage />} />

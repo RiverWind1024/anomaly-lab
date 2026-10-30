@@ -599,6 +599,36 @@ class PlatformStore:
         runs = self.list_runs(job_id, limit=1)
         return runs[0] if runs else None
 
+    def run_stats(self) -> dict[str, int]:
+        """全部任务的运行统计（按状态计数）。
+
+        ⚠️ 一次查询拿完 —— 概览页要的是**全局**统计，
+           逐个任务查 list_runs 是 N+1 次查询。
+        """
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT status, COUNT(*) FROM runs GROUP BY status"
+            ).fetchall()
+        return {str(status): int(count) for status, count in rows}
+
+    def latest_runs(self) -> dict[int, Run]:
+        """每个任务最近一次运行（job_id → Run）。"""
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT r.* FROM runs r JOIN ("
+                " SELECT job_id, MAX(id) AS max_id FROM runs GROUP BY job_id"
+                ") m ON r.id = m.max_id"
+            ).fetchall()
+        return {int(row["job_id"]): Run(**dict(row)) for row in rows}
+
+    def feedback_stats(self) -> dict[str, int]:
+        """人工反馈统计（按 kind 计数）。"""
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT kind, COUNT(*) FROM feedback GROUP BY kind"
+            ).fetchall()
+        return {str(kind): int(count) for kind, count in rows}
+
     # ---------- 人工反馈 ----------
 
     def add_feedback(
