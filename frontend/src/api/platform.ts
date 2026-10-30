@@ -125,3 +125,25 @@ export const getSuggestion = (jobId: number, runId?: number) => {
 
 export const applySuggestion = (jobId: number, payload: { multiplier: number; detector?: string }) =>
   postJson<unknown>(`/api/platform/jobs/${jobId}/apply-suggestion`, payload)
+
+/**
+ * 删除的统计（级联删掉了多少东西）。
+ *
+ * ⚠️ 后端会把内部的 `run_ids` pop 掉再返回 —— 响应里只有计数。
+ */
+export interface DeleteStats {
+  sources?: number
+  metrics: number
+  jobs: number
+  runs: number
+  feedback: number
+}
+
+export const deleteJob = (jobId: number) =>
+  request<{ deleted: DeleteStats }>(`/api/platform/jobs/${jobId}`, { method: 'DELETE' })
+
+export const deleteMetric = (metricId: number) =>
+  request<{ deleted: DeleteStats }>(`/api/platform/metrics/${metricId}`, { method: 'DELETE' })
+
+export const deleteSource = (sourceId: number) =>
+  request<{ deleted: DeleteStats }>(`/api/platform/sources/${sourceId}`, { method: 'DELETE' })
