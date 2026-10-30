@@ -112,6 +112,49 @@ pre {
   font-size: var(--text-xs);
 }
 
+/* 多算法对比 */
+.compare-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.section__title {
+  font-size: var(--text-lg);
+  letter-spacing: -0.01em;
+}
+
+.compare-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.compare-picker__hint {
+  margin: 0;
+}
+
+.compare-summary {
+  margin: 0;
+}
+
+.compare-chart {
+  min-height: 420px;
+}
+
+/* 对比表里的算法色点 */
+.compare-table__dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
 /* 预览面板 */
 .preview-panel {
   display: flex;
