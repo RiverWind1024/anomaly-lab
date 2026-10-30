@@ -66,3 +66,51 @@ def merge_alert_intervals(severity: np.ndarray) -> list[tuple[int, int, int]]:
     if start is not None:
         intervals.append((start, len(severity) - 1, int(severity[start:].max())))
     return intervals
+
+
+def _iso(ts: np.datetime64) -> str:
+    """时间戳 → ISO 秒精度字符串（与 preview 端点的格式一致）。"""
+    return str(np.datetime64(ts).astype("datetime64[s]"))
+
+
+def events_from_series(
+    *,
+    severity: np.ndarray,
+    timestamps: np.ndarray,
+    scores: np.ndarray,
+    levels: list[str],
+    job_id: int,
+    job_name: str,
+    metric_id: int,
+    metric_name: str,
+    series_id: str,
+    group: str | None,
+    detector: str,
+    score_type: str,
+    run_id: int,
+) -> list[AlertEvent]:
+    """把一条序列的逐点 severity 转成告警事件列表。"""
+    events: list[AlertEvent] = []
+    for start, end, level_index in merge_alert_intervals(severity):
+        level = levels[level_index] if 0 < level_index < len(levels) else "未知"
+        window = scores[start : end + 1]
+        events.append(
+            AlertEvent(
+                job_id=job_id,
+                job_name=job_name,
+                metric_id=metric_id,
+                metric_name=metric_name,
+                series_id=series_id,
+                group=group,
+                level=level,
+                level_index=level_index,
+                start_ts=_iso(timestamps[start]),
+                end_ts=_iso(timestamps[end]),
+                n_points=end - start + 1,
+                max_score=float(window.max()) if window.size else 0.0,
+                detector=detector,
+                score_type=score_type,
+                run_id=run_id,
+            )
+        )
+    return events
