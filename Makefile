@@ -15,7 +15,7 @@ test:
 	$(PY) -m pytest
 
 lint:
-	$(PY) -m ruff check src tests
+	$(PY) -m ruff check scripts src tests
 
 generate:
 	$(PY) -m anomaly_lab.cli generate --n 120 --seed 42
@@ -51,21 +51,23 @@ frontend-build:
 
 # dev：vite 与 uvicorn 两个进程并行。
 #
-# ⚠️ 两个坑：
-#  1. vite 必须在**子 shell** 里 cd —— 否则外层 shell 的 cwd 停在 frontend/，
-#     而 CONFIG.data_dir = Path("data") 是相对 cwd 的，服务器会去读 frontend/data/。
-#  2. `&` 起的后台任务要**杀整个进程组** —— 只 kill $! 杀的是 npm 的 wrapper，
-#     真正的 node vite 子进程会活下来占着 5173 端口。
-#     `set -m` 让后台任务自成一个进程组，然后 `kill -- -$$VPID` 整组收掉。
+# 编排交给 scripts/dev.py（不是 shell）—— shell 那套踩过三个坑：
+#   1. vite 必须在**子 shell** 里 cd —— 否则 cwd 停在 frontend/，
+#      而 CONFIG.data_dir = Path("data") 是相对 cwd 的，会去读 frontend/data/。
+#   2. `&` 起的后台任务要**杀整个进程组** —— 只 kill $! 杀的是 npm 的 wrapper，
+#      真正的 node vite 子进程会活下来占着 5173。
+#   3. 端口被占时 uvicorn 只说 `Errno 98`；vite 还会**静默换到下一个端口**，
+#      输出里的地址与实际访问的不一致。
+#
+# 端口可覆盖：`PORT=8001 VITE_PORT=5174 make dev`
+PORT ?= 8000
+VITE_PORT ?= 5173
+
 dev:
-	@set -m; \
-	(cd frontend && $(NPM) run dev -- --port 5173) & \
-	VPID=$$!; \
-	trap 'kill -- -$$VPID 2>/dev/null || true' EXIT INT TERM; \
-	$(PY) -m anomaly_lab.cli serve --port 8000
+	@PORT=$(PORT) VITE_PORT=$(VITE_PORT) $(PY) scripts/dev.py
 
 serve: frontend-build
-	$(PY) -m anomaly_lab.cli serve --port 8000
+	$(PY) -m anomaly_lab.cli serve --port $(PORT)
 
 platform-demo:
 	$(PY) -m anomaly_lab.cli platform-demo --data data

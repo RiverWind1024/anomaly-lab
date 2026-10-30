@@ -35,8 +35,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from anomaly_lab.detectors.chronos import default_model_name  # noqa: E402
-
 
 def main() -> int:
     model_name = os.environ.get("ANOMALY_LAB_CHRONOS_MODEL", "").strip()
@@ -61,7 +59,8 @@ def main() -> int:
     )
     print(f"用 {pipeline_class.__name__} 加载（联网模式，这一步可能几分钟）…")
     started = time.perf_counter()
-    pipeline = pipeline_class.from_pretrained(model_name, device_map="cpu")
+    # 这一步有**副作用**（把权重下载进本地缓存），返回值用不上但调用不能省
+    pipeline_class.from_pretrained(model_name, device_map="cpu")
     print(f"✓ 加载完成，用时 {time.perf_counter() - started:.1f}s")
 
     from anomaly_lab.detectors.chronos import chronos_available
