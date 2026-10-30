@@ -94,6 +94,16 @@ CREATE TABLE IF NOT EXISTS feedback (
 """
 
 
+def _pick(fields: dict, key: str, current):
+    """取「要改的值」：传了用传的，没传用当前的。
+
+    ⚠️ **不能写成 `fields.get(key) or current`** —— 0 会被当成「没传」，
+       于是「把窗口点改成 0」这种非法输入会被静默忽略。
+    """
+    value = fields.get(key)
+    return current if value is None else value
+
+
 class PlatformStore:
     """平台元数据的唯一入口；每次操作单独开连接，天然线程安全。"""
 
@@ -407,6 +417,92 @@ class PlatformStore:
         data["enabled"] = bool(data["enabled"])
         data["alert_rules"] = rules_to_dicts(parse_rules(data.get("alert_rules") or "[]"))
         return Job(**data)
+
+    def update_job_config(self, job_id: int, **fields) -> Job:
+        """改任务配置。只传要改的字段，其余保持原样。
+
+        ⚠️ **阈值与规则表必须一致**：
+           改了阈值就**重算规则表**（以阈值为准），
+           否则规则表里还是旧的倍数条件，两边对不上。
+           反过来，改其它字段时**不动**规则表 ——
+           否则用户通过「应用建议」调好的规则会被冲掉。
+
+        ⚠️ 已经跑过的运行记录不受影响（结果早已落盘），
+           改动只在**下一次**运行任务时生效。
+        """
+        current = self.get_job(job_id)
+        name = validate_name(_pick(fields, "name", current.name), "任务名称")
+        detector = _pick(fields, "detector", current.detector)
+        if detector != AUTO_DETECTOR and detector not in DETECTOR_FACTORIES:
+            raise ValueError(f"不支持的检测器: {detector}")
+        metric_id = int(_pick(fields, "metric_id", current.metric_id))
+        self.get_metric(metric_id)
+        window_points = validate_window_points(
+            int(_pick(fields, "window_points", current.window_points))
+        )
+        interval_seconds = validate_interval_seconds(
+            int(_pick(fields, "interval_seconds", current.interval_seconds))
+        )
+        enabled = fields.get("enabled", current.enabled)
+        alert = float(_pick(fields, "alert_threshold", current.alert_threshold))
+        if fields.get("critical_threshold") is not None:
+            critical = float(fields["critical_threshold"])
+        elif alert != current.alert_threshold and alert >= current.critical_threshold:
+            # 只改了告警阈值、没改严重阈值 —— 严重阈值跟着抬。
+            # 否则会出现「严重阈值 ≤ 告警阈值」这种非法组合，
+            # 用户改一个数却被要求改两个。
+            critical = alert * 1.5
+        else:
+            critical = current.critical_threshold
+        validate_thresholds(alert, critical)
+
+        # 阈值变了才重算规则表
+        rules_json = None
+        if alert != current.alert_threshold or critical != current.critical_threshold:
+            rules_json = json.dumps(
+                rules_to_dicts(default_rules(alert, critical)), ensure_ascii=False
+            )
+
+        try:
+            with self._conn() as conn:
+                if rules_json is None:
+                    conn.execute(
+                        "UPDATE jobs SET name = ?, metric_id = ?, detector = ?,"
+                        " alert_threshold = ?, critical_threshold = ?, window_points = ?,"
+                        " interval_seconds = ?, enabled = ? WHERE id = ?",
+                        (
+                            name,
+                            metric_id,
+                            detector,
+                            alert,
+                            critical,
+                            window_points,
+                            interval_seconds,
+                            1 if enabled else 0,
+                            job_id,
+                        ),
+                    )
+                else:
+                    conn.execute(
+                        "UPDATE jobs SET name = ?, metric_id = ?, detector = ?,"
+                        " alert_threshold = ?, critical_threshold = ?, window_points = ?,"
+                        " interval_seconds = ?, enabled = ?, alert_rules = ? WHERE id = ?",
+                        (
+                            name,
+                            metric_id,
+                            detector,
+                            alert,
+                            critical,
+                            window_points,
+                            interval_seconds,
+                            1 if enabled else 0,
+                            rules_json,
+                            job_id,
+                        ),
+                    )
+        except sqlite3.IntegrityError as exc:
+            raise ValueError(f"任务名称已存在: {name}") from exc
+        return self.get_job(job_id)
 
     def set_job_enabled(self, job_id: int, enabled: bool) -> None:
         with self._conn() as conn:

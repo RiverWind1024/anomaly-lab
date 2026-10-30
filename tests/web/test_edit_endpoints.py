@@ -70,6 +70,90 @@ def test_patch_unknown_source_is_404(tmp_path):
     assert resp.status_code == 404
 
 
+# ---------- 检测任务 ----------
+
+
+def _seed_job(client):
+    source_id, metric_id = _seed(client)
+    job = client.post(
+        "/api/platform/jobs",
+        json={"metric_id": metric_id, "name": "demo-job", "detector": "iqr"},
+    ).json()
+    return source_id, metric_id, job
+
+
+def test_patch_job_updates_window_points(tmp_path):
+    client = _client(tmp_path)
+    _, _, job = _seed_job(client)
+    resp = client.patch(f"/api/platform/jobs/{job['id']}", json={"window_points": 120})
+    assert resp.status_code == 200
+    assert resp.json()["window_points"] == 120
+
+
+def test_patch_job_keeps_untouched_fields(tmp_path):
+    client = _client(tmp_path)
+    _, _, job = _seed_job(client)
+    resp = client.patch(f"/api/platform/jobs/{job['id']}", json={"window_points": 120})
+    body = resp.json()
+    assert body["name"] == "demo-job"
+    assert body["detector"] == "iqr"
+    assert body["enabled"] is True
+
+
+def test_patch_job_rejects_unknown_detector(tmp_path):
+    client = _client(tmp_path)
+    _, _, job = _seed_job(client)
+    resp = client.patch(f"/api/platform/jobs/{job['id']}", json={"detector": "不存在的算法"})
+    assert resp.status_code == 400
+
+
+def test_patch_job_rejects_invalid_window(tmp_path):
+    client = _client(tmp_path)
+    _, _, job = _seed_job(client)
+    resp = client.patch(f"/api/platform/jobs/{job['id']}", json={"window_points": 0})
+    assert resp.status_code == 400
+
+
+def test_patch_job_can_switch_metric(tmp_path):
+    client = _client(tmp_path)
+    _, metric_id, job = _seed_job(client)
+    other = client.post(
+        "/api/platform/metrics",
+        json={
+            "source_id": 1,
+            "name": "other",
+            "query": "SELECT ts, value FROM t WHERE $timefilter",
+            "time_column": "ts",
+            "value_column": "value",
+        },
+    ).json()
+    resp = client.patch(f"/api/platform/jobs/{job['id']}", json={"metric_id": other["id"]})
+    assert resp.status_code == 200
+    assert resp.json()["metric_id"] == other["id"]
+    assert metric_id != other["id"]
+
+
+def test_patch_job_threshold_change_syncs_alert_rules(tmp_path):
+    """改了阈值，规则表要跟着重算 —— 否则倍数条件还是旧的，两边对不上。"""
+    client = _client(tmp_path)
+    _, _, job = _seed_job(client)
+    before = job["alert_rules"]
+    resp = client.patch(f"/api/platform/jobs/{job['id']}", json={"alert_threshold": 5.0})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["alert_threshold"] == 5.0
+    assert body["alert_rules"] != before
+
+
+def test_patch_job_other_field_keeps_alert_rules(tmp_path):
+    """改别的字段**不能**动规则表 ——
+    用户通过「应用建议」调好的规则会被冲掉。"""
+    client = _client(tmp_path)
+    _, _, job = _seed_job(client)
+    resp = client.patch(f"/api/platform/jobs/{job['id']}", json={"window_points": 120})
+    assert resp.json()["alert_rules"] == job["alert_rules"]
+
+
 # ---------- 指标 ----------
 
 

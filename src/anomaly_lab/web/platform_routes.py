@@ -102,10 +102,20 @@ class JobIn(BaseModel):
 
 
 class JobToggleIn(BaseModel):
-    """任务配置更新：启用状态与（或）检测算法。"""
+    """任务配置更新：**全部可选** —— 只传要改的字段。
 
+    ⚠️ `alert_rules` **不在其中** —— 告警规则不能自由编辑（spec §8.3），
+       只能通过「应用反馈建议」按比例缩放。
+    """
+
+    name: str | None = None
+    metric_id: int | None = None
     enabled: bool | None = None
     detector: str | None = None
+    alert_threshold: float | None = None
+    critical_threshold: float | None = None
+    window_points: int | None = None
+    interval_seconds: int | None = None
 
 
 class AlertRuleIn(BaseModel):
@@ -148,14 +158,13 @@ def _clean(values: np.ndarray) -> list[float | None]:
     return result
 
 
-def _raise_store_error(exc: ValueError) -> HTTPException:
-    """把 store 的 ValueError 变成 HTTP 错误。
+def _not_found(exc: ValueError) -> HTTPException:
+    """「资源不存在」→ 404。
 
-    「资源不存在」是 404，其余（重名、字段校验不过）是 400。
+    ⚠️ **不要用「消息里有没有『不存在』」来判断** ——
+       「不支持的检测器: 不存在的算法」也会命中那个词。
     """
-    detail = str(exc)
-    status = 404 if "不存在" in detail else 400
-    return HTTPException(status_code=status, detail=detail)
+    return HTTPException(status_code=404, detail=str(exc))
 
 
 MAX_PREVIEW_POINTS = 2000
@@ -228,12 +237,17 @@ def build_router(
 
     @router.patch("/api/platform/sources/{source_id}")
     def patch_source(source_id: int, payload: SourcePatchIn) -> dict:
+        store = _store()
         try:
-            source = _store().update_source(
+            store.get_source(source_id)
+        except ValueError as exc:
+            raise _not_found(exc) from exc
+        try:
+            source = store.update_source(
                 source_id, name=payload.name, path=payload.path, kind=payload.kind
             )
         except ValueError as exc:
-            raise _raise_store_error(exc) from exc
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         return asdict(source)
 
     @router.post("/api/platform/metrics")
@@ -257,12 +271,17 @@ def build_router(
 
     @router.patch("/api/platform/metrics/{metric_id}")
     def patch_metric(metric_id: int, payload: MetricPatchIn) -> dict:
+        store = _store()
         try:
-            metric = _store().update_metric(
+            store.get_metric(metric_id)
+        except ValueError as exc:
+            raise _not_found(exc) from exc
+        try:
+            metric = store.update_metric(
                 metric_id, **payload.model_dump(exclude_unset=True)
             )
         except ValueError as exc:
-            raise _raise_store_error(exc) from exc
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         return asdict(metric)
 
     @router.post("/api/platform/jobs")
@@ -328,20 +347,17 @@ def build_router(
         return asdict(job)
 
     @router.patch("/api/platform/jobs/{job_id}")
-    def toggle_job(job_id: int, payload: JobToggleIn) -> dict:
+    def patch_job(job_id: int, payload: JobToggleIn) -> dict:
         store = _store()
         try:
-            job = store.get_job(job_id)
+            store.get_job(job_id)
         except ValueError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-        if payload.enabled is not None:
-            store.set_job_enabled(job.id, payload.enabled)
-        if payload.detector is not None:
-            try:
-                store.set_job_detector(job.id, payload.detector)
-            except ValueError as exc:
-                raise HTTPException(status_code=400, detail=str(exc)) from exc
-        return asdict(store.get_job(job.id))
+            raise _not_found(exc) from exc
+        try:
+            job = store.update_job_config(job_id, **payload.model_dump(exclude_unset=True))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return asdict(job)
 
     @router.post("/api/platform/jobs/{job_id}/run")
     def run_job(job_id: int) -> dict:
