@@ -5,16 +5,23 @@ import { CompareChart } from '../features/jobs/CompareChart'
 import { ComparePicker } from '../features/jobs/ComparePicker'
 import { CompareTable } from '../features/jobs/CompareTable'
 import { ClassificationCard } from '../features/jobs/ClassificationCard'
+import { FeedbackHistory } from '../features/jobs/FeedbackHistory'
+import { FeedbackPanel, type FeedbackFormValues } from '../features/jobs/FeedbackPanel'
 import { PreviewPanel } from '../features/jobs/PreviewPanel'
 import { RunsView, SeriesSelect } from '../features/jobs/RunsView'
 import {
+  useApplySuggestion,
   useCatalog,
   useCompare,
+  useCreateFeedback,
+  useFeedback,
   usePreview,
   useRunJob,
   useRuns,
+  useSuggestion,
   useToggleJob,
 } from '../features/jobs/queries'
+import type { Suggestion } from '../api/types'
 
 /**
  * 任务详情页（预览部分）。
@@ -37,10 +44,16 @@ export function JobDetailPage() {
   const compare = useCompare(jobId, seriesId, detectors)
   const runJob = useRunJob()
   const toggleJob = useToggleJob()
+  const feedback = useFeedback(jobId)
+  const createFeedback = useCreateFeedback()
+  const applySuggestion = useApplySuggestion(jobId)
 
   // 下拉要显示一个具体的值：没手动选过时用最新运行 / 后端挑中的序列
   const effectiveRunId = runId ?? runs.data?.runs[0]?.id
   const effectiveSeriesId = seriesId ?? preview.data?.series_id
+
+  // 建议要按选中的那次运行评估
+  const suggestion = useSuggestion(jobId, effectiveRunId)
 
   /**
    * 换运行要清掉序列选择 —— 每次运行的序列集合不同，
@@ -64,6 +77,34 @@ export function JobDetailPage() {
       {
         onSuccess: () => message.success(`任务 ${jobId} 的算法已设为 ${name}`),
         onError: (err) => message.error(err instanceof Error ? err.message : '设置失败'),
+      },
+    )
+  }
+
+  const handleSubmitFeedback = (values: FeedbackFormValues) => {
+    createFeedback.mutate(
+      {
+        job_id: jobId,
+        series_id: values.series_id,
+        start_ts: values.start_ts,
+        end_ts: values.end_ts,
+        kind: values.kind,
+        note: values.note,
+        run_id: effectiveRunId ?? null,
+      },
+      {
+        onSuccess: () => message.success('反馈已提交'),
+        onError: (err) => message.error(err instanceof Error ? err.message : '提交失败'),
+      },
+    )
+  }
+
+  const handleApplySuggestion = (s: Suggestion) => {
+    applySuggestion.mutate(
+      { multiplier: s.suggested_multiplier, detector: s.suggested_detector },
+      {
+        onSuccess: () => message.success('建议已应用，新的告警倍数见任务列表'),
+        onError: (err) => message.error(err instanceof Error ? err.message : '应用失败'),
       },
     )
   }
@@ -140,6 +181,34 @@ export function JobDetailPage() {
             />
           </>
         )}
+      </section>
+
+      <section className="feedback-section">
+        <h2 className="section__title">人工反馈与调参</h2>
+        <p className="muted feedback-section__hint">
+          反馈用于给出「用哪个算法 + 用哪个倍数」的建议 ——
+          漏报与误报才参与调参，「正确」「其他」只留档。
+        </p>
+
+        <FeedbackPanel
+          seriesId={effectiveSeriesId}
+          startTs={preview.data?.timestamps[0]}
+          endTs={preview.data?.timestamps[preview.data.timestamps.length - 1]}
+          onSubmit={handleSubmitFeedback}
+          submitting={createFeedback.isPending}
+          error={createFeedback.error instanceof Error ? createFeedback.error.message : undefined}
+          suggestion={suggestion.data}
+          suggestionLoading={suggestion.isPending || suggestion.isFetching}
+          onEvaluate={() => void suggestion.refetch()}
+          onApply={handleApplySuggestion}
+          applying={applySuggestion.isPending}
+        />
+
+        <FeedbackHistory
+          isLoading={feedback.isPending}
+          error={feedback.error}
+          feedback={feedback.data?.feedback}
+        />
       </section>
     </div>
   )

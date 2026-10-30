@@ -24,3 +24,13 @@ if (!window.matchMedia) {
     }),
   })
 }
+
+/**
+ * jsdom 的 `getComputedStyle(elt, pseudoElt)` 不支持伪元素参数，
+ * 会往虚拟控制台刷 `Not implemented` 噪音。
+ *
+ * rc-table 测滚动条宽度时正好会这么调 —— 丢掉伪元素参数即可。
+ */
+const originalGetComputedStyle = window.getComputedStyle.bind(window)
+window.getComputedStyle = ((elt: Element, _pseudoElt?: string | null) =>
+  originalGetComputedStyle(elt)) as typeof window.getComputedStyle

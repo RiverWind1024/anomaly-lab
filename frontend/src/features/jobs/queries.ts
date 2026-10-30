@@ -1,10 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  applySuggestion,
+  createFeedback,
   createJob,
   getCatalog,
   getCompare,
+  getFeedback,
   getPreview,
   getRuns,
+  getSuggestion,
   runJob,
   toggleJob,
 } from '../../api/platform'
@@ -48,6 +52,58 @@ export function useCompare(jobId: number, seriesId?: string, detectors?: string[
     queryKey: ['compare', jobId, seriesId, detectors],
     queryFn: () => getCompare(jobId, { seriesId, detectors }),
     enabled: jobId > 0,
+  })
+}
+
+/** 人工反馈历史。 */
+export function useFeedback(jobId: number) {
+  return useQuery({
+    queryKey: ['feedback', jobId],
+    queryFn: () => getFeedback(jobId),
+    enabled: jobId > 0,
+  })
+}
+
+/**
+ * 调参建议。
+ *
+ * 后端会**重新取数并跑一遍候选算法** —— 比预览慢，返回的是
+ * 「用哪个算法 + 用哪个倍数」的建议。
+ */
+export function useSuggestion(jobId: number, runId?: number) {
+  return useQuery({
+    queryKey: ['suggestion', jobId, runId],
+    queryFn: () => getSuggestion(jobId, runId),
+    enabled: jobId > 0,
+  })
+}
+
+export function useCreateFeedback() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (payload: Parameters<typeof createFeedback>[0]) => createFeedback(payload),
+    onSuccess: (_data, vars) => {
+      void qc.invalidateQueries({ queryKey: ['feedback', vars.job_id] })
+      void qc.invalidateQueries({ queryKey: ['suggestion', vars.job_id] })
+    },
+  })
+}
+
+export function useApplySuggestion(jobId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    // ⚠️ 不能写 `Parameters<typeof applySuggestion>[0]` —— applySuggestion 有两个参数
+    // （jobId, payload），`[0]` 取到的是 jobId，类型直接对不上。
+    mutationFn: (payload: { multiplier: number; detector?: string }) =>
+      applySuggestion(jobId, payload),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: catalogKey }) // 任务配置变了
+      void qc.invalidateQueries({ queryKey: ['suggestion', jobId] })
+      // ⚠️ compare 的失效不能省 —— compare 响应里带**当前**的 alert_rules 与
+      // band_width，不刷新就会拿旧倍数解读对比结果（spec §7.2）。
+      void qc.invalidateQueries({ queryKey: ['compare', jobId] })
+      void qc.invalidateQueries({ queryKey: ['preview', jobId] })
+    },
   })
 }
 
