@@ -93,6 +93,25 @@ pre {
   vertical-align: bottom;
 }
 
+/* 运行记录 / 序列选择条 */
+.runs-view__bar {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.runs-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.runs-view__label {
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+}
+
 /* 预览面板 */
 .preview-panel {
   display: flex;

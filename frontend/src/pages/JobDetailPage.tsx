@@ -1,7 +1,9 @@
+import { useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { message } from 'antd'
 import { PreviewPanel } from '../features/jobs/PreviewPanel'
-import { usePreview, useRunJob } from '../features/jobs/queries'
+import { RunsView, SeriesSelect } from '../features/jobs/RunsView'
+import { usePreview, useRunJob, useRuns } from '../features/jobs/queries'
 
 /**
  * 任务详情页（预览部分）。
@@ -12,8 +14,26 @@ export function JobDetailPage() {
   const params = useParams<{ jobId: string }>()
   const jobId = Number(params.jobId ?? 0)
 
-  const preview = usePreview(jobId)
+  // runId / seriesId 留空 = 不带参数，后端会取最新运行与首个序列
+  const [runId, setRunId] = useState<number | undefined>(undefined)
+  const [seriesId, setSeriesId] = useState<string | undefined>(undefined)
+
+  const runs = useRuns(jobId)
+  const preview = usePreview(jobId, runId, seriesId)
   const runJob = useRunJob()
+
+  // 下拉要显示一个具体的值：没手动选过时用最新运行 / 后端挑中的序列
+  const effectiveRunId = runId ?? runs.data?.runs[0]?.id
+  const effectiveSeriesId = seriesId ?? preview.data?.series_id
+
+  /**
+   * 换运行要清掉序列选择 —— 每次运行的序列集合不同，
+   * 带着旧 series_id 请求会拿到 404「序列不存在」。
+   */
+  const handleSelectRun = (nextRunId: number) => {
+    setRunId(nextRunId)
+    setSeriesId(undefined)
+  }
 
   const handleRun = () => {
     runJob.mutate(jobId, {
@@ -28,6 +48,21 @@ export function JobDetailPage() {
         <h1 className="page__title">检测任务 · 详情与预览</h1>
         <p className="page__subtitle">任务 #{jobId}</p>
       </header>
+
+      <div className="runs-view__bar">
+        <RunsView
+          runs={runs.data?.runs ?? []}
+          selectedRunId={effectiveRunId}
+          onSelect={handleSelectRun}
+          loading={runs.isPending}
+        />
+        <SeriesSelect
+          series={preview.data?.series ?? []}
+          selectedSeriesId={effectiveSeriesId}
+          onSelect={setSeriesId}
+          loading={preview.isPending}
+        />
+      </div>
 
       <PreviewPanel
         isLoading={preview.isPending}
