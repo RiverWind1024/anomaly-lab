@@ -1,19 +1,32 @@
 import { Table } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { StateBoundary } from '../../components/StateBoundary'
-import type { CatalogMetric, CatalogSource } from '../../api/types'
+import { DeleteButton } from '../delete/DeleteButton'
+import type { Catalog, CatalogMetric, CatalogSource } from '../../api/types'
 
 export interface MetricListProps {
   isLoading: boolean
   error: unknown
   metrics: CatalogMetric[] | undefined
   sources: CatalogSource[] | undefined
+  /** 删除影响预览要用的全量数据（catalog）。 */
+  catalog: Catalog | undefined
+  onDelete: (metricId: number) => void
+  deletingId: number | null
 }
 
 /**
- * 指标列表。列：ID / 名称 / 数据源 / 分组列 / 频率。
+ * 指标列表。列：ID / 名称 / 数据源 / 分组列 / 频率 / 操作。
  */
-export function MetricList({ isLoading, error, metrics, sources }: MetricListProps) {
+export function MetricList({
+  isLoading,
+  error,
+  metrics,
+  sources,
+  catalog,
+  onDelete,
+  deletingId,
+}: MetricListProps) {
   const sourceNameById = new Map((sources ?? []).map((s) => [s.id, s.name]))
 
   const columns: ColumnsType<CatalogMetric> = [
@@ -53,6 +66,21 @@ export function MetricList({ isLoading, error, metrics, sources }: MetricListPro
       key: 'freq',
       width: 100,
       render: (value: string) => <span className="mono">{value}</span>,
+    },
+    {
+      title: '操作',
+      key: 'actions',
+      width: 100,
+      render: (_value, row) => (
+        <DeleteButton
+          target="metric"
+          id={row.id}
+          name={row.name}
+          catalog={catalog}
+          loading={deletingId === row.id}
+          onConfirm={() => onDelete(row.id)}
+        />
+      ),
     },
   ]
 

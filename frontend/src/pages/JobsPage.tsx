@@ -3,6 +3,7 @@ import { message } from 'antd'
 import { JobForm, buildJobPayload, type JobFormValues } from '../features/jobs/JobForm'
 import { JobList } from '../features/jobs/JobList'
 import { useCatalog, useCreateJob, useRunJob, useToggleJob } from '../features/jobs/queries'
+import { useDeleteJob } from '../features/delete/queries'
 
 /** 任务列表页。 */
 export function JobsPage() {
@@ -12,6 +13,7 @@ export function JobsPage() {
   const runJob = useRunJob()
   const toggleJob = useToggleJob()
   const createJob = useCreateJob()
+  const deleteJob = useDeleteJob()
 
   const handleRun = (jobId: number) => {
     runJob.mutate(jobId, {
@@ -40,6 +42,13 @@ export function JobsPage() {
     })
   }
 
+  const handleDelete = (jobId: number) => {
+    deleteJob.mutate(jobId, {
+      onSuccess: () => message.success('任务已删除'),
+      onError: (err) => message.error(err instanceof Error ? err.message : '删除失败'),
+    })
+  }
+
   return (
     <div className="page">
       <header className="page__header">
@@ -58,6 +67,8 @@ export function JobsPage() {
         onRun={handleRun}
         onToggle={handleToggle}
         onCreate={() => setFormOpen(true)}
+        onDelete={handleDelete}
+        deletingId={deleteJob.isPending ? (deleteJob.variables ?? null) : null}
       />
 
       <JobForm

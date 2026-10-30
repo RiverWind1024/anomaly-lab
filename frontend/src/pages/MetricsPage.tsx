@@ -1,15 +1,25 @@
 import { useState } from 'react'
-import { Button } from 'antd'
+import { Button, message } from 'antd'
 import { MetricForm } from '../features/metrics/MetricForm'
 import { MetricList } from '../features/metrics/MetricList'
 import { useCatalog } from '../features/jobs/queries'
+import { useDeleteMetric } from '../features/delete/queries'
 
 /** 指标页。 */
 export function MetricsPage() {
   const catalog = useCatalog()
   const [formOpen, setFormOpen] = useState(false)
+  const deleteMetric = useDeleteMetric()
 
   const sources = catalog.data?.sources ?? []
+
+  const handleDelete = (metricId: number) => {
+    deleteMetric.mutate(metricId, {
+      onSuccess: () => message.success('指标已删除'),
+      onError: (err) =>
+        message.error(err instanceof Error ? err.message : '删除失败'),
+    })
+  }
 
   return (
     <div className="page">
@@ -34,6 +44,9 @@ export function MetricsPage() {
         error={catalog.error}
         metrics={catalog.data?.metrics}
         sources={sources}
+        catalog={catalog.data}
+        onDelete={handleDelete}
+        deletingId={deleteMetric.isPending ? (deleteMetric.variables ?? null) : null}
       />
 
       <MetricForm

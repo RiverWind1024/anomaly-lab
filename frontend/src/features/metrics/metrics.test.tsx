@@ -58,9 +58,22 @@ describe('指标表单的枚举值', () => {
 })
 
 describe('MetricList', () => {
-  it('列：ID / 名称 / 数据源 / 分组列 / 频率', () => {
+  /** 列表组件现在带删除入口，测试要传齐 props。 */
+  const listProps = {
+    catalog: undefined,
+    onDelete: () => {},
+    deletingId: null,
+  }
+
+  it('列：ID / 名称 / 数据源 / 分组列 / 频率 / 操作', () => {
     render(
-      <MetricList isLoading={false} error={null} metrics={[metric]} sources={[source]} />,
+      <MetricList
+        isLoading={false}
+        error={null}
+        metrics={[metric]}
+        sources={[source]}
+        {...listProps}
+      />,
     )
     // AntD 会额外渲染一行隐藏的测量用表头，所以同一个标题有两个元素 ——
     // 按 columnheader 角色取，并去掉重复。
@@ -68,12 +81,18 @@ describe('MetricList', () => {
       .getAllByRole('columnheader')
       .map((th) => th.textContent ?? '')
       .filter((text, index, all) => all.indexOf(text) === index)
-    expect(headers).toEqual(['ID', '名称', '数据源', '分组列', '频率'])
+    expect(headers).toEqual(['ID', '名称', '数据源', '分组列', '频率', '操作'])
   })
 
   it('数据源列显示名字而不是 id', () => {
     render(
-      <MetricList isLoading={false} error={null} metrics={[metric]} sources={[source]} />,
+      <MetricList
+        isLoading={false}
+        error={null}
+        metrics={[metric]}
+        sources={[source]}
+        {...listProps}
+      />,
     )
     expect(screen.getByText('local')).toBeTruthy()
   })
@@ -85,13 +104,22 @@ describe('MetricList', () => {
         error={null}
         metrics={[{ ...metric, group_column: null }]}
         sources={[source]}
+        {...listProps}
       />,
     )
     expect(screen.getByText('—')).toBeTruthy()
   })
 
   it('空列表显示空态', () => {
-    render(<MetricList isLoading={false} error={null} metrics={[]} sources={[]} />)
+    render(
+      <MetricList
+        isLoading={false}
+        error={null}
+        metrics={[]}
+        sources={[]}
+        {...listProps}
+      />,
+    )
     expect(screen.getByText('还没有指标')).toBeTruthy()
   })
 })

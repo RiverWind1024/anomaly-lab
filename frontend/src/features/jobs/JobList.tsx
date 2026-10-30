@@ -3,6 +3,7 @@ import { Button, Space, Table, Tag, Tooltip } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { Link } from 'react-router-dom'
 import { StateBoundary } from '../../components/StateBoundary'
+import { DeleteButton } from '../delete/DeleteButton'
 import type { Catalog, CatalogJob } from '../../api/types'
 import { formatRules } from './rules'
 
@@ -15,6 +16,8 @@ export interface JobListProps {
   onRun: (jobId: number) => void
   onToggle: (jobId: number, enabled: boolean) => void
   onCreate: () => void
+  onDelete: (jobId: number) => void
+  deletingId: number | null
 }
 
 export function JobList({
@@ -26,6 +29,8 @@ export function JobList({
   onRun,
   onToggle,
   onCreate,
+  onDelete,
+  deletingId,
 }: JobListProps) {
   const metricNameById = useMemo(
     () => new Map((catalog?.metrics ?? []).map((m) => [m.id, m.name])),
@@ -95,7 +100,7 @@ export function JobList({
     {
       title: '操作',
       key: 'actions',
-      width: 170,
+      width: 240,
       render: (_value, row) => (
         <Space size="small">
           <Button
@@ -113,6 +118,14 @@ export function JobList({
           >
             {row.enabled ? '停用' : '启用'}
           </Button>
+          <DeleteButton
+            target="job"
+            id={row.id}
+            name={row.name}
+            catalog={catalog}
+            loading={deletingId === row.id}
+            onConfirm={() => onDelete(row.id)}
+          />
         </Space>
       ),
     },

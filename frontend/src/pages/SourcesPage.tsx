@@ -1,12 +1,23 @@
 import { useState } from 'react'
+import { message } from 'antd'
 import { SourceCreateButton, SourceForm } from '../features/sources/SourceForm'
 import { SourceList } from '../features/sources/SourceList'
 import { useCatalog } from '../features/jobs/queries'
+import { useDeleteSource } from '../features/delete/queries'
 
 /** 数据源页。 */
 export function SourcesPage() {
   const catalog = useCatalog()
   const [formOpen, setFormOpen] = useState(false)
+  const deleteSource = useDeleteSource()
+
+  const handleDelete = (sourceId: number) => {
+    deleteSource.mutate(sourceId, {
+      onSuccess: () => message.success('数据源已删除'),
+      onError: (err) =>
+        message.error(err instanceof Error ? err.message : '删除失败'),
+    })
+  }
 
   return (
     <div className="page">
@@ -25,6 +36,9 @@ export function SourcesPage() {
         isLoading={catalog.isPending}
         error={catalog.error}
         sources={catalog.data?.sources}
+        catalog={catalog.data}
+        onDelete={handleDelete}
+        deletingId={deleteSource.isPending ? (deleteSource.variables ?? null) : null}
       />
 
       <SourceForm open={formOpen} onCancel={() => setFormOpen(false)} />

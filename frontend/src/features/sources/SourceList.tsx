@@ -1,18 +1,30 @@
 import { Table } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { StateBoundary } from '../../components/StateBoundary'
-import type { CatalogSource } from '../../api/types'
+import { DeleteButton } from '../delete/DeleteButton'
+import type { Catalog, CatalogSource } from '../../api/types'
 
 export interface SourceListProps {
   isLoading: boolean
   error: unknown
   sources: CatalogSource[] | undefined
+  /** 删除影响预览要用的全量数据（catalog）。 */
+  catalog: Catalog | undefined
+  onDelete: (sourceId: number) => void
+  deletingId: number | null
 }
 
 /**
- * 数据源列表。列：ID / 名称 / 类型 / 路径。
+ * 数据源列表。列：ID / 名称 / 类型 / 路径 / 操作。
  */
-export function SourceList({ isLoading, error, sources }: SourceListProps) {
+export function SourceList({
+  isLoading,
+  error,
+  sources,
+  catalog,
+  onDelete,
+  deletingId,
+}: SourceListProps) {
   const columns: ColumnsType<CatalogSource> = [
     {
       title: 'ID',
@@ -39,6 +51,21 @@ export function SourceList({ isLoading, error, sources }: SourceListProps) {
       dataIndex: 'path',
       key: 'path',
       render: (value: string) => <span className="mono">{value}</span>,
+    },
+    {
+      title: '操作',
+      key: 'actions',
+      width: 100,
+      render: (_value, row) => (
+        <DeleteButton
+          target="source"
+          id={row.id}
+          name={row.name}
+          catalog={catalog}
+          loading={deletingId === row.id}
+          onConfirm={() => onDelete(row.id)}
+        />
+      ),
     },
   ]
 
