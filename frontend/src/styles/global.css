@@ -93,6 +93,25 @@ pre {
   vertical-align: bottom;
 }
 
+/* 预览面板 */
+.preview-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.preview-panel__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.preview-chart__note {
+  margin: var(--space-2) 0 0;
+}
+
 .job-list__toolbar {
   display: flex;
   align-items: center;
