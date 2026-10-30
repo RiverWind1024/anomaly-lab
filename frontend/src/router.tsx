@@ -28,8 +28,8 @@ const JobDetailPage = lazy(() =>
 const EvaluationPage = lazy(() =>
   import('./features/evaluation/EvaluationPage').then((m) => ({ default: m.EvaluationPage })),
 )
-const BadCasesPage = lazy(() =>
-  import('./features/evaluation/BadcasesPage').then((m) => ({ default: m.BadcasesPage })),
+const DetectionsPage = lazy(() =>
+  import('./features/detections/DetectionsPage').then((m) => ({ default: m.DetectionsPage })),
 )
 const AnnotatePage = lazy(() =>
   import('./features/annotate/AnnotatePage').then((m) => ({ default: m.AnnotatePage })),
@@ -46,11 +46,12 @@ export function AppRoutes() {
         <Route path="/jobs/:jobId" element={<JobDetailPage />} />
         <Route path="/alerts" element={<AlertsPage />} />
         <Route path="/evaluation" element={<EvaluationPage />} />
-        <Route path="/badcases" element={<BadCasesPage />} />
+        <Route path="/detections" element={<DetectionsPage />} />
         <Route path="/annotate" element={<AnnotatePage />} />
-        {/* 旧 URL 兼容：/report → /evaluation，/platform → /jobs */}
+        {/* 旧 URL 兼容：/report → /evaluation，/platform → /jobs，/badcases → /detections */}
         <Route path="/report" element={<Navigate to="/evaluation" replace />} />
         <Route path="/platform" element={<Navigate to="/jobs" replace />} />
+        <Route path="/badcases" element={<Navigate to="/detections" replace />} />
         <Route path="*" element={<Placeholder title="页面不存在" />} />
       </Routes>
     </Suspense>

@@ -399,6 +399,11 @@ export interface SeriesMeta {
   metric_class: string
   n: number
   n_anomalies: number
+  /** 序列时间范围（ISO 字符串）—— 前端按它筛时间。 */
+  start_ts: string | null
+  end_ts: string | null
+  /** 数据来源维度 —— 评估报告按它聚合。 */
+  source: string
 }
 
 export interface SeriesValues {

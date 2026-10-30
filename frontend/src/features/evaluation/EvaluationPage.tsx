@@ -32,8 +32,8 @@ export function EvaluationTable({ isLoading, error, summary }: EvaluationTablePr
         dataIndex: 'series_id',
         key: 'series_id',
         render: (value: string) => (
-          // 点行看 Bad Case 详情（旧版是点行弹图，新版是独立路由）
-          <Link to={`/badcases?series_id=${encodeURIComponent(value)}`}>{value}</Link>
+          // 点行看这条序列的检测记录（旧版是点行弹图，新版是独立路由）
+          <Link to={`/detections?series_id=${encodeURIComponent(value)}`}>{value}</Link>
         ),
       },
       {

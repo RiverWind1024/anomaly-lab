@@ -1,10 +1,11 @@
 import { List, Space, Tag } from 'antd'
 import { useSearchParams } from 'react-router-dom'
 import { StateBoundary } from '../../components/StateBoundary'
-import { DetectionChart } from '../detections/DetectionChart'
-import { badcaseLabel } from '../detections/detectionChart'
+import { DetectionChart } from './DetectionChart'
+import { badcaseLabel } from './detectionChart'
+import { useDetectionDetail } from './queries'
+import { useSummary } from '../evaluation/queries'
 import type { Badcase } from '../../api/types'
-import { useBadcases, useSummary } from './queries'
 
 /**
  * 检测记录页。
@@ -14,12 +15,12 @@ import { useBadcases, useSummary } from './queries'
  * ⚠️ 「该序列还没有检测结果」是**业务态**（`no_result`）——
  *    走 StateBoundary 的 bizState 路径显示空态，不是红色错误框。
  */
-export function BadcasesPage() {
+export function DetectionsPage() {
   const [params, setParams] = useSearchParams()
   const summary = useSummary()
   // 序列 ID 直接取自 URL —— 不另存一份 state，否则从评估页跳进来时状态不同步
   const seriesId = params.get('series_id') ?? undefined
-  const badcases = useBadcases(seriesId)
+  const detail = useDetectionDetail(seriesId)
 
   const select = (id: string) => {
     setParams({ series_id: id })
@@ -30,7 +31,7 @@ export function BadcasesPage() {
       <header className="page__header">
         <h1 className="page__title">检测记录</h1>
         <p className="page__subtitle">
-          选一条序列看它的检测结果与误报、漏报。区间由检测结果与真值比对得出。
+          每条序列一次检测的完整结果：数值、分数、阈值，以及与真值比对出的误报、漏报区间。
         </p>
       </header>
 
@@ -64,9 +65,9 @@ export function BadcasesPage() {
 
         <div className="badcases-layout__detail">
           <StateBoundary
-            isLoading={badcases.isPending}
-            error={badcases.error}
-            data={badcases.data}
+            isLoading={detail.isPending}
+            error={detail.error}
+            data={detail.data}
             bizTitles={{ no_result: '该序列还没有检测结果' }}
             emptyTitle="选一条序列"
             emptyHint="从左边列表里选一条"

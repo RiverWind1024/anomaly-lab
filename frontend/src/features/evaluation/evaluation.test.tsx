@@ -93,9 +93,9 @@ describe('EvaluationTable', () => {
     expect(screen.getByText('暂无报告，请先运行 evaluate')).toBeTruthy()
   })
 
-  it('序列列链到 Bad Case 页', () => {
+  it('序列列链到检测记录页', () => {
     renderTable(<EvaluationTable isLoading={false} error={null} summary={summary} />)
     const link = screen.getByText('demo-1') as HTMLAnchorElement
-    expect(link.getAttribute('href')).toBe('/badcases?series_id=demo-1')
+    expect(link.getAttribute('href')).toBe('/detections?series_id=demo-1')
   })
 })
