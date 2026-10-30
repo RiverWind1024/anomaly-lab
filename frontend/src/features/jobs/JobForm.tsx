@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Alert, Form, Input, InputNumber, Modal, Select, Space } from 'antd'
 import type { AlertRule, CatalogDetector, CatalogMetric } from '../../api/types'
 import { AlertRulesInput } from './AlertRulesInput'
+import { INTERVAL_SECONDS_MIN, WINDOW_POINTS_MAX, WINDOW_POINTS_MIN } from './limits'
 import { defaultRulesFor, parseRules } from './rules'
 
 export interface JobFormValues {
@@ -78,7 +79,15 @@ export function JobForm({
   }
 
   const handleOk = async () => {
-    const values = await form.validateFields()
+    let values: JobFormValues
+    try {
+      values = await form.validateFields()
+    } catch {
+      // 校验没过：错误已经显示在对应表单项上，这里不再重复提示。
+      // ⚠️ 必须 catch —— 否则 validateFields 抛出的 promise 没人接，
+      //    浏览器控制台会出现 unhandled rejection。
+      return
+    }
     // 规则文本若有错，parseRules 会返回 null —— 前面 AlertRulesInput 已拦下，
     // 这里再确认一次，避免绕过 UI 直接提交
     const parsed = parseRules(rulesText)
@@ -125,16 +134,33 @@ export function JobForm({
           <Form.Item
             name="window_points"
             label="窗口点数"
-            rules={[{ required: true, message: '请输入窗口点数' }]}
+            rules={[
+              { required: true, message: '请输入窗口点数' },
+              {
+                type: 'number',
+                min: WINDOW_POINTS_MIN,
+                max: WINDOW_POINTS_MAX,
+                message: `窗口点数需在 ${WINDOW_POINTS_MIN} ~ ${WINDOW_POINTS_MAX} 之间`,
+              },
+            ]}
+            extra={`至少 ${WINDOW_POINTS_MIN} 点（后端下限），最多 ${WINDOW_POINTS_MAX} 点`}
           >
-            <InputNumber min={1} step={100} style={{ width: 180 }} />
+            <InputNumber min={WINDOW_POINTS_MIN} max={WINDOW_POINTS_MAX} step={100} style={{ width: 180 }} />
           </Form.Item>
           <Form.Item
             name="interval_seconds"
             label="执行间隔（秒）"
-            rules={[{ required: true, message: '请输入执行间隔' }]}
+            rules={[
+              { required: true, message: '请输入执行间隔' },
+              {
+                type: 'number',
+                min: INTERVAL_SECONDS_MIN,
+                message: `执行间隔至少 ${INTERVAL_SECONDS_MIN} 秒`,
+              },
+            ]}
+            extra={`至少 ${INTERVAL_SECONDS_MIN} 秒（后端下限）`}
           >
-            <InputNumber min={1} step={60} style={{ width: 180 }} />
+            <InputNumber min={INTERVAL_SECONDS_MIN} step={60} style={{ width: 180 }} />
           </Form.Item>
         </Space>
 

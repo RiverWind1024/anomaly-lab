@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { createMetric } from '../../api/platform'
 import type { CatalogSource } from '../../api/types'
 import { catalogKey } from '../jobs/queries'
+import { freqValidator } from './freq'
 
 export interface MetricFormValues {
   source_id: number
@@ -70,7 +71,15 @@ export function MetricForm({
   })
 
   const handleOk = async () => {
-    const values = await form.validateFields()
+    let values: MetricFormValues
+    try {
+      values = await form.validateFields()
+    } catch {
+      // 校验没过：错误已经显示在对应表单项上。
+      // ⚠️ 必须 catch —— 否则 validateFields 抛出的 promise 没人接，
+      //    浏览器控制台会出现 unhandled rejection。
+      return
+    }
     const group = values.group_column?.trim()
     create.mutate({
       source_id: values.source_id,
@@ -149,7 +158,16 @@ export function MetricForm({
             <Input placeholder="host" spellCheck={false} />
           </Form.Item>
 
-          <Form.Item name="freq" label="频率" rules={[{ required: true, message: '请输入频率' }]}>
+          <Form.Item
+            name="freq"
+            label="频率"
+            rules={[
+              { required: true, message: '请输入频率' },
+              // 格式当场拦下，不等提交后的后端 400
+              { validator: freqValidator },
+            ]}
+            extra="数字 + 单位，单位可选 s / min / m / h / d（如 5min、1h、1d）"
+          >
             <Input placeholder="5min" spellCheck={false} />
           </Form.Item>
 
