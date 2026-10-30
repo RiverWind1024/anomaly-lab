@@ -80,6 +80,20 @@ def test_series_contract():
         assert key in body[0]
 
 
+def test_series_contract_carries_time_range_and_source():
+    """序列要带时间范围与数据来源 —— 前端按时间筛序列、评估报告按来源聚合。"""
+    client = TestClient(create_app())
+    body = client.get("/api/series").json()
+    if not body:
+        return  # 没有数据集时跳过
+    for row in body:
+        for key in ("start_ts", "end_ts", "source"):
+            assert key in row
+        assert row["source"], "数据来源不能是空串"
+        if row["start_ts"]:
+            assert row["start_ts"] <= row["end_ts"]
+
+
 def test_summary_contract():
     client = TestClient(create_app())
     body = client.get("/api/summary").json()

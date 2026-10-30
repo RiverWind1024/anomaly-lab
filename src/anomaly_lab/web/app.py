@@ -111,15 +111,24 @@ def create_app(
 
     @app.get("/api/series")
     def list_series() -> list[dict]:
-        return [
-            {
-                "series_id": s.series_id,
-                "metric_class": s.meta.get("metric_class", "unknown"),
-                "n": len(s.values),
-                "n_anomalies": int(s.labels.sum()),
-            }
-            for s in _series_map().values()
-        ]
+        rows = []
+        for s in _series_map().values():
+            stamps = s.timestamps
+            rows.append(
+                {
+                    "series_id": s.series_id,
+                    "metric_class": s.meta.get("metric_class", "unknown"),
+                    "n": len(s.values),
+                    # ⚠️ labels 可能是 None（label_source == "none"）—— 直接 .sum() 会崩
+                    "n_anomalies": int(s.labels.sum()) if s.labels is not None else 0,
+                    # 时间范围 —— 前端要按时间筛序列
+                    "start_ts": str(stamps[0])[:19] if len(stamps) else None,
+                    "end_ts": str(stamps[-1])[:19] if len(stamps) else None,
+                    # 数据来源维度 —— 评估报告按它聚合
+                    "source": str(s.meta.get("source", "synthetic")),
+                }
+            )
+        return rows
 
     @app.post("/api/annotate/{series_id}")
     def save_annotation(series_id: str, payload: AnnotationPayload) -> dict:
