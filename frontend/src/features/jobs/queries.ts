@@ -26,19 +26,24 @@ export function useCatalog() {
  * ⚠️ 数据不足是 **200 + sufficient:false**，不是 404 —— 所以不要用 error 判断，
  *    要读响应体里的 `sufficient` / `insufficient_reason`。
  */
-export function usePreview(jobId: number, runId?: number, seriesId?: string) {
+export function usePreview(
+  jobId: number,
+  runId?: number,
+  seriesId?: string,
+  enabled = true,
+) {
   return useQuery({
     queryKey: ['preview', jobId, runId, seriesId],
     queryFn: () => getPreview(jobId, { runId, seriesId }),
-    enabled: jobId > 0,
+    enabled: enabled && jobId > 0,
   })
 }
 
-export function useRuns(jobId: number) {
+export function useRuns(jobId: number, enabled = true) {
   return useQuery({
     queryKey: ['runs', jobId],
     queryFn: () => getRuns(jobId),
-    enabled: jobId > 0,
+    enabled: enabled && jobId > 0,
     // 只在有 run 处于 running 时继续轮询；空闲时停（spec §7.3）
     refetchInterval: (query) => {
       const runs = query.state.data?.runs ?? []
@@ -47,20 +52,25 @@ export function useRuns(jobId: number) {
   })
 }
 
-export function useCompare(jobId: number, seriesId?: string, detectors?: string[]) {
+export function useCompare(
+  jobId: number,
+  seriesId?: string,
+  detectors?: string[],
+  enabled = true,
+) {
   return useQuery({
     queryKey: ['compare', jobId, seriesId, detectors],
     queryFn: () => getCompare(jobId, { seriesId, detectors }),
-    enabled: jobId > 0,
+    enabled: enabled && jobId > 0,
   })
 }
 
 /** 人工反馈历史。 */
-export function useFeedback(jobId: number) {
+export function useFeedback(jobId: number, enabled = true) {
   return useQuery({
     queryKey: ['feedback', jobId],
     queryFn: () => getFeedback(jobId),
-    enabled: jobId > 0,
+    enabled: enabled && jobId > 0,
   })
 }
 
@@ -70,11 +80,11 @@ export function useFeedback(jobId: number) {
  * 后端会**重新取数并跑一遍候选算法** —— 比预览慢，返回的是
  * 「用哪个算法 + 用哪个倍数」的建议。
  */
-export function useSuggestion(jobId: number, runId?: number) {
+export function useSuggestion(jobId: number, runId?: number, enabled = true) {
   return useQuery({
     queryKey: ['suggestion', jobId, runId],
     queryFn: () => getSuggestion(jobId, runId),
-    enabled: jobId > 0,
+    enabled: enabled && jobId > 0,
   })
 }
 

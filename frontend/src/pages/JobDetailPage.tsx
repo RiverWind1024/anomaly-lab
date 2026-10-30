@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { Alert, message } from 'antd'
 import { CompareChart } from '../features/jobs/CompareChart'
 import { ComparePicker } from '../features/jobs/ComparePicker'
@@ -39,12 +39,25 @@ export function JobDetailPage() {
   const [detectors, setDetectors] = useState<string[]>([])
 
   const catalog = useCatalog()
-  const runs = useRuns(jobId)
-  const preview = usePreview(jobId, runId, seriesId)
-  const compare = useCompare(jobId, seriesId, detectors)
+
+  /**
+   * 任务不存在时**不要发那 5 个请求**。
+   *
+   * 详情页要 runs / preview / compare / feedback / suggestion 五个请求，
+   * 任务不存在时它们会全部 404 —— 页面上刷出好几个红色错误框，
+   * 而用户真正需要知道的只有一句话：任务没了。
+   *
+   * catalog 已经带了全部任务，判存在性是**零成本**的（不用多发一个请求）。
+   * ⚠️ catalog 没加载完时不能下结论（那会误报「不存在」）。
+   */
+  const jobExists = catalog.data ? catalog.data.jobs.some((j) => j.id === jobId) : null
+
+  const runs = useRuns(jobId, jobExists === true)
+  const preview = usePreview(jobId, runId, seriesId, jobExists === true)
+  const compare = useCompare(jobId, seriesId, detectors, jobExists === true)
   const runJob = useRunJob()
   const toggleJob = useToggleJob()
-  const feedback = useFeedback(jobId)
+  const feedback = useFeedback(jobId, jobExists === true)
   const createFeedback = useCreateFeedback()
   const applySuggestion = useApplySuggestion(jobId)
 
@@ -53,7 +66,7 @@ export function JobDetailPage() {
   const effectiveSeriesId = seriesId ?? preview.data?.series_id
 
   // 建议要按选中的那次运行评估
-  const suggestion = useSuggestion(jobId, effectiveRunId)
+  const suggestion = useSuggestion(jobId, effectiveRunId, jobExists === true)
 
   /**
    * 换运行要清掉序列选择 —— 每次运行的序列集合不同，
@@ -106,6 +119,27 @@ export function JobDetailPage() {
         onSuccess: () => message.success('建议已应用，新的告警倍数见任务列表'),
         onError: (err) => message.error(err instanceof Error ? err.message : '应用失败'),
       },
+    )
+  }
+
+  // ---------- 任务不存在 ----------
+  //
+  // catalog 加载完才能下结论（没加载完就显示「不存在」是误报）。
+  if (catalog.data && jobExists === false) {
+    return (
+      <div className="page">
+        <header className="page__header">
+          <h1 className="page__title">检测任务 · 详情与预览</h1>
+          <p className="page__subtitle">任务 #{jobId}</p>
+        </header>
+        <div className="empty-state">
+          <p className="empty-state__title">任务不存在或已被删除</p>
+          <p className="muted">
+            它可能刚被删掉了，或者链接里的编号不对。
+          </p>
+          <Link to="/jobs">← 回到检测任务列表</Link>
+        </div>
+      </div>
     )
   }
 
