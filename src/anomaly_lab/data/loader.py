@@ -11,6 +11,9 @@ from anomaly_lab.config import CONFIG
 from anomaly_lab.contracts import SeriesBundle
 from anomaly_lab.data.synthetic import METRIC_CLASSES, generate_series
 
+#: epoch 基准 —— npz 里存的是「距 epoch 的纳秒偏移」
+_EPOCH_NS = np.datetime64("1970-01-01T00:00:00", "ns")
+
 
 def _entry_path(key: str) -> str:
     return key
@@ -65,7 +68,11 @@ def load_dataset(data_dir: Path, classes: list[str] | None = None) -> list[Serie
             continue
         payload = np.load(data_dir / _entry_path(entry["path"]))
         values = np.asarray(payload["values"], dtype=float)
-        timestamps = np.asarray(payload["timestamps"]).astype("datetime64[ns]")
+        # ⚠️ npz 里存的是「距 epoch 的纳秒偏移」（save_dataset 里 astype(int64) 的结果）。
+        #    直接 `.astype("datetime64[ns]")` 会被当成**绝对**纳秒时间戳 ——
+        #    500 个点全落在 `1970-01-01T00:00:00`，图表 x 轴直接退化成一条竖线。
+        stamps = np.asarray(payload["timestamps"]).astype("int64")
+        timestamps = (stamps + _EPOCH_NS).astype("datetime64[ns]")
         labels_arr = np.asarray(payload["labels"])
         labels = labels_arr.astype(np.int8) if labels_arr.size == len(values) else None
         if entry.get("label_source", "none") == "none":

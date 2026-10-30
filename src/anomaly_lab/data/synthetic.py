@@ -28,6 +28,9 @@ ANOMALY_TYPES = [
 
 _EPS = 1e-9
 
+#: 合成数据的时间基准。固定常量 —— 保证同样的 seed 每次生成的数据集完全一样。
+SYNTHETIC_EPOCH = np.datetime64("2026-01-01T00:00:00", "ns")
+
 
 def _freq_delta(freq: str) -> np.timedelta64:
     digits = "".join(ch for ch in freq if ch.isdigit())
@@ -39,9 +42,29 @@ def _freq_delta(freq: str) -> np.timedelta64:
     return np.timedelta64(n, mapping[unit])
 
 
-def _timestamps(n: int, freq: str) -> np.ndarray:
-    delta = _freq_delta(freq)
-    return (np.arange(n) * delta).astype("datetime64[ns]")
+def _timestamps(n: int, freq: str, start: np.datetime64) -> np.ndarray:
+    """等间隔时间戳。
+
+    ⚠️ **两处坑**：
+    1. `np.arange(n) * delta` 的 dtype 是 `timedelta64[m]`，
+       直接 `.astype("datetime64[ns]")` 会被 numpy **重新解释**（不做单位换算）——
+       5 分钟变成 5 纳秒，整条序列塌成一个瞬间，图表 x 轴直接退化。
+       必须先 `.astype("timedelta64[ns]")`（这一步**会**换算），再叠加到起始时刻。
+    2. 起始时刻必须是**绝对时间** —— 从 0 开始的话所有序列都挤在 1970-01-01，
+       「按时间筛选」就是摆设。
+    """
+    delta = _freq_delta(freq).astype("timedelta64[ns]")
+    return start + np.arange(n) * delta
+
+
+def _series_start(seed: int) -> np.datetime64:
+    """每条序列的采集起点。
+
+    按 seed 偏移几天 —— 模拟「不同指标在不同时段接入」。
+    基准是**固定常量**（不是当前时间），否则同样的 seed 每次生成的数据集不同，
+    回测报告就没法复现。
+    """
+    return SYNTHETIC_EPOCH + np.timedelta64(seed % 14, "D")
 
 
 def _scale(values: np.ndarray) -> float:
@@ -312,7 +335,7 @@ def generate_series(
     return SeriesBundle(
         series_id=series_id,
         values=values,
-        timestamps=_timestamps(n, freq),
+        timestamps=_timestamps(n, freq, _series_start(seed)),
         freq=freq,
         labels=labels,
         label_source="synthetic",

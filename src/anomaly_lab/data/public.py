@@ -21,6 +21,7 @@ import numpy as np
 
 from anomaly_lab.config import CONFIG
 from anomaly_lab.contracts import SeriesBundle
+from anomaly_lab.data.synthetic import SYNTHETIC_EPOCH
 
 UCR_BASE = "https://www.cs.ucr.edu/~eamonn/time_series_data_2018/"
 _URL_ENV = "ANOMALY_LAB_UCR_SERIES_URL"
@@ -65,12 +66,18 @@ def _parse_values(path: Path) -> np.ndarray:
 
 
 def _make_timestamps(n: int, freq: str) -> np.ndarray:
+    """等间隔时间戳。
+
+    ⚠️ `np.arange(n) * delta` 的 dtype 是 `timedelta64[m]`，
+    直接 `.astype("datetime64[ns]")` 会被 numpy **重新解释**（不做单位换算）——
+    5 分钟变成 5 纳秒。先转 `timedelta64[ns]`（这一步会换算），再叠加到基准时刻。
+    """
     digits = "".join(ch for ch in freq if ch.isdigit())
     unit = "".join(ch for ch in freq if ch.isalpha()).lower()
     mapping = {"min": "m", "m": "m", "h": "h", "s": "s", "d": "D"}
     step = int(digits) if digits else 1
-    delta = np.timedelta64(step, mapping.get(unit, "m"))
-    return (np.arange(n) * delta).astype("datetime64[ns]")
+    delta = np.timedelta64(step, mapping.get(unit, "m")).astype("timedelta64[ns]")
+    return SYNTHETIC_EPOCH + np.arange(n) * delta
 
 
 def _expand_intervals(intervals: list, n: int) -> np.ndarray:
