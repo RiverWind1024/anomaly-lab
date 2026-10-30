@@ -9,8 +9,7 @@ from pathlib import Path
 from typing import Literal
 
 import numpy as np
-from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from anomaly_lab.platform import runner as runner_module
@@ -139,12 +138,6 @@ def build_router(
 
     def _store() -> PlatformStore:
         return get_store()
-
-    @router.get("/platform", response_class=HTMLResponse)
-    def platform_page(request: Request):
-        from anomaly_lab.web.app import _TEMPLATES
-
-        return _TEMPLATES.TemplateResponse(request, "platform.html", {})
 
     @router.get("/api/platform/catalog")
     def catalog() -> dict:

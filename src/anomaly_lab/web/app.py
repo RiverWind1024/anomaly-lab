@@ -1,4 +1,4 @@
-"""FastAPI 应用工厂：页面、序列 API 与静态资源。"""
+"""FastAPI 应用工厂：JSON API + 前端构建产物（SPA）托管。"""
 
 from __future__ import annotations
 
@@ -9,11 +9,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
-from starlette.requests import Request
 
 from anomaly_lab.config import CONFIG
 from anomaly_lab.contracts import DetectionResult
@@ -22,9 +20,6 @@ from anomaly_lab.evaluation.badcases import attribute_badcases
 from anomaly_lab.platform.store import PlatformStore
 from anomaly_lab.web.biz_state import biz_headers
 from anomaly_lab.web.platform_routes import build_router
-
-_WEB_DIR = Path(__file__).parent
-_TEMPLATES = Jinja2Templates(directory=str(_WEB_DIR / "templates"))
 
 
 def _data_root() -> Path:
@@ -108,14 +103,7 @@ def create_app(
             scheduler.stop()
 
     app = FastAPI(title="anomaly-lab", lifespan=lifespan)
-    app.mount("/static", StaticFiles(directory=str(_WEB_DIR / "static")), name="static")
     app.include_router(build_router(get_store, lambda: data_root))
-
-    @app.get("/", response_class=HTMLResponse)
-    def index(request: Request):
-        return _TEMPLATES.TemplateResponse(
-            request, "index.html", {"series_count": len(_series_map())}
-        )
 
     @app.get("/api/health")
     def health() -> dict:
@@ -132,10 +120,6 @@ def create_app(
             }
             for s in _series_map().values()
         ]
-
-    @app.get("/annotate", response_class=HTMLResponse)
-    def annotate_page(request: Request):
-        return _TEMPLATES.TemplateResponse(request, "annotate.html", {})
 
     @app.post("/api/annotate/{series_id}")
     def save_annotation(series_id: str, payload: AnnotationPayload) -> dict:
@@ -163,10 +147,6 @@ def create_app(
                 if line.strip():
                     records.append(json.loads(line))
         return {"series_id": series_id, "intervals": records}
-
-    @app.get("/report", response_class=HTMLResponse)
-    def report_page(request: Request):
-        return _TEMPLATES.TemplateResponse(request, "report.html", {})
 
     @app.get("/api/summary")
     def summary() -> dict:
@@ -233,7 +213,7 @@ def create_app(
         }
 
     # ---------- SPA 托管 ----------
-    # ⚠️ 必须在所有 /api/* 路由与 /static 挂载之后（Starlette 按注册顺序匹配）。
+    # ⚠️ 必须在所有 /api/* 路由之后（Starlette 按注册顺序匹配）。
     # ⚠️ 不要用 app.mount("/", ...)：Mount("/") 的正则会 FULL 匹配一切路径，
     #    注册在它之后的 catch-all 永远不会被命中。
     dist = frontend_dist if frontend_dist is not None else _find_frontend_dist()
