@@ -166,6 +166,33 @@ class PlatformStore:
             raise ValueError(f"数据源不存在: {source_id}")
         return Source(**dict(row))
 
+    def update_source(
+        self,
+        source_id: int,
+        *,
+        name: str | None = None,
+        path: str | None = None,
+        kind: str | None = None,
+    ) -> Source:
+        """改数据源。只传要改的字段，其余保持原样。
+
+        ⚠️ 已经跑过的运行记录不受影响 —— run 的结果早已落盘。
+           改动只在**下一次**运行任务时生效。
+        """
+        current = self.get_source(source_id)
+        new_name = validate_name(name if name is not None else current.name, "数据源名称")
+        new_path = validate_name(path if path is not None else current.path, "数据源路径")
+        new_kind = kind if kind is not None else current.kind
+        try:
+            with self._conn() as conn:
+                conn.execute(
+                    "UPDATE sources SET name = ?, path = ?, kind = ? WHERE id = ?",
+                    (new_name, new_path, new_kind, source_id),
+                )
+        except sqlite3.IntegrityError as exc:
+            raise ValueError(f"数据源名称已存在: {new_name}") from exc
+        return self.get_source(source_id)
+
     def list_sources(self) -> list[Source]:
         with self._conn() as conn:
             rows = conn.execute("SELECT * FROM sources ORDER BY id").fetchall()
@@ -235,6 +262,56 @@ class PlatformStore:
         if row is None:
             raise ValueError(f"指标不存在: {metric_id}")
         return Metric(**dict(row))
+
+    def update_metric(self, metric_id: int, **fields) -> Metric:
+        """改指标。只传要改的字段，其余保持原样。
+
+        校验复用 add_metric 的那套（列名 / 时间格式 / 时区 / 频率）——
+        非法配置要在**保存时**被拦下，而不是等任务运行时才失败。
+
+        ⚠️ 已经跑过的运行记录不受影响（结果早已落盘），
+           改动只在**下一次**运行任务时生效。
+        """
+        current = self.get_metric(metric_id)
+        name = validate_name(fields.get("name") or current.name, "指标名称")
+        query = validate_query(fields.get("query") or current.query)
+        time_column = fields.get("time_column") or current.time_column
+        value_column = fields.get("value_column") or current.value_column
+        group_column = fields.get("group_column", current.group_column)
+        time_format = fields.get("time_format") or current.time_format
+        freq = fields.get("freq") or current.freq
+        source_timezone = fields.get("source_timezone") or current.source_timezone
+        missing_policy = fields.get("missing_policy") or current.missing_policy
+        validate_identifier(time_column, "time_column")
+        validate_identifier(value_column, "value_column")
+        if group_column:
+            validate_identifier(group_column, "group_column")
+        validate_time_format(time_format)
+        validate_missing_policy(missing_policy)
+        validate_timezone(source_timezone)
+        freq_delta(freq)
+        try:
+            with self._conn() as conn:
+                conn.execute(
+                    "UPDATE metrics SET name = ?, query = ?, time_column = ?, value_column = ?,"
+                    " group_column = ?, time_format = ?, freq = ?, source_timezone = ?,"
+                    " missing_policy = ? WHERE id = ?",
+                    (
+                        name,
+                        query,
+                        time_column,
+                        value_column,
+                        group_column or None,
+                        time_format,
+                        freq,
+                        source_timezone,
+                        missing_policy,
+                        metric_id,
+                    ),
+                )
+        except sqlite3.IntegrityError as exc:
+            raise ValueError("该数据源下指标名称已存在") from exc
+        return self.get_metric(metric_id)
 
     def list_metrics(self) -> list[Metric]:
         with self._conn() as conn:
