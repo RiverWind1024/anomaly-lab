@@ -4,7 +4,7 @@ import type { AlertRule } from '../../api/types'
  * 告警规则的解析与格式化。
  *
  * 照搬旧 `platform.js` 的 `parseRules` / `formatRules` 语义，
- * 但**把 alert() 换成行内错误** —— 旧版弹窗会打断输入（spec §8.2-B）。
+ * 但**把 alert 弹窗换成行内错误** —— 旧版弹窗会打断输入（spec §8.2-B）。
  *
  * 规则语义（照搬旧 `platform.html` 的说明）：
  *   - **从上到下按严重程度排列**（最后一行最严重）

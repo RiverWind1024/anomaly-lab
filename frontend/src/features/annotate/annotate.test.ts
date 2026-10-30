@@ -19,7 +19,7 @@ const annotation = (over: Partial<Annotation> = {}): Annotation => ({
 })
 
 describe('ANOMALY_TYPES', () => {
-  it('固定 6 种，与旧 prompt() 的提示文案一致', () => {
+  it('固定 6 种，与旧 prompt 弹窗的提示文案一致', () => {
     expect(ANOMALY_TYPES.map((t) => t.value)).toEqual([
       'spike',
       'contextual',

@@ -2751,16 +2751,37 @@ git commit -m "docs: 同步前端分离后的架构与平台文档"
 
 ## 收尾验收（对照 spec §10）
 
-- [ ] `make dev` / `make serve` 一条命令起全栈
-- [ ] spec §8.2-A 功能对照表**全表逐条打勾**
-- [ ] spec §8.2-B 的 **6 个**问题全部消失
-- [ ] `GET /jobs/1` → 200；`GET /api/typo` → 404 JSON；`GET /assets/<真实文件>` → 200
-- [ ] 仓库里不再有两套前端（`templates/`、`static/` 已删）
-- [ ] `pytest` / `vitest` / `ruff` 全绿
-- [ ] 「数据不足」在 preview（200 路径）与 compare（404 路径）**都**正确呈现
-- [ ] 图表 P0 红点与表格 P0 徽标**同色**
-- [ ] dist 不存在时 `create_app()` 不崩溃，返回 503
-- [ ] 迁移全程旧页面可用
+- [x] `make dev` / `make serve` 一条命令起全栈
+      —— `serve` 依赖 `frontend-build`；`dev` 用子 shell cd + `set -m` 杀整个进程组。
+- [x] spec §8.2-A 功能对照表**全表逐条打勾**
+      —— 28 行逐条对照源码核过（路由 8 条、规则运算符与语义提示、默认规则预填、
+      图表 dataZoom/tooltip/legend/severity 点大小、抽样提示、RunsView 文案与失败原因
+      40 字、序列下拉「数据不足 | N 告警」、ComparePicker 勾选组、CompareTable 8 列、
+      ClassificationCard 推荐理由、Feedback 四类型 + 历史 + 评估 + 一键应用、
+      评估总表 9 列、BadCases 用 `indices` 真画区间、标注刷选 + 6 类型）。
+- [x] spec §8.2-B 的 **6 个**问题全部消失
+      —— `grep -rn "alert(\|prompt(" frontend/src` **完全为空**（连说明用的注释也改成
+      「alert 弹窗 / prompt 弹窗」，让这条检查能原样当 CI 门）；`report.js`/`annotate.js`
+      已随模板退役删除；其余 4 项各有单测锁住。
+- [x] `GET /jobs/1` → 200；`GET /api/typo` → 404 JSON；`GET /assets/<真实文件>` → 200
+      —— 8000 上 `make serve` 实测（`/api/typo` 回 `{"detail":"Not Found"}`）。
+- [x] 仓库里不再有两套前端（`templates/`、`static/` 已删）
+      —— `3e7983e`；`jinja2` 依赖一并移除。
+- [x] `pytest` / `vitest` / `ruff` 全绿
+      —— 286 passed；130 passed（12 文件）；ruff 全绿。
+- [x] 「数据不足」在 preview（200 路径）与 compare（404 路径）**都**正确呈现
+      —— 8013 临时实例：preview → 200 + `sufficient:false` +「有效点仅 1 个」；
+      compare → 404 + `X-Anomaly-Biz-State: insufficient_data`。
+- [x] 图表 P0 红点与表格 P0 徽标**同色**
+      —— 对比表「最高档」改 AntD `Tag`，复用 `levelColor()`（P0→`error`→`--status-p0`）；
+      预览图告警点读同一变量。`bf6fd25`。
+- [x] dist 不存在时 `create_app()` 不崩溃，返回 503
+      —— `test_spa.py::test_missing_dist_returns_503_without_crashing`；
+      且 `/api/typo` 在 dist 缺失时仍是 404 JSON 而非 503。
+- [x] 迁移全程旧页面可用
+      —— 阶段 1~3 期间旧 Jinja 路由与前端并行（Task 19 之前）。退役后 `/platform`
+      与 `/report` 仍由前端路由重定向到 `/jobs` / `/evaluation`（`router.tsx`），
+      外部书签不会 404。
 
 ```bash
 # 全量验证

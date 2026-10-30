@@ -19,7 +19,7 @@ export interface AlertRulesInputProps {
  *   - 绝对值：`>50` / `>=50` / `<10` / `<=10`
  *
  * ⚠️ 非法行**不静默丢弃** —— 显示行内错误，且整体不提交。
- *    旧版这里用 alert() 弹窗打断输入（spec §8.2-B 要修掉的缺陷之一）。
+ *    旧版这里用 alert 弹窗打断输入（spec §8.2-B 要修掉的缺陷之一）。
  */
 export function AlertRulesInput({ onChange, text, onTextChange }: AlertRulesInputProps) {
   const { rules, errors } = useMemo(() => parseRules(text), [text])

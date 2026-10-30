@@ -16,7 +16,7 @@ import {
 /**
  * 异常类型。固定 6 种（照搬旧 `annotate.js:61` 的提示文案）。
  *
- * ⚠️ 旧版用 `prompt()` 让用户手输 —— 现在改成下拉，
+ * ⚠️ 旧版用 `prompt` 弹窗让用户手输 —— 现在改成下拉，
  *    避免输错导致标注静默失效（spec §8.2-B）。
  */
 export const ANOMALY_TYPES = [
@@ -169,7 +169,7 @@ function AnnotateChart({ data, annotations, onBrush }: AnnotateChartProps) {
  * 标注页。
  *
  * 流程：选序列 → 拉波形 → 拉已有标注 → 画波形 → 刷选区间 →
- *       选异常类型（**下拉，不是 prompt()**）→ 保存。
+ *       选异常类型（**下拉，不是 prompt 弹窗**）→ 保存。
  */
 export function AnnotatePage() {
   const series = useSeries()
