@@ -5,7 +5,7 @@
  * EXPECTED_PATHS，缺失即失败。
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { getCatalog, createSource, createMetric, createJob, toggleJob, runJob, getRuns, getPreview, getCompare, createFeedback, getFeedback, getSuggestion, applySuggestion, getAlerts, deleteJob, deleteMetric, deleteSource } from './platform'
+import { getCatalog, createSource, createMetric, createJob, toggleJob, runJob, getRuns, getPreview, getCompare, createFeedback, getFeedback, getSuggestion, applySuggestion, getAlerts, deleteJob, deleteMetric, deleteSource, updateSource, updateMetric } from './platform'
 import { getSeries, getSeriesValues, getSummary, getBadcases } from './series'
 import { getAnnotations, saveAnnotations } from './annotate'
 
@@ -102,6 +102,8 @@ describe('端点封装层', () => {
     await deleteJob(7)
     await deleteMetric(1)
     await deleteSource(1)
+    await updateSource(1, { name: 'x' })
+    await updateMetric(1, { query: 'q' })
     await getSeries()
     await getSeriesValues('a:b')
     await getSummary()
@@ -115,6 +117,20 @@ describe('端点封装层', () => {
 
     const missing = EXPECTED_PATHS.filter((p) => !seen.has(p))
     expect(missing, `后端有但封装层没覆盖：${missing.join(', ')}`).toEqual([])
+  })
+
+  it('编辑走 PATCH —— 与删除同路径，方法不能搞错', async () => {
+    const calls: Array<{ url: string; method: string }> = []
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(input), method: init?.method ?? 'GET' })
+      return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } })
+    })
+    await updateSource(1, { name: 'x' })
+    await updateMetric(2, { query: 'q' })
+    expect(calls[0].method).toBe('PATCH')
+    expect(calls[0].url).toContain('/api/platform/sources/1')
+    expect(calls[1].method).toBe('PATCH')
+    expect(calls[1].url).toContain('/api/platform/metrics/2')
   })
 
   it('序列 ID 含冒号时被正确编码', async () => {

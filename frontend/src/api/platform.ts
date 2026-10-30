@@ -44,6 +44,21 @@ export const getAlerts = (opts: {
 export const createSource = (payload: { name: string; path: string; kind?: string }) =>
   postJson<{ id: number }>('/api/platform/sources', payload)
 
+/**
+ * 改数据源。只传要改的字段，其余保持原样。
+ *
+ * ⚠️ 已经跑过的运行记录不受影响 —— 改动只在**下一次**运行任务时生效。
+ */
+export const updateSource = (
+  sourceId: number,
+  payload: { name?: string; path?: string; kind?: string },
+) =>
+  request<unknown>(`/api/platform/sources/${sourceId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+
 export const createMetric = (payload: {
   source_id: number
   name: string
@@ -56,6 +71,22 @@ export const createMetric = (payload: {
   source_timezone?: string
   missing_policy?: string
 }) => postJson<{ id: number }>('/api/platform/metrics', payload)
+
+/**
+ * 改指标。只传要改的字段，其余保持原样。
+ *
+ * ⚠️ `group_column: null` 是**显式清空** —— 想清空就必须传 null，
+ *    不传则保持原值。
+ */
+export const updateMetric = (
+  metricId: number,
+  payload: Partial<Parameters<typeof createMetric>[0]>,
+) =>
+  request<unknown>(`/api/platform/metrics/${metricId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
 
 export const createJob = (payload: {
   metric_id: number
