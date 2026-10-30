@@ -25,8 +25,13 @@ flowchart TD
     BT --> CP[compare.py<br/>跨检测器对照]
   end
   subgraph Web
-    W[web/app.py<br/>FastAPI] --> TPL[templates + static]
+    W[web/app.py<br/>FastAPI + SPA 托管] --> API["/api/* JSON API"]
     W --> PR[web/platform_routes.py<br/>平台 API]
+  end
+  subgraph Frontend
+    FE[frontend/<br/>React + TS + Vite] --> API
+    FE --> DIST[frontend/dist<br/>构建产物]
+    DIST --> W
   end
   subgraph Platform
     PS[platform/store.py<br/>配置与调度状态] --> SRC[platform/sqlite_source.py<br/>只读取数/拆序列]
@@ -54,7 +59,8 @@ flowchart TD
 | `classification/` | 特征、规则分类、推荐表 |
 | `detectors/` | 统一协议 + 统计/深度/预训练实现 |
 | `evaluation/` | 阈值、指标、回测、Bad Case、报告、对照 |
-| `web/` | 标注页、评估页、平台配置与预览页、序列 API |
+| `web/` | 只出 JSON API + 托管前端构建产物（SPA fallback）；不含任何页面模板 |
+| `frontend/` | 独立前端工程：React 18 + TS + Vite + AntD v5 + TanStack Query + ECharts |
 | `platform/` | 平台切片：元数据存储、只读取数、任务执行、定时调度 |
 
 ## 平台切片的数据流
@@ -65,7 +71,8 @@ flowchart LR
   SCH --> RUN[runner<br/>取数→检测→分级]
   RUN --> SRC[sqlite_source<br/>$timefilter + group by 拆序列]
   RUN --> NPZ[cache/platform/runs/<run_id><br/>index.json + npz]
-  NPZ --> UI[platform.js<br/>基线/上下界/告警点]
+  NPZ --> API["/api/platform/jobs/:id/preview<br/>JSON"]
+  API --> UI[frontend<br/>JobsPage / PreviewChart]
 ```
 
 - 配置与结果分离：SQLite 只存配置与运行摘要，数组落 npz，避免大对象进数据库。
@@ -78,6 +85,32 @@ flowchart LR
 - 数据落盘格式：`index.json` + 每条序列一个 `.npz`，含 `values`、`timestamps`、`labels`、`meta`。
 - 检测缓存：`data/cache/detections/<detector>/<series_id>.npz`。
 - 报告：`reports/latest/report.json` 是唯一事实来源，Markdown 与图由它派生。
+
+## Web 前端
+
+前后端分离，但**单进程部署**：
+
+```mermaid
+flowchart LR
+  BR[浏览器] -->|:5173 dev / :8000 prod| V[Vite dev server<br/>/api 代理]
+  BR -->|prod 同源| FA[FastAPI<br/>/api/* + /assets + SPA fallback]
+  V -->|proxy| FA
+  FA --> DB[(platform.db)]
+  FA --> NPZ[cache/.../runs]
+```
+
+- 前端是 `frontend/` 独立工程（React 18 + TS + Vite + AntD v5 + TanStack Query + ECharts）。
+  后端只出 JSON API，不渲染任何页面。
+- `frontend/dist` 由 `make frontend-build` 生成、**不入 git**；`create_app()` 向上找
+  `frontend/dist`，也可通过 `create_app(frontend_dist=...)` 注入（测试用）。
+- SPA fallback：所有非 `/api/*` 的未知路径回 `index.html`，深链接刷新不 404；
+  拼错的 API 仍回 JSON 404；`dist` 缺失时回 503 并提示 `make frontend-build`。
+- 开发：`make dev` 起 vite(:5173) + uvicorn(:8000) 两个进程；生产：`make serve` 先构建再起服务。
+- 五态由 `StateBoundary` 统一处理：加载 / 空 / 错误 / **数据不足**（业务态）/ 正常。
+  业务态靠后端 `X-Anomaly-Biz-State` 响应头识别（`no_run` / `no_series` / `no_data` /
+  `insufficient_data` / `no_algorithms` / `no_result`），**绝不显示成红色错误框**。
+- 视觉单一来源：`frontend/src/styles/tokens.css` 的 CSS 变量 → AntD token + ECharts 配色；
+  双主题 `data-theme=dark|light`。ECharts 读不到 CSS 变量，需运行时读实际色值（`theme/cssVar.ts`）。
 
 ## 失败降级
 

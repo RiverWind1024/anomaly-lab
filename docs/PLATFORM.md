@@ -6,7 +6,25 @@
 
 ```bash
 make platform-demo          # 生成 demo 源库 + 指标 + 任务（写入 data/）
-make serve                  # http://127.0.0.1:8000/platform
+make serve                  # 构建前端并起服务：http://127.0.0.1:8000/
+```
+
+页面（前端路由，前后端分离后的 8 个页面）：
+
+| 路径 | 内容 |
+|---|---|
+| `/` | 序列总览 |
+| `/sources` `/metrics` | 数据源 / 指标配置 |
+| `/jobs` | 任务列表 + 新建任务（含告警规则录入） |
+| `/jobs/:id` | 运行记录、预览图、多算法对比、分类结论、反馈闭环 |
+| `/evaluation` | 评估报告（9 列总表） |
+| `/badcases` | Bad Case 详情（误报/漏报区间真绘制） |
+| `/annotate` | 标注（刷选 + 类型下拉） |
+
+开发时前后端分开跑（vite 热更新 + `/api` 代理）：
+
+```bash
+make dev                    # vite :5173（代理 /api → :8000） + uvicorn :8000
 ```
 
 或者纯脚本冒烟（不启 Web）：
@@ -14,6 +32,26 @@ make serve                  # http://127.0.0.1:8000/platform
 ```bash
 make platform-smoke         # 跑一次任务并断言：2 条序列、有告警
 ```
+
+## Web 前端
+
+前端是 `frontend/` 下的**独立工程**（React 18 + TypeScript + Vite + Ant Design v5 +
+TanStack Query + ECharts），后端只提供 JSON API 并托管构建产物。
+
+- **工程结构**：`src/api/`（端点封装 + 手写类型 + 契约守卫）、`src/components/`（五态边界、
+  布局）、`src/features/<领域>/`（页面实现与单测）、`src/styles/tokens.css`（唯一视觉来源）、
+  `src/theme/`（AntD token、ECharts 的 CSS 变量读取、主题上下文）。
+- **五态处理**：统一走 `StateBoundary` —— 加载 / 空 / 错误 / **数据不足** / 正常。
+  数据不足是业务态而非错误态：后端用 `X-Anomaly-Biz-State` 响应头（`no_run`、`no_series`、
+  `no_data`、`insufficient_data`、`no_algorithms`、`no_result`）标记，前端显示空态或警告，
+  不会出现红色错误框。旧版的 `alert()` / `prompt()` 全部消除（标注类型改下拉）。
+- **单一视觉来源**：颜色只定义在 `tokens.css` 的 CSS 变量里，AntD 通过 `ConfigProvider` token、
+  ECharts 通过 `theme/cssVar.ts` 运行时读取，两套主题（`data-theme=dark|light`）共用同一份变量。
+  ECharts 不会因 CSS 变量变化自动重绘，图表组件订阅主题上下文来重绘。
+- **类型防漂移**：`src/api/types.ts` 手写（决策 D6），后端字段一变
+  `tests/web/test_api_contract.py` 就会红。
+- **构建与托管**：`make frontend-build` 产出 `frontend/dist`（不入 git）；`serve` 依赖它，
+  FastAPI 对非 `/api/*` 路径回 `index.html`（深链接不 404），`/assets` 静态挂载。
 
 ## 三层配置模型
 

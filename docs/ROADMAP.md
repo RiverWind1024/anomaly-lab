@@ -14,7 +14,7 @@
 
 - [ ] UCR 单序列文件的真实 URL 形式（实现时校准，RESEARCH.md §6）
 - [ ] `chronos-t5-tiny` 权重的实际可下载性
-- [ ] ECharts CDN 是否可达 → 倾向本地 vendor 一份
+- [x] ECharts 引入方式 → 已定：作为 npm 依赖（`echarts` + `echarts-for-react`），不再单独 vendor
 
 ## v2 候选池（不在 v1 范围）
 
@@ -91,3 +91,24 @@
 - [ ] 批量多序列运算 / GPU 加速（当前逐序列 for 循环）
 - [ ] 慢查询时的历史点缓存（当前每次 run 都重查整个窗口）
 
+
+## Web 前端分离（2026-10-30）
+
+- **形态**：前端迁为 `frontend/` 独立 React 18 + TypeScript + Vite 工程（AntD v5 +
+  TanStack Query + ECharts），后端只出 JSON API 并托管 `frontend/dist`；单进程部署。
+- **视觉**：选定「云平台暗色」方向，并支持切换白色主题（`data-theme=dark|light`）；
+  颜色只来自 `tokens.css` 的 CSS 变量，AntD token 与 ECharts 配色同源。
+- **功能等价迁移**：8 个页面（序列总览 / 数据源 / 指标 / 任务列表 / 任务详情 /
+  评估报告 / Bad Case / 标注）全部落地，spec §8.2 功能对照表逐条验收。
+- **修掉的旧缺陷**：Bad Case 区间从未绘制（旧版写 `markArea: {}`）、标注类型靠
+  `prompt()` 手输、写操作静默失败（`fetch` 不看 `resp.ok`）、数据不足显示成错误框。
+- **五态**：加载 / 空 / 错误 / 数据不足（业务态，靠 `X-Anomaly-Biz-State` 头识别）/ 正常。
+- **退役**：Jinja 模板、命令式 JS、`/static` 挂载与 `jinja2` 依赖全部移除。
+
+明确列入「以后做」：
+
+- [ ] **告警中心**（告警事件列表 / 生命周期 / 抑制 / 通知）—— 本版告警只是检测的后处理，
+      没有事件对象与通知渠道。
+- [ ] **新建任务的最小窗口点提示**（后端 `validate_window_points` 有下限，但表单未提前提示）。
+- [ ] **新建任务表单的 freq 格式校验**（当前非法频率由提交后的后端 400 兜住，不是即时校验）。
+- [ ] 删除类功能（任务 / 指标 / 数据源）—— 后端无端点，前端相应地不提供入口。
