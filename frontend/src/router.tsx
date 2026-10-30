@@ -13,6 +13,9 @@ const SeriesOverviewPage = lazy(() =>
   import('./pages/SeriesOverviewPage').then((m) => ({ default: m.SeriesOverviewPage })),
 )
 const JobsPage = lazy(() => import('./pages/JobsPage').then((m) => ({ default: m.JobsPage })))
+const AlertsPage = lazy(() =>
+  import('./pages/AlertsPage').then((m) => ({ default: m.AlertsPage })),
+)
 const SourcesPage = lazy(() =>
   import('./pages/SourcesPage').then((m) => ({ default: m.SourcesPage })),
 )
@@ -41,6 +44,7 @@ export function AppRoutes() {
         <Route path="/metrics" element={<MetricsPage />} />
         <Route path="/jobs" element={<JobsPage />} />
         <Route path="/jobs/:jobId" element={<JobDetailPage />} />
+        <Route path="/alerts" element={<AlertsPage />} />
         <Route path="/evaluation" element={<EvaluationPage />} />
         <Route path="/badcases" element={<BadCasesPage />} />
         <Route path="/annotate" element={<AnnotatePage />} />

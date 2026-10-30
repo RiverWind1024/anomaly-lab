@@ -243,6 +243,19 @@ pre {
   gap: var(--space-3);
 }
 
+/* 告警中心 */
+.alert-list__toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+}
+
+.alert-list__notice {
+  margin-bottom: var(--space-3);
+}
+
 /* 告警规则输入 */
 .rules-input {
   display: flex;

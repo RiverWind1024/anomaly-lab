@@ -12,6 +12,7 @@ export const NAV_ITEMS = [
   { key: '/sources', label: '数据源' },
   { key: '/metrics', label: '指标' },
   { key: '/jobs', label: '检测任务' },
+  { key: '/alerts', label: '告警中心' },
   { key: '/evaluation', label: '评估报告' },
   { key: '/badcases', label: 'Bad Case' },
   { key: '/annotate', label: '标注' },
