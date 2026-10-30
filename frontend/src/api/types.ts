@@ -56,6 +56,17 @@ export interface CatalogDetector {
   default_threshold: number
   score_type: string
   label: string
+  /**
+   * 当前环境能不能用。
+   *
+   * 只有 Chronos 会是 false —— 它需要可选依赖 + 本地权重缓存。
+   * 后端从 `detector_available()` 取，字段缺失时按「可用」处理（兼容旧后端）。
+   */
+  available?: boolean
+  /** 不可用的原因（人话，直接显示给用户）。 */
+  reason?: string | null
+  /** 慢算法（秒级/序列）—— 定时任务要留足间隔。 */
+  slow?: boolean
 }
 
 export interface Catalog {
@@ -194,6 +205,8 @@ export interface Compare {
   auto_fallback: boolean
   auto_rationale: string
   available: string[]
+  /** 被跳过的算法（当前环境不可用，如缺 chronos 依赖）—— 附人话原因。 */
+  skipped?: { name: string; reason: string }[]
   detectors: CompareDetector[]
   levels: string[]
   alert_rules: AlertRule[]

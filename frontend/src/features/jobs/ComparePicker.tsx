@@ -1,5 +1,6 @@
 import { Checkbox } from 'antd'
 import { useMemo } from 'react'
+import type { CatalogDetector } from '../../api/types'
 
 export interface ComparePickerProps {
   /** 后端给的候选算法；为空时要回退到 detectors 的名字列表 */
@@ -8,6 +9,8 @@ export interface ComparePickerProps {
   autoDetector: string
   selected: string[]
   onChange: (selected: string[]) => void
+  /** catalog 里的算法元信息 —— 用来标「慢」（可选，缺了就不标） */
+  detectors?: CatalogDetector[]
 }
 
 /**
@@ -48,10 +51,17 @@ export function ComparePicker({
   autoDetector,
   selected,
   onChange,
+  detectors = [],
 }: ComparePickerProps) {
   const names = useMemo(
     () => candidateNames(available, fallbackNames),
     [available, fallbackNames],
+  )
+
+  // 慢算法（Chronos）标注出来 —— 它要几秒/序列，勾之前得知道
+  const slowNames = useMemo(
+    () => new Set(detectors.filter((d) => d.slow).map((d) => d.name)),
+    [detectors],
   )
 
   // 没手动选过 → 用默认勾选；有 → 用用户的（沿用旧版的 previous 逻辑）
@@ -73,11 +83,15 @@ export function ComparePicker({
       <Checkbox.Group
         value={effective}
         onChange={handleChange}
-        options={names.map((name) => ({ label: name, value: name }))}
+        options={names.map((name) => ({
+          label: slowNames.has(name) ? `${name}（慢）` : name,
+          value: name,
+        }))}
       />
       <p className="muted compare-picker__hint">
         默认展示 {names.length <= 4 ? '全部候选' : `auto（${autoDetector}）`}；
         勾选后只对比勾中的算法。
+        {slowNames.size > 0 && '标「慢」的算法几秒才跑一条序列，勾之前留意。'}
       </p>
     </div>
   )

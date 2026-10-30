@@ -140,6 +140,20 @@ def band_multiplier(rules: list[AlertRule]) -> float:
     return float(min(multipliers))
 
 
+def band_multiplier_or_none(rules: list[AlertRule]) -> float | None:
+    """最低档倍数条件；**没有倍数条件时返回 None 而不是抛错**。
+
+    规则表可以全是绝对值条件（「值 > 50 记 P0」），这时「上下界宽度」无从谈起 ——
+    对本来就不画基线带的检测器（如 Chronos，分数是 0~1 的相对越界程度）
+    更是如此。调用方据此退回到检测器自己的默认阈值。
+
+    告警等级判定走的是规则表（`severity_from_conditions`），与这里的宽度无关，
+    所以没有倍数条件**不影响**分级，只是没有「带」可画。
+    """
+    multipliers = [rule.multiplier for rule in rules if rule.multiplier is not None]
+    return float(min(multipliers)) if multipliers else None
+
+
 def highest_multiplier(rules: list[AlertRule]) -> float | None:
     """最高一档的分数阈值；没有倍数条件时为 None。"""
     multipliers = [rule.multiplier for rule in rules if rule.multiplier is not None]

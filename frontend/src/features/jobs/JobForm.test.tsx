@@ -77,7 +77,8 @@ describe('新建任务表单的即时校验', () => {
     await user.click(await screen.findByTitle('demo-metric'))
     await user.type(screen.getByLabelText(/任务名称/), 'j')
     await user.click(screen.getByLabelText(/检测算法/))
-    await user.click(await screen.findByTitle('iqr'))
+    // 算法选项的 label 是 ReactNode（带「慢」「不可用」标记），没有 title 属性
+    await user.click((await screen.findAllByText(/^iqr$/))[0])
     // AntD 给两个汉字的按钮自动插空格（"创 建"），用正则匹配
     await user.click(screen.getByRole('button', { name: /创\s*建/ }))
 

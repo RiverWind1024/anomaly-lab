@@ -27,6 +27,7 @@ from anomaly_lab.contracts import SeriesBundle
 from anomaly_lab.evaluation.metrics import point_adjusted_prf, precision_recall_f1
 from anomaly_lab.platform.detectors import (
     AUTO_DETECTOR,
+    DEFAULT_DETECTOR_SET,
     DETECTOR_FACTORIES,
     create_detector,
     resolve_detector,
@@ -109,9 +110,11 @@ def validate_auto(
     baseline_detector: str = "iqr",
 ) -> ValidationReport:
     """在带真值的序列上验证 auto 推荐的质量。"""
+    # ⚠️ 默认集合**不含**慢的预训练模型（Chronos）—— 遍历整个注册表会让
+    #    一次评测从几秒变成十几分钟。Chronos 要显式点名才跑。
     names = [
         name
-        for name in (detectors or list(DETECTOR_FACTORIES))
+        for name in (detectors or list(DEFAULT_DETECTOR_SET))
         if name in DETECTOR_FACTORIES
     ]
     rows: list[SeriesResult] = []

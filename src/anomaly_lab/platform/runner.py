@@ -17,7 +17,7 @@ import numpy as np
 from anomaly_lab.detectors.bands import compute_bands
 from anomaly_lab.platform.alerts import (
     SEVERITY_NORMAL,
-    band_multiplier,
+    band_multiplier_or_none,
     default_rules,
     highest_multiplier,
     level_labels,
@@ -103,7 +103,9 @@ def _run_job(
         source_path = resolve_source_path(source.path, data_root)
         series_list = load_series(metric, source_path, start_time, end_time)
         rules = job_rules(job)
-        band_width = band_multiplier(rules)
+        # 没有倍数条件时（规则全是绝对值条件）没有「上下界宽度」可言 ——
+        # 退回到检测器自己的默认阈值。分级由规则表决定，不受影响。
+        band_width = band_multiplier_or_none(rules)
         levels = level_labels(rules)
         critical_ref = highest_multiplier(rules) or band_width
         # 最高档的序号 = 规则条数（0 号固定是「正常」）
@@ -136,8 +138,10 @@ def _run_job(
                 continue
             resolution = resolve_detector(job.detector, series)
             detector = create_detector(resolution.detector).fit(series)
-            result = detector.detect(series, threshold=band_width)
-            bands = compute_bands(detector, series, band_width)
+            # 没有倍数条件时用检测器自己的默认阈值（如 Chronos 的 0.5）
+            width = band_width if band_width is not None else float(detector.default_threshold)
+            result = detector.detect(series, threshold=width)
+            bands = compute_bands(detector, series, width)
             severity = severity_from_conditions(result.scores, series.values, rules)
             file_name = _file_name(series.series_id)
             np.savez_compressed(
@@ -149,8 +153,10 @@ def _run_job(
                 lower=np.asarray(bands.lower if bands else [], dtype=float),
                 upper=np.asarray(bands.upper if bands else [], dtype=float),
                 severity=severity,
-                alert_threshold=np.array(band_width),
-                critical_threshold=np.array(critical_ref),
+                alert_threshold=np.array(width),
+                critical_threshold=np.array(
+                    critical_ref if critical_ref is not None else width
+                ),
                 alert_rules=np.array(json.dumps(rules_to_dicts(rules), ensure_ascii=False)),
                 levels=np.array(json.dumps(levels, ensure_ascii=False)),
                 detector=np.array(result.detector),

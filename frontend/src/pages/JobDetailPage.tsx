@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { message } from 'antd'
+import { Alert, message } from 'antd'
 import { CompareChart } from '../features/jobs/CompareChart'
 import { ComparePicker } from '../features/jobs/ComparePicker'
 import { CompareTable } from '../features/jobs/CompareTable'
@@ -147,7 +147,20 @@ export function JobDetailPage() {
           autoDetector={compare.data?.auto_detector ?? 'auto'}
           selected={detectors}
           onChange={setDetectors}
+          detectors={catalog.data?.detectors ?? []}
         />
+
+        {/* 被跳过的算法：当前环境不可用（如缺 chronos 依赖/权重） */}
+        {(compare.data?.skipped ?? []).map((item) => (
+          <Alert
+            key={item.name}
+            type="warning"
+            showIcon
+            message={`${item.name} 已跳过`}
+            description={item.reason}
+            style={{ marginBottom: 12 }}
+          />
+        ))}
 
         {compare.data && (
           <>

@@ -650,5 +650,11 @@ def test_job_rejects_absolute_only_alert_rules(tmp_path):
             "alert_rules": [{"op": ">", "value": 50, "level": "P1"}],
         },
     )
-    assert response.status_code == 400
-    assert "倍数规则" in response.json()["detail"]
+    # ⚠️ 2026-10-30 起不再拒绝纯绝对值规则：
+    #    没有倍数条件就没有「上下界宽度」，此时用**检测器自己的惯用阈值**
+    #    （seasonal 默认 2.5）画带；分级仍由规则表决定，绝对值条件照常生效。
+    #    动机：Chronos 的分数是 0~1 的相对越界程度，`>=0.5, P1` 才是自然写法。
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["alert_threshold"] == 2.5
+    assert body["alert_rules"] == [{"op": ">", "value": 50.0, "level": "P1"}]

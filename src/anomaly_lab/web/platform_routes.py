@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from anomaly_lab.platform import runner as runner_module
 from anomaly_lab.platform.alerts import (
     band_multiplier,
+    band_multiplier_or_none,
     highest_multiplier,
     level_labels,
     parse_rules,
@@ -24,8 +25,10 @@ from anomaly_lab.platform.compare import compare_series
 from anomaly_lab.platform.detectors import (
     AUTO_DETECTOR,
     DEFAULT_DETECTOR,
+    DEFAULT_DETECTOR_SET,
     DETECTOR_FACTORIES,
     create_detector,
+    detector_available,
     detector_catalog,
     resolve_detector,
 )
@@ -187,6 +190,14 @@ def build_router(
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
             # auto 没有单一默认阈值，用兜底算法的默认值
             default_threshold = float(create_detector(DEFAULT_DETECTOR).default_threshold)
+        # 可用性前置检查：Chronos 这类可选依赖缺失时，创建阶段就说清楚，
+        # 不让用户等到定时任务跑起来才看到一个 failed 运行记录。
+        available, reason = detector_available(payload.detector)
+        if not available:
+            raise HTTPException(
+                status_code=400,
+                detail=f"检测算法 {payload.detector} 当前不可用：{reason}",
+            )
         try:
             rule_dicts = (
                 [rule.model_dump(exclude_none=True) for rule in payload.alert_rules]
@@ -196,7 +207,10 @@ def build_router(
             rules = parse_rules(rule_dicts) if rule_dicts else []
             if rules:
                 # 规则表为准：阈值由规则推导（最低档/最高档的倍数）
-                alert = band_multiplier(rules)
+                # 没有倍数条件（规则全是绝对值条件）→ 退回到检测器默认阈值
+                alert = band_multiplier_or_none(rules)
+                if alert is None:
+                    alert = default_threshold
                 critical = highest_multiplier(rules) or alert
             else:
                 alert = (
@@ -426,7 +440,12 @@ def build_router(
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         rules = runner_module.job_rules(job)
-        band_width = band_multiplier(rules)
+        # 没有倍数条件时用最低档检测器的默认阈值（分数是 0~1 时尤其需要）
+        band_width = band_multiplier_or_none(rules)
+        if band_width is None:
+            band_width = float(
+                create_detector(DEFAULT_DETECTOR).default_threshold
+            )
         end_time = utcnow()
         start_time = end_time - freq_delta(metric.freq) * job.window_points
         source_path = runner_module.resolve_source_path(source.path, get_data_root())
@@ -477,8 +496,24 @@ def build_router(
                 detail="没有可对比的算法",
                 headers=biz_headers("no_algorithms"),
             )
+        # 不可用的算法（Chronos 缺依赖/权重）跳过并说明原因，
+        # 不让一个不可用算法把整张对比表拖垮。
+        usable: list[str] = []
+        skipped: list[dict] = []
+        for name in seen:
+            ok, reason = detector_available(name)
+            if ok:
+                usable.append(name)
+            else:
+                skipped.append({"name": name, "reason": reason})
+        if not usable:
+            raise HTTPException(
+                status_code=400,
+                detail="没有可对比的算法",
+                headers=biz_headers("no_algorithms"),
+            )
 
-        outcomes = compare_series(series, seen, rules, band_width)
+        outcomes = compare_series(series, usable, rules, band_width)
         index = _sample_indices(len(series.values), MAX_PREVIEW_POINTS)
         sampled = index is not None
         timestamps = series.timestamps
@@ -512,6 +547,7 @@ def build_router(
             "auto_fallback": resolution.fallback,
             "auto_rationale": resolution.rationale,
             "available": available,
+            "skipped": skipped,
             "detectors": [
                 {
                     **outcome.as_dict(),
@@ -625,7 +661,7 @@ def build_router(
             for name in dict.fromkeys(names)
             if name in DETECTOR_FACTORIES or name == AUTO_DETECTOR
         ]
-        return unique or list(DETECTOR_FACTORIES)
+        return unique or list(DEFAULT_DETECTOR_SET)
 
     def _load_window_series(job, metric, source) -> list:
         end_time = utcnow()

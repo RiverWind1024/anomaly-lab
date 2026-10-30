@@ -80,7 +80,11 @@ export function buildPreviewOption(
   const p0 = cssVar('--status-p0', '#ef4444')
   const accent = cssVar('--accent-text', '#6da8e3')
 
-  const hasBand = baseline != null && lower != null && upper != null
+  // ⚠️ 按**长度**判断，不只是 null ——
+  //    没有基线的算法（如 Chronos）后端会存空数组，
+  //    空数组 !== null，会被误判成「有带」→ 画出空的图例项。
+  const hasBand =
+    (baseline?.length ?? 0) > 0 && (lower?.length ?? 0) > 0 && (upper?.length ?? 0) > 0
 
   // 告警点按 severity 分三组（0=正常 1=P1 2=P0）
   const p1Points: Array<[number, number]> = []
@@ -259,7 +263,10 @@ export function buildPreviewOption(
 export function PreviewChart(props: PreviewChartProps) {
   // 订阅主题 —— ECharts 不认 CSS 变量，主题变了必须重建 option 才能换色
   const themeMode = useThemeModeValue()
-  const hasBand = props.baseline != null && props.lower != null && props.upper != null
+  const hasBand =
+    (props.baseline?.length ?? 0) > 0 &&
+    (props.lower?.length ?? 0) > 0 &&
+    (props.upper?.length ?? 0) > 0
   // themeMode 进依赖：它变了就重建 option（颜色是运行时从 CSS 变量读的）
   const option = buildPreviewOption(props, themeMode)
 

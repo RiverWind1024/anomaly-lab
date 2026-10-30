@@ -23,8 +23,9 @@ def test_chronos_available_returns_bool():
 
 
 def test_detector_raises_typed_error_when_unavailable(monkeypatch):
+    # 桩要能接住可选的 model_name 参数
     monkeypatch.setattr(
-        "anomaly_lab.detectors.chronos.chronos_available", lambda: False
+        "anomaly_lab.detectors.chronos.chronos_available", lambda *_: False
     )
     with pytest.raises(ChronosUnavailable):
         ChronosDetector().fit(_series())

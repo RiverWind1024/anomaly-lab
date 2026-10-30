@@ -48,6 +48,16 @@ describe('PreviewChart', () => {
     expect(names).toContain('分数')
   })
 
+  it('空数组也算「没有基线带」', () => {
+    // 没有基线的算法（如 Chronos）后端存的是**空数组**而不是 null ——
+    // 空数组 !== null，只判 null 会把它误当成「有带」，画出空的图例项。
+    const option = buildPreviewOption({ ...base, baseline: [], lower: [], upper: [] })
+    const names = option.series.map((s) => s.name)
+    expect(names).not.toContain('基线')
+    expect(names.some((n) => n?.includes('界'))).toBe(false)
+    expect(names).toContain('数值')
+  })
+
   it('P1 / P0 告警点分成两个 scatter 系列', () => {
     const option = buildPreviewOption({
       ...base,

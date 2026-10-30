@@ -56,7 +56,30 @@ export function JobForm({
   }, [open, form])
 
   const detectorOptions = useMemo(
-    () => detectors.map((d) => ({ value: d.name, label: d.label || d.name })),
+    () =>
+      detectors.map((d) => ({
+        value: d.name,
+        label: (
+          <span>
+            {d.label || d.name}
+            {d.available === false && (
+              <span className="muted"> （不可用）</span>
+            )}
+            {d.slow && d.available !== false && (
+              <span className="muted"> （慢）</span>
+            )}
+          </span>
+        ),
+        // 不可用就不让选 —— 后端也会拒绝创建任务
+        disabled: d.available === false,
+        // title 悬停说明：不可用时给原因，慢时给量级
+        title:
+          d.available === false
+            ? (d.reason ?? '当前环境不可用')
+            : d.slow
+              ? '慢：约 2 秒/序列，定时任务请留足执行间隔'
+              : undefined,
+      })),
     [detectors],
   )
 

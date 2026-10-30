@@ -13,6 +13,7 @@ from pathlib import Path
 
 from anomaly_lab.platform.alerts import (
     band_multiplier,
+    band_multiplier_or_none,
     default_rules,
     highest_multiplier,
     parse_rules,
@@ -270,8 +271,10 @@ class PlatformStore:
         self.get_metric(metric_id)
         if alert_rules:
             # 规则表为准：阈值由规则推导（最低档/最高档的倍数）
+            # 没有倍数条件（规则全是绝对值条件）→ 用调用方传入的兜底值
             rules = parse_rules(alert_rules)
-            alert_threshold = band_multiplier(rules)
+            derived = band_multiplier_or_none(rules)
+            alert_threshold = derived if derived is not None else float(alert_threshold)
             critical_threshold = highest_multiplier(rules) or alert_threshold
         else:
             validate_thresholds(float(alert_threshold), float(critical_threshold))
