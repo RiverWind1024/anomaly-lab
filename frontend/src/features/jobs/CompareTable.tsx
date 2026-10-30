@@ -1,6 +1,7 @@
-import { Button, Table, Tooltip } from 'antd'
+import { Button, Table, Tag, Tooltip } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import type { CompareDetector } from '../../api/types'
+import { levelColor } from './AlertRulesView'
 import { seriesColors } from './CompareChart'
 
 export interface CompareTableProps {
@@ -87,7 +88,10 @@ export function CompareTable({
       width: 90,
       render: (_value, row) => {
         const severity = topSeverityOf(row.severity)
-        return <span className="mono">{levels[severity] ?? '-'}</span>
+        const label = levels[severity]
+        if (!label) return <span className="mono">-</span>
+        // 徽标色与预览图的告警点同源（AntD colorError/colorWarning → --status-p0/p1）
+        return <Tag color={levelColor(label)}>{label}</Tag>
       },
     },
     {

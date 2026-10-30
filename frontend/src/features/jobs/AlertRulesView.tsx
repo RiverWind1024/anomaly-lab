@@ -52,8 +52,8 @@ export function AlertRulesView({ rules, showDefaultHint = true }: AlertRulesView
   )
 }
 
-/** 档位名 → 颜色。P0/P1 用告警语义色，其余用中性色。 */
-function levelColor(level: string): string {
+/** 档位名 → 颜色。P0/P1 用告警语义色（AntD token → --status-p0/p1），其余用中性色。 */
+export function levelColor(level: string): string {
   if (level === 'P0') return 'error'
   if (level === 'P1') return 'warning'
   return 'default'

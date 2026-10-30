@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { CompareDetector } from '../../api/types'
 import { candidateNames, defaultSelection } from './ComparePicker'
 import { buildCompareOption } from './CompareChart'
+import { levelColor } from './AlertRulesView'
 import { maxScoreOf, topSeverityOf } from './CompareTable'
 
 const detector = (over: Partial<CompareDetector> = {}): CompareDetector => ({
@@ -140,5 +141,16 @@ describe('buildCompareOption', () => {
   it('dataZoom 有 inside 与 slider', () => {
     const option = buildCompareOption({ ...base, detectors: [] })
     expect(option.dataZoom?.length).toBe(2)
+  })
+})
+
+describe('档位徽标色（与图表告警点同源）', () => {
+  it('P0 → error、P1 → warning、其余中性', () => {
+    // AntD Tag color="error"/"warning" 走 token 的 colorError/colorWarning，
+    // 而 token 由 antdTheme.ts 从 --status-p0 / --status-p1 读出来；
+    // 预览图与对比图的告警点也用同一组变量 —— 这就是「同色」的实现方式。
+    expect(levelColor('P0')).toBe('error')
+    expect(levelColor('P1')).toBe('warning')
+    expect(levelColor('P2')).toBe('default')
   })
 })
