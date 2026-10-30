@@ -1,5 +1,6 @@
 import { request, postJson } from './client'
 import type {
+  AlertListResponse,
   AlertRule,
   Catalog,
   Compare,
@@ -16,6 +17,29 @@ import type {
  */
 
 export const getCatalog = () => request<Catalog>('/api/platform/catalog')
+
+/**
+ * 跨任务汇总告警事件。
+ *
+ * ⚠️ 以每个任务的**最新一次运行**为准 —— 滚动窗口下同一段异常会被
+ *    连续多次运行重复报出。
+ */
+export const getAlerts = (opts: {
+  jobId?: number
+  level?: string
+  seriesId?: string
+  since?: string
+  until?: string
+} = {}) => {
+  const params = new URLSearchParams()
+  if (opts.jobId !== undefined) params.set('job_id', String(opts.jobId))
+  if (opts.level) params.set('level', opts.level)
+  if (opts.seriesId) params.set('series_id', opts.seriesId)
+  if (opts.since) params.set('since', opts.since)
+  if (opts.until) params.set('until', opts.until)
+  const qs = params.toString()
+  return request<AlertListResponse>(`/api/platform/alerts${qs ? `?${qs}` : ''}`)
+}
 
 export const createSource = (payload: { name: string; path: string; kind?: string }) =>
   postJson<{ id: number }>('/api/platform/sources', payload)

@@ -76,6 +76,46 @@ export interface Catalog {
   detectors: CatalogDetector[]
 }
 
+// ─────────────────────────────────────────── 告警中心 /api/platform/alerts
+
+/**
+ * 一条告警事件 = 一段连续告警点合并成的区间。
+ *
+ * ⚠️ `level` 是**档位名**，来自任务的规则表，不一定是 P0/P1（可自定义如「注意」）。
+ *    `level_index` 才是严重度序（越大越严重）—— 排序、筛选用它。
+ */
+export interface AlertEvent {
+  job_id: number
+  job_name: string
+  metric_id: number
+  metric_name: string
+  series_id: string
+  group: string | null
+  level: string
+  level_index: number
+  start_ts: string
+  end_ts: string
+  n_points: number
+  max_score: number
+  detector: string
+  score_type: string
+  run_id: number
+}
+
+/** 没被纳入统计的任务 —— 必须说清为什么，不能静默消失。 */
+export interface SkippedJob {
+  job_id: number
+  name: string
+  reason: string
+}
+
+export interface AlertListResponse {
+  events: AlertEvent[]
+  levels: string[]
+  jobs: { id: number; name: string }[]
+  skipped: SkippedJob[]
+}
+
 // ─────────────────────────────────────────── 告警规则
 
 /** 一条告警规则。倍数条件与绝对值条件二选一 —— 后端 `AlertRule.as_dict()` 按 is_absolute 分支。 */
