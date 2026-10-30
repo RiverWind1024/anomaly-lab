@@ -1,4 +1,5 @@
 import { List, Space, Tag } from 'antd'
+import { useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { StateBoundary } from '../../components/StateBoundary'
 import { DetectionChart } from './DetectionChart'
@@ -21,6 +22,19 @@ export function DetectionsPage() {
   // 序列 ID 直接取自 URL —— 不另存一份 state，否则从评估页跳进来时状态不同步
   const seriesId = params.get('series_id') ?? undefined
   const detail = useDetectionDetail(seriesId)
+  const listRef = useRef<HTMLDivElement>(null)
+
+  /**
+   * 把左栏滚动到选中的序列。
+   *
+   * ⚠️ 从评估报告点进来时，选中的序列可能在列表很靠后的位置 ——
+   *    列表停在顶部的话，用户根本看不到自己选的是哪条。
+   */
+  useEffect(() => {
+    if (!seriesId || !listRef.current) return
+    const active = listRef.current.querySelector('.is-active')
+    active?.scrollIntoView({ block: 'center' })
+  }, [seriesId, summary.data])
 
   const select = (id: string) => {
     setParams({ series_id: id })
@@ -36,7 +50,7 @@ export function DetectionsPage() {
       </header>
 
       <div className="badcases-layout">
-        <aside className="badcases-layout__list">
+        <aside className="badcases-layout__list" ref={listRef}>
           <StateBoundary
             isLoading={summary.isPending}
             error={summary.error}

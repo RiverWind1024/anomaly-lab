@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Card, Col, Empty, Row, Space, Statistic, Table, Tag, Tooltip } from 'antd'
+import { Card, Col, Row, Space, Statistic, Table, Tag, Tooltip } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { useQuery } from '@tanstack/react-query'
 import { StateBoundary } from '../components/StateBoundary'
@@ -123,14 +123,11 @@ export function DashboardPage() {
               </Col>
             </Row>
 
-            <Row gutter={[12, 12]}>
+            <Row gutter={[12, 12]} align="stretch">
               <Col span={8}>
                 <Card size="small" title="告警分布">
                   {data.alerts.by_level.length === 0 ? (
-                    <Empty
-                      image={Empty.PRESENTED_IMAGE_SIMPLE}
-                      description="当前没有告警"
-                    />
+                    <p className="muted dashboard__empty">当前没有告警</p>
                   ) : (
                     <ul className="dashboard__bars">
                       {data.alerts.by_level.map((item) => {
@@ -162,10 +159,7 @@ export function DashboardPage() {
               <Col span={8}>
                 <Card size="small" title="告警最多的序列">
                   {data.alerts.top_series.length === 0 ? (
-                    <Empty
-                      image={Empty.PRESENTED_IMAGE_SIMPLE}
-                      description="没有告警"
-                    />
+                    <p className="muted dashboard__empty">没有告警</p>
                   ) : (
                     <ul className="dashboard__list">
                       {data.alerts.top_series.slice(0, 6).map((item) => (
@@ -182,10 +176,7 @@ export function DashboardPage() {
               <Col span={8}>
                 <Card size="small" title="人工反馈">
                   {data.feedback.by_kind.length === 0 ? (
-                    <Empty
-                      image={Empty.PRESENTED_IMAGE_SIMPLE}
-                      description="还没有人工反馈"
-                    />
+                    <p className="muted dashboard__empty">还没有人工反馈</p>
                   ) : (
                     <ul className="dashboard__list">
                       {data.feedback.by_kind.map((item) => (

@@ -27,8 +27,19 @@ function levelColor(levelIndex: number): string {
   return 'gold'
 }
 
-function fmtTime(value: string): string {
-  return value.replace('T', ' ').slice(0, 16)
+/**
+ * 时间区间。
+ *
+ * ⚠️ 同一天时只显示一次日期 —— 否则「2026-10-30 09:23 ~ 2026-10-30 09:23」
+ *    在窄列里会折成两行，把表格撑得很丑。
+ */
+function fmtRange(start: string, end: string): string {
+  const from = start.replace('T', ' ').slice(5, 16)
+  const to = end.replace('T', ' ').slice(5, 16)
+  if (start.slice(0, 10) === end.slice(0, 10)) {
+    return `${from} ~ ${end.replace('T', ' ').slice(11, 16)}`
+  }
+  return `${from} ~ ${to}`
 }
 
 export function AlertList({ isLoading, error, data, filters, onFiltersChange }: AlertListProps) {
@@ -47,11 +58,9 @@ export function AlertList({ isLoading, error, data, filters, onFiltersChange }: 
     {
       title: '时间',
       key: 'time',
-      width: 260,
+      width: 190,
       render: (_value, row) => (
-        <span className="mono">
-          {fmtTime(row.start_ts)} ~ {fmtTime(row.end_ts)}
-        </span>
+        <span className="mono">{fmtRange(row.start_ts, row.end_ts)}</span>
       ),
     },
     {
@@ -94,6 +103,8 @@ export function AlertList({ isLoading, error, data, filters, onFiltersChange }: 
       title: '操作',
       key: 'actions',
       width: 90,
+      // ⚠️ 固定在右侧 —— 列多的时候横向滚动，否则「详情」按钮会被推出屏幕外
+      fixed: 'right',
       render: (_value, row) => (
         <Button size="small" onClick={() => setDetail(row)}>
           详情

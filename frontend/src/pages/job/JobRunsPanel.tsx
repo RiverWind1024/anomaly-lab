@@ -9,6 +9,14 @@ export interface JobRunsPanelProps {
   enabled: boolean
 }
 
+/** 运行状态的中文名（后端存的是英文）。 */
+const RUN_STATUS_LABEL: Record<string, string> = {
+  success: '成功',
+  failed: '失败',
+  running: '运行中',
+  pending: '排队中',
+}
+
 function fmtTime(value: string | null): string {
   return value ? value.replace('T', ' ').slice(0, 19) : '—'
 }
@@ -55,7 +63,7 @@ export function JobRunsPanel({ jobId, enabled }: JobRunsPanelProps) {
             value === 'success' ? 'success' : value === 'running' ? 'processing' : 'error'
           }
         >
-          {value}
+          {RUN_STATUS_LABEL[value] ?? value}
         </Tag>
       ),
     },

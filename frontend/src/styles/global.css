@@ -742,3 +742,19 @@ html.theme-switching *::after {
   margin: var(--space-2) 0 0;
   font-size: 12px;
 }
+
+.dashboard__empty {
+  margin: 0;
+  padding: var(--space-2) 0;
+  font-size: 12px;
+}
+
+.evaluation__metric-class {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.4;
+}
+
+.evaluation__metric-class .mono {
+  font-size: 11px;
+}

@@ -239,7 +239,9 @@ def create_app(
             "detector": result.detector,
             "threshold": result.threshold,
             "score_type": result.score_type,
-            "timestamps": [str(ts) for ts in series.timestamps],
+            # ⚠️ 截到秒 —— datetime64[ns] 直接 str() 会带 9 位纳秒，
+            #    图表 x 轴的标签会变成「2026-01-01T00:00:00.000000000」
+            "timestamps": [str(ts)[:19] for ts in series.timestamps],
             "values": [float(v) for v in series.values],
             "scores": [float(v) for v in result.scores],
             "badcases": [
@@ -260,7 +262,9 @@ def create_app(
             raise HTTPException(status_code=404, detail="序列不存在")
         return {
             "series_id": series.series_id,
-            "timestamps": [str(ts) for ts in series.timestamps],
+            # ⚠️ 截到秒 —— datetime64[ns] 直接 str() 会带 9 位纳秒，
+            #    图表 x 轴的标签会变成「2026-01-01T00:00:00.000000000」
+            "timestamps": [str(ts)[:19] for ts in series.timestamps],
             "values": [float(v) for v in series.values],
             "labels": [int(v) for v in series.labels],
         }

@@ -61,12 +61,14 @@ export function EvaluationTable({
         title: '形态',
         dataIndex: 'metric_class',
         key: 'metric_class',
-        width: 130,
+        width: 170,
         render: (value: string) => (
-          <Space size="small">
-            {metricClassLabel(value)}
+          // ⚠️ 必须上下两行，不能并排 —— 中文标签 + 原始类名并排的话，
+          //    在窄列里会折成竖排（一个字一行），整张表就毁了
+          <div className="evaluation__metric-class">
+            <span>{metricClassLabel(value)}</span>
             <span className="muted mono">{value}</span>
-          </Space>
+          </div>
         ),
       },
       {
@@ -128,6 +130,9 @@ export function EvaluationTable({
         title: '操作',
         key: 'actions',
         width: 110,
+        // ⚠️ 固定在右侧 —— 列多的时候横向滚动，
+        //    否则「删除」按钮会被推出屏幕外，用户根本找不到
+        fixed: 'right',
         render: (_value, row) => (
           <Popconfirm
             title="排除这条检测记录？"

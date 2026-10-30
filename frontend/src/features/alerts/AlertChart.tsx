@@ -70,13 +70,41 @@ export function buildAlertOption(
 
   const range = rangeIndices(preview.timestamps, startTs, endTs)
   const areas: unknown[] = range
-    ? [[{ xAxis: range[0], itemStyle: { color: withAlpha(p0, 0.22) } }, { xAxis: range[1] }]]
+    ? [
+        [
+          {
+            xAxis: range[0],
+            itemStyle: {
+              color: withAlpha(p0, 0.32),
+              borderColor: withAlpha(p0, 0.75),
+              borderWidth: 1,
+            },
+          },
+          { xAxis: range[1] },
+        ],
+      ]
     : []
 
   // 逐点阈值：P0 用严重阈值，其余用告警阈值
   const thresholds = preview.scores.map((_score, index) =>
     (preview.severity[index] ?? 0) >= 3 ? preview.critical_threshold : preview.alert_threshold,
   )
+
+  /**
+   * 默认聚焦到告警区间附近。
+   *
+   * ⚠️ 一次运行有几百个点，告警可能只有几个 ——
+   *    不聚焦的话用户得自己拖到底去找那一段。
+   */
+  const focus = (() => {
+    if (!range) return { startValue: 0, endValue: preview.timestamps.length - 1 }
+    const [from, to] = range
+    const span = to - from
+    const pad = Math.max(20, span * 3)
+    const start = Math.max(0, from - pad)
+    const end = Math.min(preview.timestamps.length - 1, to + pad)
+    return { startValue: start, endValue: end }
+  })()
 
   return {
     series: [
@@ -143,7 +171,7 @@ export function buildAlertOption(
       },
     ],
     dataZoom: [
-      { type: 'inside' },
+      { type: 'inside', ...focus },
       {
         type: 'slider',
         height: 18,
@@ -152,6 +180,7 @@ export function buildAlertOption(
         fillerColor: cssVarAlpha('--text-tertiary', 0.18, 'rgba(120,120,120,0.18)'),
         handleStyle: { color: border },
         textStyle: { color: textTertiary, fontSize: 10 },
+        ...focus,
       },
     ],
   }

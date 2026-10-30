@@ -54,7 +54,7 @@ describe('AlertList', () => {
       skipped: [],
     })
     expect(screen.getByText('P0')).toBeTruthy()
-    expect(screen.getByText(/2026-10-30 10:00/)).toBeTruthy()
+    expect(screen.getByText(/10-30 10:00 ~ 10:05/)).toBeTruthy()
   })
 
   it('任务名渲染成链接指向任务详情', () => {

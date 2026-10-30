@@ -4,6 +4,7 @@ import { Button, Descriptions, Space, Table, Tag } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { StateBoundary } from '../components/StateBoundary'
 import { MetricForm } from '../features/metrics/MetricForm'
+import { DeleteButton } from '../features/delete/DeleteButton'
 import { useCatalog } from '../features/jobs/queries'
 import { useDeleteMetric } from '../features/delete/queries'
 import type { CatalogMetric } from '../api/types'
@@ -69,14 +70,16 @@ export function SourceDetailPage() {
           >
             编辑
           </Button>
-          <Button
-            size="small"
-            danger
+          {/* ⚠️ 删除必须走 DeleteButton —— 它带**影响预览**与二次确认。
+              裸按钮误点就没了，而删指标会连带删掉任务与运行记录。 */}
+          <DeleteButton
+            target="metric"
+            id={row.id}
+            name={row.name}
+            catalog={catalog.data}
             loading={deleteMetric.isPending && deleteMetric.variables === row.id}
-            onClick={() => deleteMetric.mutate(row.id)}
-          >
-            删除
-          </Button>
+            onConfirm={() => deleteMetric.mutate(row.id)}
+          />
         </Space>
       ),
     },
