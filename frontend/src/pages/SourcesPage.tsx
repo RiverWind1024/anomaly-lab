@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { message } from 'antd'
 import { SourceCreateButton, SourceForm } from '../features/sources/SourceForm'
 import { SourceList } from '../features/sources/SourceList'
@@ -6,12 +6,21 @@ import { useCatalog } from '../features/jobs/queries'
 import { useDeleteSource } from '../features/delete/queries'
 import type { CatalogSource } from '../api/types'
 
-/** 数据源页。 */
+/** 数据源页 —— 层级链的**第一级**。 */
 export function SourcesPage() {
   const catalog = useCatalog()
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<CatalogSource | null>(null)
   const deleteSource = useDeleteSource()
+
+  // 每个数据源下有几个指标 —— 列表里直接看得到，不用点进去
+  const metricCounts = useMemo(() => {
+    const counts = new Map<number, number>()
+    for (const metric of catalog.data?.metrics ?? []) {
+      counts.set(metric.source_id, (counts.get(metric.source_id) ?? 0) + 1)
+    }
+    return counts
+  }, [catalog.data?.metrics])
 
   const handleDelete = (sourceId: number) => {
     deleteSource.mutate(sourceId, {
@@ -45,6 +54,7 @@ export function SourcesPage() {
           setEditing(source)
           setFormOpen(true)
         }}
+        metricCounts={metricCounts}
       />
 
       <SourceForm

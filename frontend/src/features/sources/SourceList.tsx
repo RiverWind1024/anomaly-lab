@@ -1,5 +1,6 @@
 import { Button, Space, Table } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
+import { Link } from 'react-router-dom'
 import { StateBoundary } from '../../components/StateBoundary'
 import { DeleteButton } from '../delete/DeleteButton'
 import type { Catalog, CatalogSource } from '../../api/types'
@@ -14,10 +15,12 @@ export interface SourceListProps {
   deletingId: number | null
   /** 点「编辑」时把整行交给页面（页面负责打开弹窗）。 */
   onEdit: (source: CatalogSource) => void
+  /** 该数据源下有几个指标（列表里直接看得到）。 */
+  metricCounts?: Map<number, number>
 }
 
 /**
- * 数据源列表。列：ID / 名称 / 类型 / 路径 / 操作。
+ * 数据源列表。列：ID / 名称 / 指标数 / 类型 / 路径 / 操作。
  */
 export function SourceList({
   isLoading,
@@ -27,6 +30,7 @@ export function SourceList({
   onDelete,
   deletingId,
   onEdit,
+  metricCounts,
 }: SourceListProps) {
   const columns: ColumnsType<CatalogSource> = [
     {
@@ -41,6 +45,17 @@ export function SourceList({
       dataIndex: 'name',
       key: 'name',
       width: 200,
+      // 点名字进数据源详情 —— 那里是它的指标列表
+      render: (value: string, row) => <Link to={`/sources/${row.id}`}>{value}</Link>,
+    },
+    {
+      title: '指标',
+      key: 'metric_count',
+      width: 80,
+      align: 'right',
+      render: (_value, row) => (
+        <span className="mono">{metricCounts?.get(row.id) ?? 0}</span>
+      ),
     },
     {
       title: '类型',

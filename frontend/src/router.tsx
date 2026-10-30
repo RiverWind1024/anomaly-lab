@@ -4,14 +4,14 @@ import { Skeleton } from 'antd'
 import { Placeholder } from './pages/Placeholder'
 
 /**
- * 路由表（8 个页面，路径与 spec §8.2-A 一致）。
+ * 路由表。
  *
- * ⚠️ **页面一律懒加载** —— ECharts 有 1 MB+，只该在任务详情页加载。
- *    序列总览（首屏）不该为图表库买单。
+ * ⚠️ **页面一律懒加载** —— ECharts 有 1 MB+，只该在需要图的页面加载。
+ *
+ * 信息架构：数据源 → 指标 → 序列，三级从属。
+ * 侧边栏只保留一级入口（「数据源」），指标与序列靠页面内下钻 ——
+ * 指标是数据源的子级，平铺成两个一级页面会丢掉这层关系。
  */
-const SeriesOverviewPage = lazy(() =>
-  import('./pages/SeriesOverviewPage').then((m) => ({ default: m.SeriesOverviewPage })),
-)
 const JobsPage = lazy(() => import('./pages/JobsPage').then((m) => ({ default: m.JobsPage })))
 const AlertsPage = lazy(() =>
   import('./pages/AlertsPage').then((m) => ({ default: m.AlertsPage })),
@@ -19,8 +19,11 @@ const AlertsPage = lazy(() =>
 const SourcesPage = lazy(() =>
   import('./pages/SourcesPage').then((m) => ({ default: m.SourcesPage })),
 )
-const MetricsPage = lazy(() =>
-  import('./pages/MetricsPage').then((m) => ({ default: m.MetricsPage })),
+const SourceDetailPage = lazy(() =>
+  import('./pages/SourceDetailPage').then((m) => ({ default: m.SourceDetailPage })),
+)
+const MetricDetailPage = lazy(() =>
+  import('./pages/MetricDetailPage').then((m) => ({ default: m.MetricDetailPage })),
 )
 const JobDetailPage = lazy(() =>
   import('./pages/JobDetailPage').then((m) => ({ default: m.JobDetailPage })),
@@ -39,9 +42,13 @@ export function AppRoutes() {
   return (
     <Suspense fallback={<Skeleton active paragraph={{ rows: 8 }} />}>
       <Routes>
-        <Route path="/" element={<SeriesOverviewPage />} />
+        {/* 旧的「序列总览」已删 —— 合成序列并入「检测记录」页 */}
+        <Route path="/" element={<Navigate to="/sources" replace />} />
         <Route path="/sources" element={<SourcesPage />} />
-        <Route path="/metrics" element={<MetricsPage />} />
+        <Route path="/sources/:sourceId" element={<SourceDetailPage />} />
+        <Route path="/metrics/:metricId" element={<MetricDetailPage />} />
+        {/* 旧的平级「指标」页 → 指标现在是数据源的子级 */}
+        <Route path="/metrics" element={<Navigate to="/sources" replace />} />
         <Route path="/jobs" element={<JobsPage />} />
         <Route path="/jobs/:jobId" element={<JobDetailPage />} />
         <Route path="/jobs/:jobId/runs" element={<JobDetailPage />} />
