@@ -28,7 +28,7 @@ def test_catalog_contract():
     for key in ("name", "default_threshold", "score_type", "label"):
         assert key in body["detectors"][0]
     if body["sources"]:
-        for key in ("id", "name", "kind", "path", "created_at"):
+        for key in ("id", "name", "kind", "path", "created_at", "config"):
             assert key in body["sources"][0]
     if body["jobs"]:
         for key in (

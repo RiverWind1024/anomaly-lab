@@ -107,8 +107,15 @@ def validate_kind(value: str) -> str:
 
 
 def validate_http_config(config: dict) -> dict:
-    """HTTP 数据源的配置。"""
+    """HTTP 数据源的配置。
+
+    ⚠️ 空的 config 是允许的（先建后配）；非空时必须有 url。
+    ⚠️ 跨类型切换（sqlite → http）需要**同时**提供 url ——
+       否则切过去就是一个立刻不可用的源。
+    """
     if isinstance(config, dict):
+        if not config:
+            return config
         url = config.get("url")
         if not isinstance(url, str) or not url.strip():
             raise ValueError("HTTP 数据源必须配置 url")
