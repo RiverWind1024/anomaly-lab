@@ -25,20 +25,33 @@ def validate_identifier(value: str, label: str) -> None:
         raise ValueError(f"{label} 必须是合法 SQL 标识符：{value!r}")
 
 
-def validate_query(query: str) -> str:
-    """校验只读查询，返回去掉尾分号的查询文本。"""
-    if not isinstance(query, str) or not query.strip():
+def validate_readonly_sql(sql: str) -> str:
+    """校验只读查询，返回去掉尾分号的查询文本。
+
+    ⚠️ **不要求** `$timefilter` —— 那是指标 SQL 的要求，
+       浏览用的 SQL 应该是自由的。
+    """
+    if not isinstance(sql, str) or not sql.strip():
         raise ValueError("查询不能为空")
-    text = query.strip().rstrip(";").strip()
+    text = sql.strip().rstrip(";").strip()
     if not text.lower().startswith(("select", "with")):
         raise ValueError("查询必须以 SELECT 或 WITH 开头")
     if ";" in text:
         raise ValueError("查询只允许单条语句")
-    if text.count("$timefilter") != 1:
-        raise ValueError("查询必须且只能包含一个 $timefilter")
     clean = _LITERAL.sub("''", text)
     if _FORBIDDEN.search(clean):
         raise ValueError("查询包含不允许的写操作关键字")
+    return text
+
+
+def validate_query(query: str) -> str:
+    """校验指标查询：只读 + 必须恰好一个 `$timefilter`。
+
+    ⚠️ 语义与拆分前**完全一致** —— 现有调用方零改动。
+    """
+    text = validate_readonly_sql(query)
+    if text.count("$timefilter") != 1:
+        raise ValueError("查询必须且只能包含一个 $timefilter")
     return text
 
 

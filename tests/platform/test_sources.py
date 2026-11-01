@@ -17,6 +17,7 @@ from anomaly_lab.platform.sources.base import (
     time_literal,
 )
 from anomaly_lab.platform.sources.sqlite import SqliteConnector
+from anomaly_lab.platform.validation import validate_query, validate_readonly_sql
 
 
 def _metric(**overrides) -> Metric:
@@ -290,3 +291,38 @@ def test_test_connection_detects_missing_and_corrupt_files(tmp_path):
     broken_ok, broken_msg = _connector(broken, tmp_path).test_connection()
     assert broken_ok is False
     assert "无法打开数据源" in broken_msg
+
+
+# ---------- 查询校验的两档 ----------
+
+
+def test_readonly_sql_does_not_require_timefilter():
+    """浏览用的 SQL 不该强制带 $timefilter —— 那是指标的要求。"""
+    assert validate_readonly_sql("SELECT ts, value FROM t LIMIT 10")
+
+
+def test_readonly_sql_rejects_non_select():
+    with pytest.raises(ValueError, match="SELECT 或 WITH"):
+        validate_readonly_sql("DELETE FROM t")
+
+
+def test_readonly_sql_rejects_multiple_statements():
+    with pytest.raises(ValueError, match="单条语句"):
+        validate_readonly_sql("SELECT 1; SELECT 2")
+
+
+def test_readonly_sql_rejects_write_keywords():
+    """⚠️ 输入必须以 SELECT 开头 —— 否则先撞上「必须以 SELECT 开头」那条。
+
+    写关键字藏在 SELECT 里（子查询 / UNION）才是真正要拦的。
+    """
+    with pytest.raises(ValueError, match="写操作"):
+        validate_readonly_sql("SELECT id FROM t WHERE id IN (SELECT id FROM drop)")
+
+
+def test_metric_query_still_requires_exactly_one_timefilter():
+    with pytest.raises(ValueError, match="timefilter"):
+        validate_query("SELECT ts FROM t")
+    with pytest.raises(ValueError, match="timefilter"):
+        validate_query("SELECT ts FROM t WHERE $timefilter AND x = $timefilter")
+    assert validate_query("SELECT ts FROM t WHERE $timefilter")
