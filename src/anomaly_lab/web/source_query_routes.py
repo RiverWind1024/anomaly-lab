@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import math
+import sqlite3
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -183,6 +184,10 @@ def build_source_query_router(
             frame = connector.execute_sql(sql, params=params)
         except TimeoutError as exc:
             raise HTTPException(status_code=504, detail=str(exc)) from exc
+        except sqlite3.Error as exc:
+            # ⚠️ 本地 SQL 写错了（表不存在、语法错…）—— 那是**用户的错**，
+            #    该报 400 让界面直接显示，不是 502（那是「远端挂了」的意思）
+            raise HTTPException(status_code=400, detail=f"SQL 执行失败: {exc}") from exc
         except Exception as exc:
             raise HTTPException(
                 status_code=502, detail=f"执行失败: {type(exc).__name__}: {exc}"

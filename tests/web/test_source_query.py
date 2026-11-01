@@ -251,3 +251,14 @@ def test_query_turns_null_into_json_null(tmp_path):
     )
     assert response.status_code == 200, response.text
     assert response.json()["rows"] == [["2026-10-30T00:00:00+00:00", None]]
+
+
+def test_query_on_sqlite_source_with_bad_sql_is_400(tmp_path):
+    """⚠️ SQL 写错是**用户的错** → 400（不是 502，那是「远端挂了」的意思）。"""
+    client, source_id = _sqlite_client(tmp_path)
+    response = client.post(
+        f"/api/platform/sources/{source_id}/query",
+        json={"sql": "SELECT * FROM 不存在的表"},
+    )
+    assert response.status_code == 400
+    assert "不存在的表" in response.json()["detail"]
