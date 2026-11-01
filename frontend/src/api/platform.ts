@@ -8,6 +8,7 @@ import type {
   Overview,
   Preview,
   RunSummary,
+  SourceConfig,
   SourceQueryResult,
   Suggestion,
 } from './types'
@@ -50,8 +51,12 @@ export const getAlerts = (opts: {
   return request<AlertListResponse>(`/api/platform/alerts${qs ? `?${qs}` : ''}`)
 }
 
-export const createSource = (payload: { name: string; path: string; kind?: string }) =>
-  postJson<{ id: number }>('/api/platform/sources', payload)
+export const createSource = (payload: {
+  name: string
+  path?: string
+  kind?: string
+  config?: SourceConfig
+}) => postJson<{ id: number }>('/api/platform/sources', payload)
 
 /**
  * 数据浏览：在数据源上执行一段只读 SQL，返回列结构与前 N 行。
@@ -76,10 +81,11 @@ export const querySource = (
  * 改数据源。只传要改的字段，其余保持原样。
  *
  * ⚠️ 已经跑过的运行记录不受影响 —— 改动只在**下一次**运行任务时生效。
+ * ⚠️ `config` 一旦传了就是**整体替换** —— 没传的顶层键会被删掉。
  */
 export const updateSource = (
   sourceId: number,
-  payload: { name?: string; path?: string; kind?: string },
+  payload: { name?: string; path?: string; kind?: string; config?: SourceConfig },
 ) =>
   request<unknown>(`/api/platform/sources/${sourceId}`, {
     method: 'PATCH',

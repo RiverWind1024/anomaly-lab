@@ -12,12 +12,37 @@
 
 // ─────────────────────────────────────────── /api/platform/catalog
 
+/**
+ * 数据源的「kind 专属配置」。
+ *
+ * ⚠️ **凭据字段（headers / body / url 里的密钥）后端会脱敏** ——
+ *    前端拿到的是 `••••` 这类哨兵值，**原样回传**后端会还原真值。
+ * ⚠️ **config 是「整体替换」语义** —— 前端必须提交**完整**的 config，
+ *    没传的顶层键会被后端删掉。
+ */
+export interface SourceConfig {
+  /** kind=http 时的请求 URL 模板，{sql} 是占位符 */
+  url?: string
+  method?: 'GET' | 'POST'
+  body?: Record<string, unknown>
+  headers?: Record<string, string>
+  format?: 'json' | 'csv' | 'jsonl'
+  rows_path?: string
+  timeout_seconds?: number
+}
+
 export interface CatalogSource {
   id: number
   name: string
   kind: string
   path: string
   created_at: string
+  /**
+   * kind 专属配置（凭据已脱敏）。
+   *
+   * ⚠️ 可选 —— 既有测试里的 fixture 没这个字段，改成必填会一片红。
+   */
+  config?: SourceConfig
 }
 
 export interface CatalogMetric {
