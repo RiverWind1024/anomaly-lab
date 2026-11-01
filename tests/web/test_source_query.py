@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import json
+import socket
 import sqlite3
 import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
+import time
+from datetime import datetime
+from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
+from urllib.parse import unquote
 
 import pytest
 from fastapi.testclient import TestClient
@@ -37,6 +41,52 @@ def remote():
     server.shutdown()
 
 
+class _RecordingHandler(BaseHTTPRequestHandler):
+    """记录收到的请求 —— 用来断言「远端到底收到了什么」。"""
+
+    def log_message(self, *args):
+        pass
+
+    def _respond(self):
+        self.server.requests.append(self.path)
+        body = self.server.body
+        if isinstance(body, (dict, list)):
+            body = json.dumps(body).encode()
+        else:
+            body = body.encode()
+        try:
+            self.send_response(self.server.status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            # ⚠️ 客户端超时断开后写响应会炸 —— 那正是超时用例的常态
+            pass
+
+    def do_GET(self):
+        self._respond()
+
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length", 0) or 0)
+        raw = self.rfile.read(length) if length else b""
+        self.server.requests.append(raw.decode(errors="replace"))
+        self._respond()
+
+
+@pytest.fixture
+def recording_remote():
+    """一个会记录请求的假远端。"""
+    server = HTTPServer(("127.0.0.1", 0), _RecordingHandler)
+    server.requests = []
+    server.status = 200
+    server.body = {"data": [{"ts": "2026-10-30T09:00:00+00:00", "value": 3.5}]}
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    yield server
+    server.shutdown()
+
+
 def _client(tmp_path, remote):
     client = TestClient(create_app(platform_data_root=tmp_path))
     response = client.post(
@@ -49,6 +99,16 @@ def _client(tmp_path, remote):
                 "rows_path": "data",
             },
         },
+    )
+    assert response.status_code == 200, response.text
+    return client, response.json()
+
+
+def _client_with_config(tmp_path, config, name="remote"):
+    client = TestClient(create_app(platform_data_root=tmp_path))
+    response = client.post(
+        "/api/platform/sources",
+        json={"name": name, "kind": "http", "config": config},
     )
     assert response.status_code == 200, response.text
     return client, response.json()
@@ -187,8 +247,11 @@ def test_query_on_sqlite_source_timefilter_excludes_out_of_range_rows(tmp_path):
     assert response.json()["total"] == 1
 
 
-def test_query_limit_truncates_rows_but_keeps_total(tmp_path):
-    """limit 只截**返回**的行 —— total 仍是真实总行数，truncated 标记截断。"""
+def test_query_limit_is_pushed_down_and_truncated_marks_more_rows(tmp_path):
+    """⚠️ limit 必须**下推**到 SQL —— 否则整个结果集会被拉进内存。
+
+    `total` 是**本次取到的行数**（≤ limit），`truncated` 表示「还有更多」。
+    """
     client, source_id = _sqlite_client(tmp_path)
     response = client.post(
         f"/api/platform/sources/{source_id}/query",
@@ -197,7 +260,7 @@ def test_query_limit_truncates_rows_but_keeps_total(tmp_path):
     assert response.status_code == 200, response.text
     body = response.json()
     assert len(body["rows"]) == 1
-    assert body["total"] == 2
+    assert body["total"] == 1
     assert body["truncated"] is True
 
 
@@ -262,3 +325,295 @@ def test_query_on_sqlite_source_with_bad_sql_is_400(tmp_path):
     )
     assert response.status_code == 400
     assert "不存在的表" in response.json()["detail"]
+
+
+# ---------- 注入面：time_column 必须过标识符校验 ----------
+
+
+def test_query_rejects_injected_time_column(tmp_path, recording_remote):
+    """⚠️ 浏览端点的 `time_column` 必须过 `validate_identifier`。
+
+    只读校验跑在**替换之前** —— 注入内容是替换之后才进 SQL 的，
+    不校验就等于把写关键字原样送到远端执行（黑名单被完全绕过）。
+    """
+    client, source = _client_with_config(
+        tmp_path,
+        {
+            "url": f"http://127.0.0.1:{recording_remote.server_port}/q?q={{sql}}",
+            "rows_path": "data",
+        },
+    )
+    response = client.post(
+        f"/api/platform/sources/{source['id']}/query",
+        json={
+            "sql": "SELECT ts, value FROM t WHERE $timefilter",
+            "time_column": 'ts" ; DROP TABLE users ; --',
+        },
+    )
+    assert response.status_code == 400, response.text
+    # ⚠️ 远端**一个请求都不能收到** —— 收到了就说明校验没生效
+    assert recording_remote.requests == []
+
+
+def test_query_rejects_injected_time_column_on_sqlite_source(tmp_path):
+    """SQLite 侧同样要拒 —— 两套连接器都得堵。"""
+    client, source_id = _sqlite_client(tmp_path)
+    response = client.post(
+        f"/api/platform/sources/{source_id}/query",
+        json={
+            "sql": "SELECT ts, value FROM metrics WHERE $timefilter",
+            "time_column": "ts; DROP TABLE metrics",
+        },
+    )
+    assert response.status_code == 400, response.text
+
+
+# ---------- 错误码分类 ----------
+
+
+def test_query_timeout_is_504(tmp_path):
+    """⚠️ 超时是**本地**判断（504）—— 不是远端的错（502）。
+
+    这是唯一依赖 urllib 异常形态的分支：读超时会被 urllib 包成
+    `URLError(socket.timeout)`，靠 `reason` 才认得出是超时。
+    """
+    class _Slow(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_GET(self):
+            time.sleep(3)
+            try:
+                self.send_response(200)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _Slow)
+    server.daemon_threads = True
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        client, source = _client_with_config(
+            tmp_path,
+            {
+                "url": f"http://127.0.0.1:{server.server_port}/q?q={{sql}}",
+                "timeout_seconds": 1,
+            },
+        )
+        response = client.post(
+            f"/api/platform/sources/{source['id']}/query",
+            json={"sql": "SELECT 1"},
+        )
+        assert response.status_code == 504, response.text
+    finally:
+        server.shutdown()
+
+
+def test_query_on_remote_4xx_is_502(tmp_path):
+    """⚠️ 远端 4xx（如 SQL 语法错）也是 502 —— 平台把远端的错透传出来。"""
+    server = HTTPServer(("127.0.0.1", 0), _RecordingHandler)
+    server.requests = []
+    server.status = 404
+    server.body = {"error": "no such table"}
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        client, source = _client_with_config(
+            tmp_path, {"url": f"http://127.0.0.1:{server.server_port}/q?q={{sql}}"}
+        )
+        response = client.post(
+            f"/api/platform/sources/{source['id']}/query",
+            json={"sql": "SELECT 1"},
+        )
+        assert response.status_code == 502, response.text
+        assert "404" in response.json()["detail"]
+    finally:
+        server.shutdown()
+
+
+def test_query_on_unreachable_remote_is_502(tmp_path):
+    """连不上远端 → 502（「远端挂了」），不是 500。"""
+    # 找一个**没人监听**的端口：绑一下就放开
+    probe = socket.socket()
+    probe.bind(("127.0.0.1", 0))
+    port = probe.getsockname()[1]
+    probe.close()
+
+    client, source = _client_with_config(
+        tmp_path, {"url": f"http://127.0.0.1:{port}/q?q={{sql}}"}
+    )
+    response = client.post(
+        f"/api/platform/sources/{source['id']}/query",
+        json={"sql": "SELECT 1"},
+    )
+    assert response.status_code == 502, response.text
+
+
+def test_query_on_unparsable_remote_response_is_502(tmp_path, recording_remote):
+    """⚠️ 远端返回的东西**解析不了**是 502 —— 那不是「配置错」。
+
+    与「body 与 config 的 format 对不上」（400）必须分得开。
+    """
+    recording_remote.body = "这不是 JSON"
+    client, source = _client_with_config(
+        tmp_path, {"url": f"http://127.0.0.1:{recording_remote.server_port}/q?q={{sql}}"}
+    )
+    response = client.post(
+        f"/api/platform/sources/{source['id']}/query",
+        json={"sql": "SELECT 1"},
+    )
+    assert response.status_code == 502, response.text
+
+
+def test_query_with_mismatched_body_format_is_400(tmp_path, recording_remote):
+    """⚠️ body 里的 format 与 config 不一致 —— 那是**配置错**（400），不是 502。"""
+    client, source = _client_with_config(
+        tmp_path,
+        {
+            "url": f"http://127.0.0.1:{recording_remote.server_port}/q",
+            "method": "POST",
+            "format": "csv",
+            "body": {"q": "{sql}", "format": "json"},
+        },
+    )
+    response = client.post(
+        f"/api/platform/sources/{source['id']}/query",
+        json={"sql": "SELECT 1"},
+    )
+    assert response.status_code == 400, response.text
+    assert "不一致" in response.json()["detail"]
+
+
+def test_query_on_invalid_kind_is_400(tmp_path):
+    """⚠️ 库里 kind 被手改成非法值 —— 是**配置错**（400），不是 500。"""
+    client, source_id = _sqlite_client(tmp_path)
+    conn = sqlite3.connect(tmp_path / "platform.db")
+    conn.execute("UPDATE sources SET kind = 'kafka' WHERE id = ?", (source_id,))
+    conn.commit()
+    conn.close()
+
+    response = client.post(
+        f"/api/platform/sources/{source_id}/query",
+        json={"sql": "SELECT 1"},
+    )
+    assert response.status_code == 400, response.text
+    assert "不支持的数据源类型" in response.json()["detail"]
+
+
+# ---------- limit 必须下推 ----------
+
+
+def test_query_limit_is_pushed_down_to_remote(tmp_path, recording_remote):
+    """⚠️ limit 必须**下推**到 SQL —— 否则整个结果集会被拉进内存。
+
+    多取一行用来判断「还有更多」（`truncated`）。
+    """
+    client, source = _client_with_config(
+        tmp_path,
+        {"url": f"http://127.0.0.1:{recording_remote.server_port}/q?q={{sql}}"},
+    )
+    response = client.post(
+        f"/api/platform/sources/{source['id']}/query",
+        json={"sql": "SELECT ts, value FROM t", "limit": 10},
+    )
+    assert response.status_code == 200, response.text
+    assert len(recording_remote.requests) == 1
+    sent = unquote(recording_remote.requests[0])
+    assert "LIMIT 11" in sent
+
+
+def test_query_limit_pushdown_on_sqlite_source(tmp_path):
+    """SQLite 侧同样下推 —— 结果集不会全量进内存。"""
+    client, source_id = _sqlite_client(tmp_path)
+    response = client.post(
+        f"/api/platform/sources/{source_id}/query",
+        json={"sql": "SELECT ts, value FROM metrics", "limit": 1},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["total"] == 1
+    assert body["truncated"] is True
+
+
+def test_query_truncated_is_false_when_result_fits(tmp_path, recording_remote):
+    """结果比 limit 少 → `truncated` 为 False。"""
+    client, source = _client_with_config(
+        tmp_path,
+        {"url": f"http://127.0.0.1:{recording_remote.server_port}/q?q={{sql}}"},
+    )
+    response = client.post(
+        f"/api/platform/sources/{source['id']}/query",
+        json={"sql": "SELECT ts, value FROM t", "limit": 10},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["total"] == 1
+    assert body["truncated"] is False
+
+
+# ---------- D11：浏览路径与指标路径生成同一条时间条件 ----------
+
+
+def test_browse_and_metric_paths_generate_same_time_condition(tmp_path, recording_remote):
+    """⚠️ D11：浏览预览与指标运行时必须生成**同一条** `$timefilter` 条件。
+
+    否则「预览看到的」≠「跑出来的」—— 用户按预览建的指标是错的。
+    """
+    from anomaly_lab.platform.models import Metric, Source
+    from anomaly_lab.platform.sources.base import TimeContext
+    from anomaly_lab.platform.sources.http_sql import HttpSqlConnector
+
+    url = f"http://127.0.0.1:{recording_remote.server_port}/q?q={{sql}}"
+    client, source = _client_with_config(tmp_path, {"url": url})
+
+    start = "2026-10-30T00:00:00+00:00"
+    end = "2026-10-31T00:00:00+00:00"
+    sql = "SELECT ts, value FROM t WHERE $timefilter"
+
+    # 1. 浏览路径
+    response = client.post(
+        f"/api/platform/sources/{source['id']}/query",
+        json={
+            "sql": sql,
+            "time_column": "ts",
+            "time_format": "iso_utc",
+            "source_timezone": "UTC",
+            "start": start,
+            "end": end,
+        },
+    )
+    assert response.status_code == 200, response.text
+    browse_sql = unquote(recording_remote.requests[-1])
+
+    # 2. 指标路径
+    recording_remote.requests.clear()
+    connector = HttpSqlConnector(
+        Source(
+            id=source["id"], name="remote", kind="http", path="",
+            created_at="2026-10-30T00:00:00+00:00", config={"url": url},
+        )
+    )
+    connector.fetch(
+        Metric(
+            id=1, source_id=source["id"], name="demo", query=sql,
+            time_column="ts", value_column="value", group_column=None,
+            time_format="iso_utc", freq="5min",
+            created_at="2026-10-30T00:00:00+00:00",
+            source_timezone="UTC", missing_policy="drop",
+        ),
+        datetime.fromisoformat(start),
+        datetime.fromisoformat(end),
+    )
+    metric_sql = unquote(recording_remote.requests[-1])
+
+    # ⚠️ 两条路径的条件必须逐字相同
+    condition, _ = connector.build_time_condition(
+        TimeContext(
+            column="ts", fmt="iso_utc", timezone="UTC",
+            start=datetime.fromisoformat(start),
+            end=datetime.fromisoformat(end),
+        )
+    )
+    assert condition in browse_sql
+    assert condition in metric_sql
+

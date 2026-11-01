@@ -91,9 +91,6 @@ class SqliteConnector:
         raw = Path(self.source.path)
         return raw if raw.is_absolute() else self.data_root / raw
 
-    def describe(self) -> str:
-        return f"SQLite {self.source.path}"
-
     def test_connection(self) -> tuple[bool, str]:
         if not self.path.exists():
             return False, f"数据源不存在: {self.path}"
@@ -107,6 +104,12 @@ class SqliteConnector:
         return True, "连接正常"
 
     def build_time_condition(self, ctx: TimeContext) -> tuple[str, tuple]:
+        """SQLite 方言的时间条件（参数绑定）。
+
+        ⚠️ 列名在这里**过标识符校验** —— 浏览端点是用户自由输入的入口，
+           不校验的话注入内容会进到发出去的 SQL 里。
+        """
+        validate_identifier(ctx.column, "time_column")
         return time_filter_parts(ctx.column, ctx.fmt, ctx.timezone, ctx.start, ctx.end)
 
     def execute_sql(

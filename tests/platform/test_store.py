@@ -425,12 +425,17 @@ def test_old_database_gets_config_column(tmp_path):
     assert store.get_source_raw(2).config == {}
 
 
-def test_switching_kind_to_http_requires_url(tmp_path):
-    """跨类型切换 —— 必须**同时**提供目标类型的必填项。"""
+def test_switching_kind_to_http_allows_empty_config(tmp_path):
+    """⚠️ HTTP 源允许**空 config**（先建后配）—— create 与 update 必须一致。
+
+    之前 POST 允许、PATCH 不允许 —— 同一个源在两条路径上语义不一样。
+    """
     store = PlatformStore(tmp_path / "platform.db")
     store.add_source("local", "platform/source.db")
-    with pytest.raises(ValueError, match="url"):
-        store.update_source(1, kind="http")
+    store.update_source(1, kind="http")
+    source = store.get_source_raw(1)
+    assert source.kind == "http"
+    assert source.config == {}
 
 
 def test_switching_kind_to_sqlite_requires_path(tmp_path):
@@ -496,3 +501,190 @@ def test_update_with_redacted_headers_restores_real_values(tmp_path):
     raw = store.get_source_raw(1)
     assert raw.config["headers"]["Cookie"] == "sid=abc"
     assert raw.config["headers"]["Authorization"] == "Bearer secret"
+
+
+# ---------- 脱敏的漏网之鱼：userinfo 与嵌套 body ----------
+
+
+def test_redact_url_masks_userinfo():
+    """⚠️ netloc 里的 `user:pass@host` 也要脱 —— 只脱 query 会明文泄漏。"""
+    out = _redact_url("https://alice:s3cr3tP@ss@ch.internal:8123/?query={sql}&token=abc123")
+    assert "s3cr3tP" not in out
+    assert "alice" not in out
+    # ⚠️ 密码里含 `@` —— host 必须切对（按**最后一个** @ 切）
+    assert "ch.internal:8123" in out
+    assert out == "https://••••@ch.internal:8123/?query={sql}&token=••••"
+
+
+def test_redact_url_keeps_at_in_path():
+    """⚠️ 路径里的 `@` 不是凭据 —— 不能被当成 userinfo 脱掉。"""
+    out = _redact_url("https://ch.internal/query@v2?q={sql}")
+    assert out == "https://ch.internal/query@v2?q={sql}"
+
+
+def test_redact_config_masks_nested_body_secrets():
+    """⚠️ 凭据常藏在嵌套结构里 —— 只脱顶层等于没脱。"""
+    out = _redact_config(
+        {"body": {"db": "demo", "auth": {"password": "nested-secret", "user": "bob"}}}
+    )
+    assert "nested-secret" not in str(out)
+    assert out["body"]["auth"]["password"] == "••••"
+    # ⚠️ 非凭据的键保持原样（`{sql}` 模板不能被毁掉）
+    assert out["body"]["db"] == "demo"
+    assert out["body"]["auth"]["user"] == "bob"
+
+
+def test_redact_config_masks_nested_body_lists():
+    out = _redact_config({"body": {"items": [{"token": "LEAKME"}]}})
+    assert "LEAKME" not in str(out)
+
+
+def test_update_with_redacted_nested_body_restores_real_secret(tmp_path):
+    """嵌套的脱敏值原样回传 → 真值完整还原。"""
+    store = PlatformStore(tmp_path / "platform.db")
+    store.add_source(
+        "remote", "", kind="http",
+        config={
+            "url": "https://x/q?q={sql}",
+            "body": {"db": "demo", "auth": {"password": "nested-secret", "user": "bob"}},
+        },
+    )
+    redacted = store.get_source(1).config
+    assert redacted["body"]["auth"]["password"] == "••••"
+    store.update_source(1, config=redacted)
+    raw = store.get_source_raw(1).config
+    assert raw["body"]["auth"]["password"] == "nested-secret"
+    assert raw["body"]["auth"]["user"] == "bob"
+
+
+def test_update_with_redacted_userinfo_restores_real_credentials(tmp_path):
+    """userinfo 的脱敏值原样回传 → 真值完整还原（不能把 `••••@` 存进库）。"""
+    store = PlatformStore(tmp_path / "platform.db")
+    store.add_source(
+        "remote", "", kind="http",
+        config={"url": "https://alice:s3cr3t@ch.internal:8123/q?q={sql}"},
+    )
+    redacted = store.get_source(1).config
+    assert redacted["url"] == "https://••••@ch.internal:8123/q?q={sql}"
+    store.update_source(1, config=redacted)
+    assert store.get_source_raw(1).config["url"] == (
+        "https://alice:s3cr3t@ch.internal:8123/q?q={sql}"
+    )
+
+
+def test_update_changing_host_keeps_userinfo(tmp_path):
+    """⚠️ 改 host 不能把 userinfo 里的凭据丢掉。"""
+    store = PlatformStore(tmp_path / "platform.db")
+    store.add_source(
+        "remote", "", kind="http",
+        config={"url": "https://alice:s3cr3t@ch.internal:8123/q?q={sql}"},
+    )
+    redacted = store.get_source(1).config
+    store.update_source(
+        1, config={**redacted, "url": redacted["url"].replace("ch.internal", "ch2.internal")}
+    )
+    assert store.get_source_raw(1).config["url"] == (
+        "https://alice:s3cr3t@ch2.internal:8123/q?q={sql}"
+    )
+
+
+# ---------- 改名后的哨兵值不能当成真值存下来 ----------
+
+
+def test_update_with_renamed_body_secret_is_rejected(tmp_path):
+    """⚠️ 用户把 body 里的 `token` 改名成 `access_token` —— 表单显示的是 `••••`。
+
+    存下去远端就收到字面量 `••••`，源直接坏掉 —— 必须报错让用户重新输入。
+    """
+    store = PlatformStore(tmp_path / "platform.db")
+    store.add_source(
+        "remote", "", kind="http",
+        config={"url": "https://x/q?q={sql}", "body": {"token": "SECRET"}},
+    )
+    redacted = store.get_source(1).config
+    assert redacted["body"]["token"] == "••••"
+    with pytest.raises(ValueError, match="脱敏值"):
+        store.update_source(
+            1, config={**redacted, "body": {"access_token": redacted["body"]["token"]}}
+        )
+    # ⚠️ 拒绝之后不能把哨兵值写进库
+    assert store.get_source_raw(1).config["body"]["token"] == "SECRET"
+
+
+def test_update_with_renamed_url_secret_is_rejected(tmp_path):
+    """url 里的凭据改名同理 —— 认不出对应旧 key 就报错。"""
+    store = PlatformStore(tmp_path / "platform.db")
+    store.add_source(
+        "remote", "", kind="http",
+        config={"url": "https://x/q?q={sql}&token=SECRET"},
+    )
+    redacted = store.get_source(1).config
+    with pytest.raises(ValueError, match="脱敏值"):
+        store.update_source(
+            1,
+            config={**redacted, "url": redacted["url"].replace("token=", "access_token=")},
+        )
+    assert "token=SECRET" in store.get_source_raw(1).config["url"]
+
+
+def test_update_with_renamed_header_is_rejected(tmp_path):
+    """header 改名同理 —— header 的脱敏形式是 `前缀 ••••`。"""
+    store = PlatformStore(tmp_path / "platform.db")
+    store.add_source(
+        "remote", "", kind="http",
+        config={"url": "https://x/q?q={sql}", "headers": {"Authorization": "Bearer SECRET"}},
+    )
+    redacted = store.get_source(1).config
+    assert redacted["headers"]["Authorization"] == "Bearer ••••"
+    with pytest.raises(ValueError, match="脱敏值"):
+        store.update_source(
+            1,
+            config={**redacted, "headers": {"X-Authorization": "Bearer ••••"}},
+        )
+
+
+def test_update_with_non_secret_value_containing_sentinel_is_allowed(tmp_path):
+    """⚠️ 别误伤 —— 非凭据参数里的 `••••` 不是「改名后的凭据」。"""
+    store = PlatformStore(tmp_path / "platform.db")
+    store.add_source(
+        "remote", "", kind="http",
+        config={"url": "https://x/q?q={sql}", "body": {"q": "SELECT 1"}},
+    )
+    redacted = store.get_source(1).config
+    store.update_source(
+        1, config={**redacted, "body": {"q": "SELECT '••••' FROM t"}}
+    )
+    assert store.get_source_raw(1).config["body"]["q"] == "SELECT '••••' FROM t"
+
+
+# ---------- headers / body 必须是对象 ----------
+
+
+def test_http_config_rejects_non_dict_headers(tmp_path):
+    """⚠️ headers 传字符串 → 脱敏整段跳过（明文泄漏）+ 取数时 `.items()` 炸。"""
+    store = PlatformStore(tmp_path / "platform.db")
+    with pytest.raises(ValueError, match="headers"):
+        store.add_source(
+            "remote", "", kind="http",
+            config={"url": "https://x/q?q={sql}", "headers": "Authorization: Bearer SUPERSECRET"},
+        )
+
+
+def test_http_config_rejects_non_dict_body(tmp_path):
+    store = PlatformStore(tmp_path / "platform.db")
+    with pytest.raises(ValueError, match="body"):
+        store.add_source(
+            "remote", "", kind="http",
+            config={"url": "https://x/q?q={sql}", "body": "q=SELECT 1"},
+        )
+
+
+def test_redact_config_masks_non_dict_headers_and_body():
+    """⚠️ 历史脏数据（非对象的 headers / body）也不能明文漏出去。"""
+    out = _redact_config(
+        {
+            "headers": "Authorization: Bearer SUPERSECRET",
+            "body": "password=SUPERSECRET",
+        }
+    )
+    assert "SUPERSECRET" not in str(out)

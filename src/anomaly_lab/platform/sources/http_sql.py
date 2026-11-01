@@ -29,6 +29,14 @@ class RemoteError(RuntimeError):
     """远端返回了错误状态，或连接失败。"""
 
 
+class ConfigError(ValueError):
+    """**配置**不一致（不是远端的问题）。
+
+    ⚠️ 与远端解析失败区分开 —— 前者是「用户配错了」该报 400，
+       后者是「远端挂了」该报 502，两者都是 ValueError，光靠类型分不开。
+    """
+
+
 def _substitute(template: str, sql: str, *, encode: bool) -> str:
     """把 `{sql}` 占位符换成真实 SQL。
 
@@ -100,9 +108,6 @@ class HttpSqlConnector:
 
     # ---------- 连接器协议 ----------
 
-    def describe(self) -> str:
-        return f"HTTP {self.config.get('method', 'GET')} {self.config.get('url', '')}"
-
     def test_connection(self) -> tuple[bool, str]:
         try:
             self.execute_sql("SELECT 1")
@@ -115,7 +120,10 @@ class HttpSqlConnector:
 
         ⚠️ 与 SQLite 的 `julianday()` 完全不同 —— 这是**故意的**：
            浏览预览与指标运行时都走这里，两边结果必然一致。
+        ⚠️ 列名在这里**过标识符校验** —— 浏览端点是用户自由输入的入口，
+           不校验的话注入内容会原样发到远端执行。
         """
+        validate_identifier(ctx.column, "time_column")
         low = sql_literal(ctx.start, ctx.fmt, ctx.timezone)
         high = sql_literal(ctx.end, ctx.fmt, ctx.timezone)
         condition = f'"{ctx.column}" >= {low} AND "{ctx.column}" < {high}'
@@ -180,7 +188,8 @@ class HttpSqlConnector:
                 if not asked:
                     body["format"] = self._format
                 elif asked != self._format:
-                    raise ValueError(
+                    # ⚠️ 是**配置错**，不是远端挂了 —— 路由层据此报 400 而不是 502
+                    raise ConfigError(
                         f"body 里的 format={asked!r} 与配置的 format={self._format!r} 不一致"
                         "（远端会按前者返回、平台按后者解析）"
                     )

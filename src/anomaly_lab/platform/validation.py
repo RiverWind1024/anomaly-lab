@@ -123,8 +123,8 @@ def validate_http_config(config: dict) -> dict:
     """HTTP 数据源的配置。
 
     ⚠️ 空的 config 是允许的（先建后配）；非空时必须有 url。
-    ⚠️ 跨类型切换（sqlite → http）需要**同时**提供 url ——
-       否则切过去就是一个立刻不可用的源。
+    ⚠️ `headers` / `body` 必须是**对象** —— 传字符串的话脱敏会整段跳过，
+       明文密钥直接出现在 API 响应里；而且取数时 `.items()` 会抛 AttributeError。
     """
     if isinstance(config, dict):
         if not config:
@@ -141,6 +141,12 @@ def validate_http_config(config: dict) -> dict:
         timeout = config.get("timeout_seconds", 30)
         if not isinstance(timeout, (int, float)) or timeout <= 0:
             raise ValueError("timeout_seconds 必须是正数")
+        headers = config.get("headers")
+        if headers is not None and not isinstance(headers, dict):
+            raise ValueError("headers 必须是对象")
+        body = config.get("body")
+        if body is not None and not isinstance(body, dict):
+            raise ValueError("body 必须是对象")
         return config
     # ⚠️ 抛 ValueError 而不是 TypeError —— 路由层按 ValueError 返回 400
     raise ValueError("HTTP 数据源的 config 必须是对象")

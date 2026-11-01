@@ -122,38 +122,96 @@ def _is_secret(name: str) -> bool:
     return any(key in low for key in _SECRET_KEYS)
 
 
+def _split_netloc(head: str) -> tuple[str, str, str] | None:
+    """URL 的 head → `(scheme 前缀, netloc, 剩余路径)`。
+
+    ⚠️ 没有 `//` 时返回 None —— 那不是标准 URL 形态，不处理 userinfo。
+    """
+    scheme, sep, rest = head.partition("//")
+    if not sep:
+        return None
+    netloc, slash, tail = rest.partition("/")
+    return f"{scheme}//", netloc, f"/{tail}" if slash else ""
+
+
+def _split_userinfo(netloc: str) -> tuple[str, str] | None:
+    """netloc → `(userinfo, host)`；没有 userinfo 时返回 None。
+
+    ⚠️ 密码里可能含 `@` —— 按**最后一个** `@` 切，host 才切得对。
+    """
+    if "@" not in netloc:
+        return None
+    userinfo, _, host = netloc.rpartition("@")
+    return userinfo, host
+
+
+def _redact_userinfo(head: str) -> str:
+    """把 netloc 里的 `user:pass@` 换成哨兵值。
+
+    ⚠️ 只看 netloc —— 路径里的 `@` 不是凭据。
+    """
+    parts = _split_netloc(head)
+    if parts is None:
+        return head
+    prefix, netloc, tail = parts
+    split = _split_userinfo(netloc)
+    if split is None:
+        return head
+    return f"{prefix}{REDACTED}@{split[1]}{tail}"
+
+
+def _restore_userinfo(old_head: str, new_head: str) -> str:
+    """把脱敏后的 `••••@host` 换回旧 URL 里的真 userinfo。
+
+    ⚠️ 前端拿不到真值 —— 它原样回传 `••••@host`，
+       直接存下去远端就收不到凭据了。
+    """
+    old_parts = _split_netloc(old_head)
+    new_parts = _split_netloc(new_head)
+    if old_parts is None or new_parts is None:
+        return new_head
+    old_split = _split_userinfo(old_parts[1])
+    new_split = _split_userinfo(new_parts[1])
+    if old_split is None or new_split is None:
+        return new_head
+    new_userinfo, new_host = new_split
+    if new_userinfo != REDACTED:
+        return new_head
+    return f"{new_parts[0]}{old_split[0]}@{new_host}{new_parts[2]}"
+
+
 def _redact_url(url: str) -> str:
-    """把 URL 里的凭据参数替换成哨兵值。
+    """把 URL 里的凭据替换成哨兵值。
 
     ⚠️ **文本级替换，不重新编码整个 query** ——
        重新编码会把 `{sql}` 变成 `%7Bsql%7D`，模板就废了；
        而且前端回写脱敏值时，用户改一次 host 就会把真实密钥覆盖成哨兵值。
+    ⚠️ netloc 里的 userinfo（`user:pass@host`）也要脱 ——
+       密码里可能含 `@`，按最后一个 `@` 切才切得对 host。
     """
     head, sep, query = url.partition("?")
+    head = _redact_userinfo(head)
     if not sep:
-        return url
+        return head
     parts: list[str] = []
-    changed = False
     for item in query.split("&"):
         name, eq, _ = item.partition("=")
         if eq and _is_secret(name):
             parts.append(f"{name}={REDACTED}")
-            changed = True
         else:
             parts.append(item)
-    return f"{head}?{'&'.join(parts)}" if changed else url
+    return f"{head}?{'&'.join(parts)}"
 
 
 def _merge_url(old_url: str, new_url: str) -> str:
-    """把新 url 里的哨兵值换回旧 url 里的真值（参数级，不重新编码）。
+    """把新 url 里的哨兵值换回旧 url 里的真值（参数级 + userinfo，不重新编码）。
 
     ⚠️ 必须**参数级**替换 —— 整串比较只认得「完全一样」，
        用户改个 host 就会把真实密钥一起丢掉。
     """
-    _, _, old_q = old_url.partition("?")
+    old_head, _, old_q = old_url.partition("?")
     new_head, _, new_q = new_url.partition("?")
-    if not old_q or not new_q:
-        return new_url
+    new_head = _restore_userinfo(old_head, new_head)
     old_values: dict[str, str] = {}
     for item in old_q.split("&"):
         name, eq, value = item.partition("=")
@@ -162,11 +220,62 @@ def _merge_url(old_url: str, new_url: str) -> str:
     merged = []
     for item in new_q.split("&"):
         name, eq, value = item.partition("=")
-        if eq and value == REDACTED and name in old_values:
+        if not eq:
+            merged.append(item)
+            continue
+        if value == REDACTED:
+            if name not in old_values:
+                # ⚠️ 认不出对应旧 key —— 说明用户把凭据**改名**了。
+                #    哨兵值存下去远端就收到字面量 `••••`，源直接坏掉。
+                raise ValueError(
+                    f"url 参数 {name!r} 的值是脱敏值，但旧配置里没有同名参数"
+                    "（改名了？脱敏值不能作为新凭据，请重新输入）"
+                )
             merged.append(f"{name}={old_values[name]}")
         else:
             merged.append(item)
-    return f"{new_head}?{'&'.join(merged)}"
+    return f"{new_head}?{'&'.join(merged)}" if new_q else new_head
+
+
+def _redact_value(value):
+    """递归脱敏：嵌套 dict / list 里的凭据键也要脱。
+
+    ⚠️ 凭据常藏在嵌套结构里（`{"auth":{"password":...}}`）——
+       只脱顶层等于没脱。
+    """
+    if isinstance(value, dict):
+        return {
+            key: (REDACTED if _is_secret(str(key)) else _redact_value(item))
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact_value(item) for item in value]
+    return value
+
+
+def _redact_header_value(value):
+    """header 的值**一律脱敏** —— 不能靠参数名判断。
+
+    ⚠️ `Cookie` / `X-Session-Id` / `Proxy-Authorization` 这些根本猜不出
+       名字里有凭据，靠名字判断就会明文泄漏。
+    """
+    if isinstance(value, dict):
+        return {key: _redact_header_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_redact_header_value(item) for item in value]
+    text = str(value)
+    return f"{text.split(' ', 1)[0]} {REDACTED}" if " " in text else REDACTED
+
+
+def _looks_redacted(value) -> bool:
+    """值是不是「脱敏哨兵」形态（`••••` 或 `前缀 ••••`）。"""
+    if isinstance(value, str):
+        return value == REDACTED or value.endswith(f" {REDACTED}")
+    if isinstance(value, dict):
+        return any(_looks_redacted(item) for item in value.values())
+    if isinstance(value, list):
+        return any(_looks_redacted(item) for item in value)
+    return False
 
 
 def _redact_config(config: dict) -> dict:
@@ -178,22 +287,61 @@ def _redact_config(config: dict) -> dict:
     out = dict(config)
     headers = out.get("headers")
     if isinstance(headers, dict):
-        # ⚠️ header 的值**一律脱敏** —— 不能靠参数名判断：
-        #    Cookie / X-Session-Id / Proxy-Authorization 这些根本猜不出名字里有凭据
         out["headers"] = {
-            key: (f"{str(value).split(' ', 1)[0]} {REDACTED}" if " " in str(value) else REDACTED)
-            for key, value in headers.items()
+            key: _redact_header_value(value) for key, value in headers.items()
         }
+    elif headers is not None:
+        # ⚠️ 非对象（历史脏数据）—— 整段脱敏，别让明文漏出去
+        out["headers"] = REDACTED
     body = out.get("body")
     if isinstance(body, dict):
-        out["body"] = {
-            key: (REDACTED if _is_secret(str(key)) else value)
-            for key, value in body.items()
-        }
+        out["body"] = _redact_value(body)
+    elif body is not None:
+        out["body"] = REDACTED
     url = out.get("url")
     if isinstance(url, str):
         out["url"] = _redact_url(url)
     return out
+
+
+def _merge_secret_map(old_map: dict, old_redacted: dict, new_map: dict) -> dict:
+    """合并一个「键 → 值」的 map（headers / body），把哨兵值换回真值。
+
+    - 新值 == 旧值的脱敏形式 → 还原真值
+    - 新值是哨兵但旧 map 里**没有同名 key** → 报错（用户改名了）
+    - 嵌套 dict 递归处理
+    """
+    combined: dict[str, object] = {}
+    for name, value in new_map.items():
+        if name not in old_map:
+            if _looks_redacted(value):
+                raise ValueError(
+                    f"字段 {name!r} 的值是脱敏值，但旧配置里没有同名字段"
+                    "（改名了？脱敏值不能作为新凭据，请重新输入）"
+                )
+            combined[name] = value
+            continue
+        old_value = old_map[name]
+        old_redacted_value = (
+            old_redacted.get(name) if isinstance(old_redacted, dict) else None
+        )
+        if (
+            isinstance(value, dict)
+            and isinstance(old_value, dict)
+            and isinstance(old_redacted_value, dict)
+        ):
+            combined[name] = _merge_secret_map(old_value, old_redacted_value, value)
+            continue
+        if value == old_redacted_value:
+            combined[name] = old_value  # 脱敏值 → 还原真值
+            continue
+        if _looks_redacted(value):
+            raise ValueError(
+                f"字段 {name!r} 的值是脱敏值，但与旧配置里的脱敏形式不一致"
+                "（脱敏值不能作为新凭据，请重新输入）"
+            )
+        combined[name] = value
+    return combined
 
 
 def _merge_config(old: dict, new: dict) -> dict:
@@ -210,17 +358,10 @@ def _merge_config(old: dict, new: dict) -> dict:
         old_map = old.get(key)
         if not isinstance(new_map, dict) or not isinstance(old_map, dict):
             continue
-        old_redacted = redacted_old.get(key, {})
-        combined: dict[str, object] = {}
-        for name, value in new_map.items():
-            if name in old_map and value == old_redacted.get(name):
-                combined[name] = old_map[name]  # 脱敏值 → 还原真值
-            else:
-                combined[name] = value
-        merged[key] = combined
+        merged[key] = _merge_secret_map(old_map, redacted_old.get(key, {}), new_map)
     url = new.get("url")
     old_url = old.get("url")
-    if isinstance(url, str) and isinstance(old_url, str) and url != old_url:
+    if isinstance(url, str) and isinstance(old_url, str):
         merged["url"] = _merge_url(old_url, url)
     return merged
 
@@ -304,7 +445,7 @@ class PlatformStore:
         """新增数据源。
 
         ⚠️ `kind` 决定必填项 —— sqlite 要 path，http 要 url（在 config 里）。
-           跨类型切换（update_source 改 kind）需要**同时**提供目标类型的必填项。
+        ⚠️ HTTP 源允许**空 config**（先建后配）—— 与 `update_source` 一致。
         """
         name = validate_name(name, "数据源名称")
         kind = validate_kind(kind)
@@ -365,13 +506,12 @@ class PlatformStore:
         ⚠️ `config=None` 表示「不改」；传 `{}` 表示「清空」。
            传了 config 就是**整体替换** —— 前端必须提交完整配置，
            没传的顶层键会被删掉。
-        ⚠️ 跨类型切换（改 kind）需要**同时**提供目标类型的必填项。
+        ⚠️ HTTP 源允许**空 config**（先建后配）—— 与 `add_source` 一致。
         """
         current = self.get_source_raw(source_id)  # ⚠️ 未脱敏 —— 否则密钥会被冲掉
         new_name = validate_name(name if name is not None else current.name, "数据源名称")
         new_kind = validate_kind(kind if kind is not None else current.kind)
         new_path = path if path is not None else current.path
-        switched = new_kind != current.kind
         if new_kind == "sqlite":
             new_path = validate_name(new_path, "数据源路径")
             new_config: dict = {}  # sqlite 不用 config
@@ -380,10 +520,6 @@ class PlatformStore:
             new_config = (
                 current.config if config is None else _merge_config(current.config, config)
             )
-            if switched and not new_config.get("url"):
-                # ⚠️ 跨类型切换必须**同时**提供目标类型的必填项 ——
-                #    否则切过去就是一个立刻不可用的源
-                raise ValueError("HTTP 数据源必须配置 url")
             validate_http_config(new_config)
         try:
             with self._conn() as conn:

@@ -155,7 +155,7 @@ SELECT * FROM (SELECT ts, host, value FROM metrics
 
 | 字段 | 必填 | 语义 |
 |---|---|---|
-| `url` | ✅ | URL 模板，`{sql}` 占位符在此生效 |
+| `url` | 非空 config 时 | URL 模板，`{sql}` 占位符在此生效（空 config 允许「先建后配」） |
 | `method` | | `GET`（默认）/ `POST` |
 | `body` | | body 模板（JSON 对象）；`{sql}` 占位符在此生效 |
 | `headers` | | 原样发送的请求头（如 `Authorization`） |
@@ -164,6 +164,10 @@ SELECT * FROM (SELECT ts, host, value FROM metrics
 | `timeout_seconds` | | 默认 30 |
 
 `kind` 已收敛为枚举（`sqlite` / `http`），建/改数据源时校验。
+
+⚠️ `headers` / `body` 必须是**对象** —— 传字符串的话脱敏会整段跳过（明文密钥
+直接出现在 API 响应里），而且取数时 `.items()` 会抛 `AttributeError`。建/改数据源
+时当场拒绝（400）。
 
 ### `{sql}` 占位符：URL 里编码，body 里原样
 
@@ -204,9 +208,17 @@ SELECT * FROM (SELECT ts, host, value FROM metrics
 ### 凭据脱敏
 
 `headers` 的值**一律脱敏**（`Bearer ••••` / `••••`），`body` 里键名含
-`token`/`key`/`password`/`secret` 的值脱敏，`url` query 里的同类参数也脱敏 ——
-脱敏在 **store 层**做，返回给前端的都是脱敏值。回写时若新值仍等于脱敏形式，
-则**沿用旧的真值**，不会把密钥冲成 `••••`。
+`token`/`key`/`password`/`secret` 的值脱敏（**递归** —— 嵌套 dict / list 里的
+凭据键也脱），`url` query 里的同类参数也脱敏，**`url` 里的 userinfo
+（`user:pass@host`）也脱** —— 脱敏在 **store 层**做，返回给前端的都是脱敏值。
+
+回写时若新值仍等于脱敏形式，则**沿用旧的真值**，不会把密钥冲成 `••••`。
+⚠️ 但**认不出对应旧 key** 时（用户把 `token` 改名成 `access_token`，表单里
+显示的还是 `••••`）会**当场报错**（400）—— 哨兵值存下去远端就收到字面量
+`••••`，源直接坏掉，界面上却看不出区别。
+
+⚠️ URL 的脱敏与还原都是**文本级**的 —— 不重新编码整个 query，
+否则 `{sql}` 会变成 `%7Bsql%7D`，模板就废了。
 
 ## 数据浏览器
 
@@ -219,11 +231,16 @@ POST /api/platform/sources/{id}/query
           "limit": 100,
           "time_column": "ts", "time_format": "iso_utc", "source_timezone": "UTC" }
   resp: { "columns": [{"name": "ts", "type": "TIMESTAMP"}],
-          "rows": [[...]], "total": 1280, "truncated": false, "elapsed_ms": 12 }
+          "rows": [[...]], "total": 100, "truncated": true, "elapsed_ms": 12 }
 ```
 
 - `columns[].type` 由 pandas dtype 推断：`TIMESTAMP` / `INTEGER` / `REAL` / `TEXT`。
-- `limit` 只截断**返回给前端**的行数（不改发出去的 SQL）；**检测取数不受它限制**。
+- ⚠️ `limit` **下推**到发出去的 SQL（`SELECT * FROM (...) LIMIT n`）——
+  否则整个结果集会被拉进内存。平台实际多取一行用来判断「还有更多」。
+- `total` 是**本次取到的行数**（≤ `limit`），**不是**结果集的真实总行数 ——
+  `limit` 已下推，平台根本没看到更多的行。
+- `truncated` 表示**还有更多行**（本次取到的行数已经撞到 `limit`）。
+- **检测取数不受 `limit` 影响**（它走指标运行时那条路径）。
 - 不落库、不建指标 —— 只是让用户在定指标前先看到「查出来到底是什么结构」。
 
 ### 两套占位符，职责清晰
@@ -236,6 +253,8 @@ POST /api/platform/sources/{id}/query
 - 浏览 SQL 里含 `$timefilter` 时，需要额外给 `time_column`（`time_format` /
   `source_timezone` 缺省为 `iso_utc` / `UTC`）；**时间条件由连接器渲染** →
   浏览预览与指标运行时结果一致。
+- ⚠️ `time_column` 会过**标识符校验**（`^[A-Za-z_][A-Za-z0-9_]*$`）——
+  只读校验跑在替换**之前**，不校验的话注入内容会原样进到发出去的 SQL 里。
 - ⚠️ **浏览 SQL 不要求 `$timefilter`** —— 那是**指标**的要求。浏览校验只看
   「只读 + 单语句」。
 - `{start}` / `{end}` 的时间字面量同样按 `time_format` 生成（缺省 `iso_utc` + `UTC`）。
@@ -247,6 +266,9 @@ POST /api/platform/sources/{id}/query
 | 数据源不存在 | 404 |
 | 本地校验失败（非 `SELECT`/`WITH` 开头、多语句、写关键字） | 400 |
 | `$timefilter` 缺 `time_column` | 400 |
+| `time_column` 不是合法标识符 | 400 |
+| 数据源 `kind` 非法（库里被改坏） | 400 |
+| 配置不一致（body 里的 `format` 与配置对不上） | 400 |
 | **本地** SQL 写错（表不存在、语法错…） | 400 |
 | 远端执行失败（远端 4xx/5xx、连不上） | 502 |
 | 响应无法解析（非法 JSON/CSV、`rows_path` 不存在） | 502 |
@@ -255,11 +277,22 @@ POST /api/platform/sources/{id}/query
 「远端 SQL 错」与「本地 SQL 非法」都会出现 —— 用**状态码**区分：远端挂了就 502，
 用户写错就 400，界面直接显示，不用去猜。
 
+⚠️ 「配置不一致」也是 400 —— 那是**用户配错了**，不是远端挂了；而远端返回的
+解析失败（非法 CSV 之类）仍然是 502。两者都是 `ValueError`，靠专门的异常类型
+（`ConfigError`）区分。
+
 ### 前端
 
-数据源详情页挂「浏览数据」面板：SQL 编辑器 + 时间范围 + 结果表格。
+数据源详情页挂「浏览数据」面板：SQL 编辑器 + 时间范围 + **时间格式** +
+**源时区** + 结果表格。
+
+⚠️ 时间格式与源时区**必须跟着请求一起发** —— 浏览与指标运行时用同一套
+`$timefilter` 渲染（D11），浏览不声明的话，epoch / `iso_naive` 源的预览
+≠ 跑出来的。
+
 结果表格里每个列旁一个下拉（`时间列` / `值列` / `分组列`），点一下即填入对应字段，
-再一键生成指标（`TIMESTAMP` 列自动推断 `time_format = iso_utc`）。
+再一键生成指标（`TIMESTAMP` 列自动推断 `time_format = iso_utc`；
+`INTEGER` 列则要选 `epoch_s` / `epoch_ms` —— 按纳秒解释会静默落到 1970 年）。
 
 ## 告警规则：缩放因子 × 等级
 

@@ -42,11 +42,6 @@ def run_dir(data_root: Path, run_id: int) -> Path:
     return Path(data_root) / "cache" / "platform" / "runs" / str(run_id)
 
 
-def resolve_source_path(source_path: str, data_root: Path) -> Path:
-    path = Path(source_path)
-    return path if path.is_absolute() else Path(data_root) / path
-
-
 def load_series(
     store: PlatformStore,
     metric: Metric,

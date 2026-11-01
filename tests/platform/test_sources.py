@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
+import threading
 from datetime import UTC, datetime
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 import pandas as pd
@@ -11,11 +14,13 @@ import pytest
 
 from anomaly_lab.platform.models import Metric, Source
 from anomaly_lab.platform.sources.base import (
+    TimeContext,
     series_from_frame,
     sql_literal,
     time_filter_parts,
     time_literal,
 )
+from anomaly_lab.platform.sources.http_sql import HttpSqlConnector
 from anomaly_lab.platform.sources.sqlite import SqliteConnector
 from anomaly_lab.platform.validation import validate_query, validate_readonly_sql
 
@@ -363,3 +368,147 @@ def test_get_connector_rejects_unknown_kind(tmp_path):
     )
     with pytest.raises(ValueError, match="不支持的数据源类型"):
         get_connector(source, tmp_path)
+
+
+# ---------- 时间列名的注入面 ----------
+
+
+def test_sqlite_build_time_condition_rejects_injected_column(tmp_path):
+    """⚠️ 浏览端点是用户自由输入的入口 —— 列名必须过标识符校验。"""
+    connector = _connector(_create_db(tmp_path), tmp_path)
+    with pytest.raises(ValueError, match="time_column"):
+        connector.build_time_condition(
+            TimeContext(
+                column='ts" ; DROP TABLE users ; --',
+                fmt="iso_utc",
+                timezone="UTC",
+                start=datetime(2026, 1, 1, tzinfo=UTC),
+                end=datetime(2026, 1, 2, tzinfo=UTC),
+            )
+        )
+
+
+def test_http_build_time_condition_rejects_injected_column():
+    """⚠️ HTTP 侧同样要拒 —— 不校验就等于把写关键字送到远端执行。"""
+    connector = HttpSqlConnector(
+        Source(
+            id=1, name="remote", kind="http", path="",
+            created_at="2026-10-30T00:00:00+00:00",
+            config={"url": "https://x/q?q={sql}"},
+        )
+    )
+    with pytest.raises(ValueError, match="time_column"):
+        connector.build_time_condition(
+            TimeContext(
+                column='ts" ; DROP TABLE users ; --',
+                fmt="iso_utc",
+                timezone="UTC",
+                start=datetime(2026, 1, 1, tzinfo=UTC),
+                end=datetime(2026, 1, 2, tzinfo=UTC),
+            )
+        )
+
+
+# ---------- 连接器一致性：sqlite 与 http 必须给出同一份结果 ----------
+
+
+_ROWS = [
+    {"ts": "2026-10-30T00:00:00+00:00", "value": 1.0},
+    {"ts": "2026-10-30T00:05:00+00:00", "value": 2.0},
+]
+
+
+@pytest.fixture
+def rows_server():
+    """一个只会返回固定几行的假远端。"""
+
+    class _Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_GET(self):
+            body = json.dumps({"data": _ROWS}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    server = HTTPServer(("127.0.0.1", 0), _Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    yield server
+    server.shutdown()
+
+
+def test_sqlite_and_http_connectors_return_same_series(tmp_path, rows_server):
+    """⚠️ spec §8：同一段 SQL、同一区间 → 两条路径返回相同的 SeriesBundle 集合。
+
+    SQLite 侧真的存在一张表（窗口外还有一行），
+    远端侧返回它自己算出来的窗口内结果 —— 两边必须一致。
+    """
+    db = tmp_path / "src.db"
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE t (ts TEXT, value REAL)")
+    conn.executemany(
+        "INSERT INTO t VALUES (?, ?)",
+        [
+            ("2026-10-30T00:00:00+00:00", 1.0),
+            ("2026-10-30T00:05:00+00:00", 2.0),
+            ("2026-10-31T00:00:00+00:00", 3.0),  # 窗口外 —— SQLite 侧要滤掉
+        ],
+    )
+    conn.commit()
+    conn.close()
+
+    metric = _metric()
+    start = datetime(2026, 10, 30, 0, 0, tzinfo=UTC)
+    end = datetime(2026, 10, 30, 0, 10, tzinfo=UTC)
+
+    sqlite_series = series_from_frame(
+        _connector(db, tmp_path).fetch(metric, start, end), metric
+    )
+    http_series = series_from_frame(
+        HttpSqlConnector(
+            Source(
+                id=1, name="remote", kind="http", path="",
+                created_at="2026-10-30T00:00:00+00:00",
+                config={
+                    "url": f"http://127.0.0.1:{rows_server.server_port}/q?q={{sql}}",
+                    "rows_path": "data",
+                },
+            )
+        ).fetch(metric, start, end),
+        metric,
+    )
+
+    assert [item.series_id for item in sqlite_series] == [
+        item.series_id for item in http_series
+    ]
+    assert len(sqlite_series) == 1
+    assert sqlite_series[0].values.tolist() == http_series[0].values.tolist() == [1.0, 2.0]
+    assert sqlite_series[0].timestamps.tolist() == http_series[0].timestamps.tolist()
+
+
+def test_sqlite_browse_and_metric_paths_agree(tmp_path):
+    """⚠️ D11：浏览路径与指标路径必须给出**同一批行**。
+
+    浏览走 `execute_sql` + 自己替换条件，指标走 `fetch` ——
+    两条路径的条件必须逐字相同（同一个 `build_time_condition`）。
+    """
+    connector = _connector(_create_db(tmp_path), tmp_path)
+    metric = _metric()
+    start = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
+    end = datetime(2026, 1, 1, 0, 1, tzinfo=UTC)
+
+    condition, params = connector.build_time_condition(
+        TimeContext(
+            column="ts", fmt="iso_utc", timezone="UTC", start=start, end=end
+        )
+    )
+    browse = connector.execute_sql(
+        metric.query.replace("$timefilter", condition), params=params
+    )
+    runtime = connector.fetch(metric, start, end)
+
+    assert browse["value"].tolist() == runtime["value"].tolist()
+    assert browse["ts"].tolist() == runtime["ts"].tolist()

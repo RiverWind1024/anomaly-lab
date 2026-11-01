@@ -110,3 +110,122 @@ def test_catalog_does_not_leak_secrets(tmp_path):
     resp = client.get("/api/platform/catalog")
     assert resp.status_code == 200
     assert "SECRET-TOKEN" not in resp.text
+
+
+# ---------- 脱敏的漏网之鱼：userinfo 与嵌套 body ----------
+
+
+def test_create_http_source_redacts_userinfo(tmp_path):
+    """⚠️ netloc 里的 `user:pass@host` 也要脱 —— 只脱 query 会明文泄漏。"""
+    client, _ = _client_and_store(tmp_path)
+    resp = client.post(
+        "/api/platform/sources",
+        json={
+            "name": "remote",
+            "kind": "http",
+            "config": {"url": "https://alice:s3cr3tP@ss@ch.internal:8123/?query={sql}"},
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    assert "s3cr3tP" not in resp.text
+    assert "alice" not in resp.text
+    assert resp.json()["config"]["url"] == "https://••••@ch.internal:8123/?query={sql}"
+
+
+def test_create_http_source_redacts_nested_body_secret(tmp_path):
+    """⚠️ 凭据常藏在嵌套结构里 —— 只脱顶层等于没脱。"""
+    client, _ = _client_and_store(tmp_path)
+    resp = client.post(
+        "/api/platform/sources",
+        json={
+            "name": "remote",
+            "kind": "http",
+            "config": {
+                "url": "https://ch.internal/?query={sql}",
+                "body": {"db": "demo", "auth": {"password": "nested-secret", "user": "bob"}},
+            },
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    assert "nested-secret" not in resp.text
+    assert resp.json()["config"]["body"]["auth"]["password"] == "••••"
+
+
+def test_patch_source_redacts_userinfo(tmp_path):
+    """PATCH 的响应同样不能带明文。"""
+    client, _ = _client_and_store(tmp_path)
+    created = client.post(
+        "/api/platform/sources",
+        json={
+            "name": "remote",
+            "kind": "http",
+            "config": {"url": "https://alice:s3cr3t@ch.internal:8123/?query={sql}"},
+        },
+    ).json()
+    resp = client.patch(
+        f"/api/platform/sources/{created['id']}", json={"name": "renamed"}
+    )
+    assert resp.status_code == 200, resp.text
+    assert "s3cr3t" not in resp.text
+    assert resp.json()["config"]["url"] == "https://••••@ch.internal:8123/?query={sql}"
+
+
+def test_catalog_does_not_leak_nested_secret(tmp_path):
+    client, _ = _client_and_store(tmp_path)
+    client.post(
+        "/api/platform/sources",
+        json={
+            "name": "remote",
+            "kind": "http",
+            "config": {
+                "url": "https://ch.internal/?query={sql}",
+                "body": {"auth": {"password": "nested-secret"}},
+            },
+        },
+    )
+    resp = client.get("/api/platform/catalog")
+    assert resp.status_code == 200
+    assert "nested-secret" not in resp.text
+
+
+def test_create_http_source_with_non_dict_headers_is_400(tmp_path):
+    """⚠️ headers 传字符串 → 脱敏整段跳过（明文泄漏）→ 必须当场拒。"""
+    client, _ = _client_and_store(tmp_path)
+    resp = client.post(
+        "/api/platform/sources",
+        json={
+            "name": "remote",
+            "kind": "http",
+            "config": {
+                "url": "https://ch.internal/?query={sql}",
+                "headers": "Authorization: Bearer SUPERSECRET",
+            },
+        },
+    )
+    assert resp.status_code == 400
+    assert "headers" in resp.json()["detail"]
+
+
+def test_create_http_source_with_non_dict_body_is_400(tmp_path):
+    client, _ = _client_and_store(tmp_path)
+    resp = client.post(
+        "/api/platform/sources",
+        json={
+            "name": "remote",
+            "kind": "http",
+            "config": {"url": "https://ch.internal/?query={sql}", "body": "q=SELECT 1"},
+        },
+    )
+    assert resp.status_code == 400
+    assert "body" in resp.json()["detail"]
+
+
+def test_patch_source_with_renamed_credential_is_400(tmp_path):
+    """⚠️ 凭据改名后表单里是 `••••` —— 存下去远端就收到字面量 `••••`。"""
+    client, _ = _client_and_store(tmp_path)
+    created = client.post("/api/platform/sources", json=_http_payload()).json()
+    config = dict(created["config"])
+    config["url"] = config["url"].replace("token=", "access_token=")
+    resp = client.patch(f"/api/platform/sources/{created['id']}", json={"config": config})
+    assert resp.status_code == 400
+    assert "脱敏值" in resp.json()["detail"]

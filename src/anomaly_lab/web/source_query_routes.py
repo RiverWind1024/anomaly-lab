@@ -22,6 +22,7 @@ from pydantic import BaseModel
 
 from anomaly_lab.platform.sources import get_connector
 from anomaly_lab.platform.sources.base import TimeContext, sql_literal
+from anomaly_lab.platform.sources.http_sql import ConfigError
 from anomaly_lab.platform.store import PlatformStore
 from anomaly_lab.platform.validation import validate_readonly_sql, validate_timezone
 
@@ -169,7 +170,12 @@ def build_source_query_router(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-        connector = get_connector(source, get_data_root())
+        try:
+            connector = get_connector(source, get_data_root())
+        except ValueError as exc:
+            # ⚠️ 库里 kind 被改成非法值 —— 那是**配置错**，该报 400
+            #    （不在 try 里的话会变成 500，看起来像平台挂了）
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
         # ⚠️ 时间条件的渲染交给**连接器** —— 浏览与指标运行时必须一致，
         #    否则「预览看到的」≠「跑出来的」。
@@ -178,10 +184,18 @@ def build_source_query_router(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+        limit = payload.limit if payload.limit and payload.limit > 0 else 100
         started = time.perf_counter()
         try:
             # ⚠️ params 必须一起传 —— SQLite 的时间条件带 `?` 绑定参数
-            frame = connector.execute_sql(sql, params=params)
+            # ⚠️ limit 必须**下推**到 SQL —— 否则整个结果集会被拉进内存
+            #    （`SELECT * FROM huge_table` 打远端，全量过网络 + 全量进内存）。
+            #    多取一行用来判断「还有更多」。
+            frame = connector.execute_sql(sql, params=params, limit=limit + 1)
+        except ConfigError as exc:
+            # ⚠️ 配置不一致（body 与 config 的 format 对不上）—— 那是**配置错**，
+            #    该报 400；远端解析失败仍然是 502。
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         except TimeoutError as exc:
             raise HTTPException(status_code=504, detail=str(exc)) from exc
         except sqlite3.Error as exc:
@@ -194,8 +208,10 @@ def build_source_query_router(
             ) from exc
         elapsed_ms = int((time.perf_counter() - started) * 1000)
 
-        limit = payload.limit if payload.limit and payload.limit > 0 else 100
-        total = len(frame)
+        # ⚠️ `total` 是**本次取到的行数**（≤ limit），不是结果集的真实总行数 ——
+        #    limit 已下推，平台根本没看到更多的行。
+        truncated = len(frame) > limit
+        rows = frame.head(limit)
         return {
             "columns": [
                 {"name": str(name), "type": _column_type(dtype)}
@@ -203,10 +219,10 @@ def build_source_query_router(
             ],
             "rows": [
                 [_json_safe(value) for value in row]
-                for row in frame.head(limit).itertuples(index=False)
+                for row in rows.itertuples(index=False)
             ],
-            "total": total,
-            "truncated": total > limit,
+            "total": len(rows),
+            "truncated": truncated,
             "elapsed_ms": elapsed_ms,
         }
 
