@@ -18,7 +18,7 @@ make serve                  # 构建前端并起服务：http://127.0.0.1:8000/
 |---|---|
 | `/` | 概览（数据源→指标→任务→告警→运行→反馈的全貌，一次请求拿全） |
 | `/sources` | 数据源列表（各源有几个指标一目了然） |
-| `/sources/:id` | 数据源详情：它的指标列表（新增/编辑/删除） |
+| `/sources/:id` | 数据源详情：它的指标列表（新增/编辑/删除）+「浏览数据」面板（写只读 SQL 看结果） |
 | `/metrics/:id` | 指标详情：配置 + 用它的任务 + 各任务最近跑出的序列 |
 | `/jobs` | 任务列表 + 新建任务（含告警规则录入） |
 | `/jobs/:id` | 任务**配置**（改参数、看告警规则） |
@@ -68,7 +68,7 @@ TanStack Query + ECharts），后端只提供 JSON API 并托管构建产物。
 
 | 概念 | 存哪 | 关键字段 |
 |---|---|---|
-| 数据源 Source | `data/platform.db` 的 `sources` | 名称、类型（当前只有 `sqlite`）、路径（相对数据根目录或绝对路径） |
+| 数据源 Source | `data/platform.db` 的 `sources` | 名称、类型（`sqlite` / `http`）、路径（SQLite 源用：相对数据根目录或绝对路径）、类型专属配置（`config` JSON） |
 | 指标 Metric | `metrics` | 数据源、SQL、时间列、值列、分组列、时间格式、源时区、缺失值策略、采样频率 |
 | 检测任务 Job | `jobs` | 指标、算法（可填 `auto`）、告警规则表、窗口点数、执行间隔、启用状态 |
 
@@ -84,7 +84,7 @@ TanStack Query + ECharts），后端只提供 JSON API 并托管构建产物。
 | `iso_naive` | 无时区墙钟时间，按 `source_timezone` 解释 | `2026-01-01 20:00:00` + `source_timezone=Asia/Shanghai` |
 | `epoch_s` / `epoch_ms` | Unix 时间戳 | `1767268800` |
 
-比较用 SQLite 内置的 `julianday()` 归一化，避开 ISO 字符串字典序比较的坑；`iso_naive` 会把查询边界换算成源时区的墙钟再比。
+比较用 SQLite 内置的 `julianday()` 归一化，避开 ISO 字符串字典序比较的坑；`iso_naive` 会把查询边界换算成源时区的墙钟再比。HTTP 数据源没有 `julianday()`，边界改用按 `time_format` 生成的字面量 —— **方言由各自的连接器渲染**（见下节）。
 
 **声明错了的后果**：取不到数据 → 该序列标记为「数据不足」，而不是悄悄取错区间。
 
@@ -118,7 +118,146 @@ SELECT * FROM (SELECT ts, host, value FROM metrics
 - `group_column` 非空时，**在加载层就拆成独立序列**：序列 ID 为 `{指标名}:{分组值}`，检测器永远只面对一条序列。
 - 单次查询上限 10 万行，超出要求缩小窗口或加聚合。
 
-时间范围用参数绑定，时间列用 `julianday()` 比较（见上节）。
+时间范围用参数绑定，时间列用 `julianday()` 比较（见上节）—— 这是 **SQLite 源**的说法，HTTP 源走另一套方言。
+
+> ⚠️ **`$timefilter` 的替换由连接器各自渲染** —— 用户在指标里写的 `$timefilter` 不变，
+> 展开成什么由数据源类型决定：
+>
+> | 连接器 | 展开成 | 方式 |
+> |---|---|---|
+> | SQLite | `julianday("col") >= julianday(?) AND julianday("col") < julianday(?)` | **参数绑定** |
+> | HTTP | `"col" >= '<字面量>' AND "col" < '<字面量>'` | 字面量（列名过标识符校验，字面量由平台生成，无注入面） |
+>
+> HTTP 侧的 `iso_utc` 字面量是 **T 分隔 + `+00:00`**（与平台的 `to_iso()` 完全一致）：
+> 同一偏移、同一 ISO 格式下**字符串字典序 == 时间序**，边界比较才正确。
+> 用 `Z` 会让 `'+'`(0x2B) < `'Z'`(0x5A) → **边界行被误判**。
+>
+> 浏览预览与指标运行时走的是**同一个连接器的同一条渲染路径**，所以「预览看到的」
+> 必然等于「跑出来的」。
+
+## HTTP 数据源（SQL 透传）
+
+平台支持把指标 SQL **原样发给远端 SQL-over-HTTP 网关**：远端自己执行、只返回结果集，
+平台不落地也不代算。常见端点：
+
+| 网关 | 端点 |
+|---|---|
+| InfluxDB 3 / Cloud Serverless / Dedicated | `POST /api/v3/query_sql` |
+| ClickHouse | `POST /?query=` |
+| TDengine | `POST /rest/sql` |
+
+> ⚠️ 支持的是「**SQL-over-HTTP 网关**」这个形态，**不是**某个具体产品 ——
+> 能不能连上取决于那个网关本身（路径、参数名、鉴权方式、响应格式）。
+
+### 配置字段
+
+`sources` 表新增 `config` JSON 列存类型专属参数；HTTP 源的参数全在这里：
+
+| 字段 | 必填 | 语义 |
+|---|---|---|
+| `url` | ✅ | URL 模板，`{sql}` 占位符在此生效 |
+| `method` | | `GET`（默认）/ `POST` |
+| `body` | | body 模板（JSON 对象）；`{sql}` 占位符在此生效 |
+| `headers` | | 原样发送的请求头（如 `Authorization`） |
+| `format` | | `json`（默认）/ `csv` / `jsonl` |
+| `rows_path` | | 点号路径，指向响应里那个「对象数组」 |
+| `timeout_seconds` | | 默认 30 |
+
+`kind` 已收敛为枚举（`sqlite` / `http`），建/改数据源时校验。
+
+### `{sql}` 占位符：URL 里编码，body 里原样
+
+- **URL 里做 URL 编码** —— SQL 里的空格、`#`、`&` 会直接破坏 query string。
+- **body 里原样替换** —— 百分号编码会污染 SQL 本身（`'` 变成 `%27` 之类，远端就认不出了）。
+
+### `format`：请求与响应对齐
+
+`format` 一个字段管两端：**请求侧的格式参数**写在 `body` 模板里，
+**响应侧**由平台按 `format` 决定怎么解析：
+
+| `format` | 响应怎么解析 |
+|---|---|
+| `json` | JSON 对象数组（数组位置可用 `rows_path` 指定） |
+| `csv` | CSV，**必须带表头行**（InfluxDB 的 csv format 带头；ClickHouse 的 `FORMAT CSVWithNames` 带头） |
+| `jsonl` | 每行一个 JSON 对象 |
+
+⚠️ 两端必须一致：body 模板里写 `"format": "csv"`，配置里的 `format` 也要是 `csv`，
+否则平台会用 JSON 去解析一段 CSV。
+
+### `rows_path` 的明确限制
+
+只支持**单层点号路径**指向**一个对象数组**（如 `"data"` / `"results.items"`）。
+
+⚠️ **不支持** InfluxDB 3 的两段式响应（`results[].series[].columns` + `values`）——
+那不是一个「对象数组」，`rows_path` 够不着。**接 InfluxDB 3 请用 `format=csv`。**
+
+### 安全边界：远端账号的权限
+
+⚠️ **SQL 原样发到远端执行。** 平台侧的只读校验（`SELECT`/`WITH` 开头、单语句、
+写关键字黑名单）只是**第二道防线** —— 关键字黑名单**可以绕过**。
+
+真正的边界是**远端账号的权限**：必须用**只读凭据**（只授 `SELECT` 的数据库账号）。
+拿能写的账号配进来，等于把写权限交出去了。
+
+### 凭据脱敏
+
+`headers` 的值**一律脱敏**（`Bearer ••••` / `••••`），`body` 里键名含
+`token`/`key`/`password`/`secret` 的值脱敏，`url` query 里的同类参数也脱敏 ——
+脱敏在 **store 层**做，返回给前端的都是脱敏值。回写时若新值仍等于脱敏形式，
+则**沿用旧的真值**，不会把密钥冲成 `••••`。
+
+## 数据浏览器
+
+在数据源上写一段**只读 SQL** → 看列结构与前 N 行 → 一键生成指标。
+
+```
+POST /api/platform/sources/{id}/query
+  body: { "sql": "SELECT ts, host, value FROM metrics WHERE $timefilter",
+          "start": "2026-10-30T00:00:00Z", "end": "2026-10-31T00:00:00Z",
+          "limit": 100,
+          "time_column": "ts", "time_format": "iso_utc", "source_timezone": "UTC" }
+  resp: { "columns": [{"name": "ts", "type": "TIMESTAMP"}],
+          "rows": [[...]], "total": 1280, "truncated": false, "elapsed_ms": 12 }
+```
+
+- `columns[].type` 由 pandas dtype 推断：`TIMESTAMP` / `INTEGER` / `REAL` / `TEXT`。
+- `limit` 只截断**返回给前端**的行数（不改发出去的 SQL）；**检测取数不受它限制**。
+- 不落库、不建指标 —— 只是让用户在定指标前先看到「查出来到底是什么结构」。
+
+### 两套占位符，职责清晰
+
+| 占位符 | 用于 | 语义 |
+|---|---|---|
+| `$timefilter` | 指标 SQL，**浏览也可用** | 平台知道时间列与格式，替换成完整的时间条件 |
+| `{start}` / `{end}` | 浏览 SQL | 用户自己在 SQL 里写列名，平台只替换成时间字面量 |
+
+- 浏览 SQL 里含 `$timefilter` 时，需要额外给 `time_column`（`time_format` /
+  `source_timezone` 缺省为 `iso_utc` / `UTC`）；**时间条件由连接器渲染** →
+  浏览预览与指标运行时结果一致。
+- ⚠️ **浏览 SQL 不要求 `$timefilter`** —— 那是**指标**的要求。浏览校验只看
+  「只读 + 单语句」。
+- `{start}` / `{end}` 的时间字面量同样按 `time_format` 生成（缺省 `iso_utc` + `UTC`）。
+
+### 错误码
+
+| 情形 | 状态码 |
+|---|---|
+| 数据源不存在 | 404 |
+| 本地校验失败（非 `SELECT`/`WITH` 开头、多语句、写关键字） | 400 |
+| `$timefilter` 缺 `time_column` | 400 |
+| **本地** SQL 写错（表不存在、语法错…） | 400 |
+| 远端执行失败（远端 4xx/5xx、连不上） | 502 |
+| 响应无法解析（非法 JSON/CSV、`rows_path` 不存在） | 502 |
+| 请求超时 | 504 |
+
+「远端 SQL 错」与「本地 SQL 非法」都会出现 —— 用**状态码**区分：远端挂了就 502，
+用户写错就 400，界面直接显示，不用去猜。
+
+### 前端
+
+数据源详情页挂「浏览数据」面板：SQL 编辑器 + 时间范围 + 结果表格。
+结果表格里每个列旁一个下拉（`时间列` / `值列` / `分组列`），点一下即填入对应字段，
+再一键生成指标（`TIMESTAMP` 列自动推断 `time_format = iso_utc`）。
 
 ## 告警规则：缩放因子 × 等级
 
@@ -407,7 +546,12 @@ DELETE /api/platform/sources/{source_id}
 
 ## 已知限制（第一版有意不做）
 
-- 只支持 SQLite 一种数据源；`kind` 字段与 `Source` 模型已为后续插件（InfluxDB / Prometheus）预留。
+- 支持 SQLite 文件与 HTTP SQL 网关两种数据源；`kind` 已收敛为枚举（`sqlite` / `http`）。
+  专有查询语言（InfluxDB 2.x 的 InfluxQL、Prometheus 的 PromQL）**仍待做** ——
+  SQL 与 PromQL 不是同一种语言，无法自动翻译，得做成专用连接器。
+- HTTP 源的 SQL **原样发到远端执行**，平台的只读校验只是第二道防线（关键字黑名单可绕过）；
+  真正的安全边界是**远端账号的权限**，必须用只读凭据。
+- 数据浏览器的结果**不落库**、不建指标，只是预览。
 - 预处理（清洗/聚合）与取数在同一进程内完成，接口边界保留，但**没有**独立 worker 进程做内存隔离。
 - 没有认证、多租户与权限；这是本地学习项目，不是可对外的服务。
 - 多 worker 部署会各自跑一份调度器（当前按单进程使用设计）。

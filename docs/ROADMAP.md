@@ -81,7 +81,12 @@
 开放项（下一版候选）：
 
 - [ ] **换一个未参与调参的公开集**重新评估 auto（候选：UCR AIOps 竞赛数据、Yahoo Webscope S5/A1、SKAB），并把评估脚本做成可重复的 CI 检查
-- [ ] 数据源插件化：Prometheus / InfluxDB（`Source.kind` 与 `sqlite_source` 已留边界）
+- [ ] 数据源插件化：**SQL 型（透传）已完成**（2026-11-01，SQLite 文件 + HTTP SQL 网关）；
+      **专有型待做**（InfluxDB 2.x 的 InfluxQL、Prometheus 的 PromQL）——
+      这类要做成**专用连接器**：SQL → PromQL **无法自动翻译**（不是同一种语言），
+      只能按 `fetch` 协议另写一个类。指标模型**预留** `Metric.config`（JSON）
+      存源专属参数（bucket / measurement / field / aggregation），
+      对上层（检测 / 告警 / 浏览器）与 `Metric.query` 完全等价。
 - [ ] 反馈的主动学习：优先推送最不确定的区间给用户标注，减少标注量
 - [ ] 反馈的主动学习：优先推送最不确定的区间给用户标注，减少标注量
 - [ ] 预处理独立进程/worker，兑现内存隔离的初衷
@@ -220,3 +225,29 @@
 - **x 轴标签带 9 位纳秒** —— 后端 timestamps 截到秒
 - **运行状态显示英文** success/failed → 中文
 - **数据源详情页的删除没有二次确认** —— 换成带影响预览的 `DeleteButton`
+
+## 连接器层与数据浏览器（2026-11-01）
+
+**连接器层**（`platform/sources/`）：把「取数」与「后处理」拆开。
+
+- 连接器只负责 **SQL → DataFrame**；时间解析 / 排序 / group by 拆分 / 缺失值策略
+  **全部共用**（`sources/base.py`，方言无关，只依赖 pandas）——
+  换一种数据源 = 新增一个类，不用复制后处理。
+- `sources/sqlite.py`（`SqliteConnector`）+ `sources/http_sql.py`（`HttpSqlConnector`）；
+  `sources/__init__.py` 是 kind → 类的注册表。`sqlite_source.py` 变**薄壳**
+  （只再导出 `load_series`），既有测试与 monkeypatch 目标名零改动。
+- **HTTP 透传数据源**（`kind="http"`）：把指标 SQL **原样**发给远端 SQL-over-HTTP 网关
+  （InfluxDB 3 的 `/api/v3/query_sql`、ClickHouse 的 `/?query=`、TDengine 的 `/rest/sql`…），
+  远端自己执行、只返回结果集，平台不落地也不代算。
+- **数据源 config 配置**：`sources` 表新增 `config` JSON 列存 kind 专属参数；
+  `kind` 收敛为枚举（`sqlite` / `http`）；凭据脱敏在 store 层（前端永远拿不到明文）。
+- **数据浏览器**：`POST /api/platform/sources/{id}/query` —— 在数据源上写只读 SQL，
+  看列结构与前 N 行，再一键生成指标。
+- **`$timefilter` 由连接器各自渲染**：SQLite 用 `julianday()`（参数绑定），
+  HTTP 用按 `time_format` 生成的 ISO 字面量。浏览预览与指标运行时走**同一条路径**，
+  所以「预览看到的」必然等于「跑出来的」。
+- ⚠️ **安全边界**：SQL 原样发到远端执行，平台的只读校验只是**第二道防线**
+  （关键字黑名单可绕过）；真正的边界是**远端账号的权限** —— 必须用只读凭据。
+
+本轮**没做**（都留给后续 spec）：告警外发、认证与多租户、
+数据保留与清理、分布式调度。

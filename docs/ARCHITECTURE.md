@@ -34,7 +34,8 @@ flowchart TD
     DIST --> W
   end
   subgraph Platform
-    PS[platform/store.py<br/>配置与调度状态] --> SRC[platform/sqlite_source.py<br/>只读取数/拆序列]
+    DS[数据源类型可插拔<br/>SQLite 文件 / HTTP SQL 网关] --> SRC[platform/sources/<br/>连接器层：取数→共用后处理]
+    PS[platform/store.py<br/>配置与调度状态] --> SRC
     SRC --> RN[platform/runner.py<br/>检测/分级/落盘]
     RN --> SCH[platform/scheduler.py<br/>定时调度]
     SCH --> PS
@@ -61,7 +62,7 @@ flowchart TD
 | `evaluation/` | 阈值、指标、回测、Bad Case、报告、对照 |
 | `web/` | 只出 JSON API + 托管前端构建产物（SPA fallback）；不含任何页面模板 |
 | `frontend/` | 独立前端工程：React 18 + TS + Vite + AntD v5 + TanStack Query + ECharts |
-| `platform/` | 平台切片：元数据存储、只读取数、任务执行、定时调度 |
+| `platform/` | 平台切片：元数据存储、连接器取数、任务执行、定时调度 |
 
 ## 平台切片的数据流
 
@@ -69,14 +70,18 @@ flowchart TD
 flowchart LR
   CFG[数据源/指标/任务<br/>platform.db] --> SCH[scheduler<br/>到期执行]
   SCH --> RUN[runner<br/>取数→检测→分级]
-  RUN --> SRC[sqlite_source<br/>$timefilter + group by 拆序列]
+  RUN --> SRC[连接器层 sources/<br/>$timefilter 各方言渲染 + group by 拆序列]
   RUN --> NPZ[cache/platform/runs/<run_id><br/>index.json + npz]
   NPZ --> API["/api/platform/jobs/:id/preview<br/>JSON"]
   API --> UI[frontend<br/>JobsPage / PreviewChart]
 ```
 
 - 配置与结果分离：SQLite 只存配置与运行摘要，数组落 npz，避免大对象进数据库。
-- 取数与预处理第一版在进程内完成，边界是 `sqlite_source.load_series` → `SeriesBundle` → 检测器，后续可把前者换成独立 worker。
+- 取数与预处理第一版在进程内完成，边界是**连接器层**（`platform/sources/`）的
+  `fetch` → `SeriesBundle` → 检测器，后续可把前者换成独立 worker。
+- **连接器只负责「SQL → DataFrame」，后处理方言无关、全部共用**：时间解析、排序、
+  group by 拆分、缺失值策略都在 `platform/sources/base.py` 里，只依赖 pandas，不依赖方言。
+  换一种数据源 = 新增一个连接器类，不用复制后处理。
 
 ## 关键契约
 

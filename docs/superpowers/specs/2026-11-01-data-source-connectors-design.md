@@ -230,14 +230,18 @@ store 在 `add_source` / `update_source` 校验；前端把 kind 从自由文本
 
 ```python
 def time_literal(value: datetime, fmt: str, tz: str) -> str:
-    if fmt == "iso_utc":    return value.astimezone(UTC).isoformat(sep=" ")   # "2026-10-30 09:38:00+00:00"
-    if fmt == "iso_naive":  return 源时区墙钟字符串                              # "2026-10-30 09:38:00"
+    if fmt == "iso_utc":    return value.astimezone(UTC).isoformat(timespec="seconds")   # "2026-10-30T09:38:00+00:00"
+    if fmt == "iso_naive":  return 源时区墙钟字符串                              # "2026-10-30T09:38:00"
     if fmt == "epoch_s":    return str(int(value.timestamp()))
     if fmt == "epoch_ms":   return str(int(value.timestamp() * 1000))
 ```
 
-⚠️ `iso_utc` 用 `+00:00` 偏移而非 `Z`（D10）：
-平台的 `to_iso()` 就是这个格式；同一偏移、同一 ISO 格式下**字符串字典序 == 时间序**，
+⚠️ **必须与平台的 `to_iso()` 完全一致（T 分隔 + `+00:00`）** ——
+`to_iso()` 就是 `value.astimezone(UTC).isoformat(timespec="seconds")`；
+用空格分隔会与平台自己的时间表示对不上。
+
+⚠️ `iso_utc` 用 **T 分隔 + `+00:00` 偏移**而非 `Z`（D10）：
+同一偏移、同一 ISO 格式下**字符串字典序 == 时间序**，
 边界比较才正确。用 `Z` 会让 `+`(0x2B) < `Z`(0x5A) → 边界行被误判。
 
 ### 4.3 两套方言
