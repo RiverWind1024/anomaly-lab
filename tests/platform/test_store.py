@@ -451,3 +451,48 @@ def test_switching_kind_to_http_with_url_is_accepted(tmp_path):
     source = store.get_source_raw(1)
     assert source.kind == "http"
     assert source.config["url"] == "https://x/query"
+
+
+def test_headers_with_nonstandard_names_are_redacted(tmp_path):
+    """⚠️ header 的值**一律脱敏** —— 不能靠参数名判断。
+
+    `Cookie` / `X-Session-Id` / `Proxy-Authorization` 这些根本猜不出
+    名字里有凭据，靠名字判断就会明文泄漏。
+    """
+    store = PlatformStore(tmp_path / "platform.db")
+    store.add_source(
+        "remote", "", kind="http",
+        config={
+            "url": "https://x/q?q={sql}",
+            "headers": {"Cookie": "sid=abc", "Authorization": "Bearer secret"},
+        },
+    )
+    source = store.get_source(1)
+    assert "sid=abc" not in str(source.config)
+    assert "secret" not in str(source.config)
+
+
+def test_update_with_redacted_headers_restores_real_values(tmp_path):
+    """脱敏后的 headers 原样提交 → 真值完整还原。
+
+    ⚠️ header 的脱敏形式是 `前缀 ••••`（值里有空格才留前缀）——
+       `sid=abc` → `••••`，`Bearer secret` → `Bearer ••••`。
+    """
+    store = PlatformStore(tmp_path / "platform.db")
+    store.add_source(
+        "remote", "", kind="http",
+        config={
+            "url": "https://x/q?q={sql}",
+            "headers": {"Cookie": "sid=abc", "Authorization": "Bearer secret"},
+        },
+    )
+    store.update_source(
+        1,
+        config={
+            "url": "https://x/q?q={sql}",
+            "headers": {"Cookie": "••••", "Authorization": "Bearer ••••"},
+        },
+    )
+    raw = store.get_source_raw(1)
+    assert raw.config["headers"]["Cookie"] == "sid=abc"
+    assert raw.config["headers"]["Authorization"] == "Bearer secret"

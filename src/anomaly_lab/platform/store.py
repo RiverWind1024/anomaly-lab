@@ -178,14 +178,10 @@ def _redact_config(config: dict) -> dict:
     out = dict(config)
     headers = out.get("headers")
     if isinstance(headers, dict):
+        # ⚠️ header 的值**一律脱敏** —— 不能靠参数名判断：
+        #    Cookie / X-Session-Id / Proxy-Authorization 这些根本猜不出名字里有凭据
         out["headers"] = {
-            key: (
-                f"{str(value).split(' ', 1)[0]} {REDACTED}"
-                if " " in str(value)
-                else REDACTED
-            )
-            if _is_secret(str(key))
-            else value
+            key: (f"{str(value).split(' ', 1)[0]} {REDACTED}" if " " in str(value) else REDACTED)
             for key, value in headers.items()
         }
     body = out.get("body")
