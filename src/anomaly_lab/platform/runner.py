@@ -14,6 +14,7 @@ from pathlib import Path
 
 import numpy as np
 
+from anomaly_lab.contracts import SeriesBundle
 from anomaly_lab.detectors.bands import compute_bands
 from anomaly_lab.platform.alerts import (
     SEVERITY_NORMAL,
@@ -26,7 +27,9 @@ from anomaly_lab.platform.alerts import (
     severity_from_conditions,
 )
 from anomaly_lab.platform.detectors import create_detector, resolve_detector
-from anomaly_lab.platform.sqlite_source import load_series
+from anomaly_lab.platform.models import Metric
+from anomaly_lab.platform.sources import get_connector
+from anomaly_lab.platform.sources.base import series_from_frame
 from anomaly_lab.platform.store import PlatformStore
 from anomaly_lab.platform.timeutil import freq_delta, to_iso, utcnow
 
@@ -42,6 +45,23 @@ def run_dir(data_root: Path, run_id: int) -> Path:
 def resolve_source_path(source_path: str, data_root: Path) -> Path:
     path = Path(source_path)
     return path if path.is_absolute() else Path(data_root) / path
+
+
+def load_series(
+    store: PlatformStore,
+    metric: Metric,
+    data_root: Path,
+    start: datetime,
+    end: datetime,
+) -> list[SeriesBundle]:
+    """按指标所属数据源取数（走连接器层）。
+
+    ⚠️ 模块级函数名保留 `load_series` —— 既有测试 monkeypatch 的目标就是它。
+    """
+    source = store.get_source_raw(metric.source_id)
+    connector = get_connector(source, data_root)
+    frame = connector.fetch(metric, start, end)
+    return series_from_frame(frame, metric)
 
 
 def job_rules(job) -> list:
@@ -105,13 +125,11 @@ def _run_job(
 ) -> int:
     try:
         metric = store.get_metric(job.metric_id)
-        source = store.get_source_raw(metric.source_id)
         end_time = end or now or utcnow()
         start_time = start or (
             end_time - freq_delta(metric.freq) * job.window_points
         )
-        source_path = resolve_source_path(source.path, data_root)
-        series_list = load_series(metric, source_path, start_time, end_time)
+        series_list = load_series(store, metric, data_root, start_time, end_time)
         rules = job_rules(job)
         # 没有倍数条件时（规则全是绝对值条件）没有「上下界宽度」可言 ——
         # 退回到检测器自己的默认阈值。分级由规则表决定，不受影响。

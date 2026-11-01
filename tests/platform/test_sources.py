@@ -326,3 +326,40 @@ def test_metric_query_still_requires_exactly_one_timefilter():
     with pytest.raises(ValueError, match="timefilter"):
         validate_query("SELECT ts FROM t WHERE $timefilter AND x = $timefilter")
     assert validate_query("SELECT ts FROM t WHERE $timefilter")
+
+
+# ---------- 连接器注册表 ----------
+
+
+def test_get_connector_returns_sqlite_connector(tmp_path):
+    from anomaly_lab.platform.sources import get_connector
+
+    source = Source(
+        id=1, name="local", kind="sqlite", path="platform/source.db",
+        created_at="2026-10-30T00:00:00+00:00",
+    )
+    connector = get_connector(source, tmp_path)
+    assert connector.kind == "sqlite"
+
+
+def test_get_connector_returns_http_connector(tmp_path):
+    from anomaly_lab.platform.sources import get_connector
+
+    source = Source(
+        id=2, name="remote", kind="http", path="",
+        created_at="2026-10-30T00:00:00+00:00",
+        config={"url": "https://x/q?q={sql}"},
+    )
+    connector = get_connector(source, tmp_path)
+    assert connector.kind == "http"
+
+
+def test_get_connector_rejects_unknown_kind(tmp_path):
+    from anomaly_lab.platform.sources import get_connector
+
+    source = Source(
+        id=3, name="x", kind="kafka", path="",
+        created_at="2026-10-30T00:00:00+00:00",
+    )
+    with pytest.raises(ValueError, match="不支持的数据源类型"):
+        get_connector(source, tmp_path)

@@ -176,7 +176,11 @@ def test_concurrent_manual_run_and_schedule_share_one_run(tmp_path, monkeypatch)
 
     started = threading.Event()
     release = threading.Event()
-    real_load = load_series
+    # ⚠️ runner 里的 load_series 签名变了（多了 store）——
+    #    monkeypatch 的目标必须是 runner 那个，不是 sqlite_source 的薄壳
+    from anomaly_lab.platform import runner as runner_module
+
+    real_load = runner_module.load_series
 
     def slow_load(*args, **kwargs):
         started.set()

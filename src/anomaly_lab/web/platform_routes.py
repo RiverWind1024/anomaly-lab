@@ -40,7 +40,6 @@ from anomaly_lab.platform.feedback import (
     SeriesOutcome,
     suggest_setting,
 )
-from anomaly_lab.platform.sqlite_source import load_series
 from anomaly_lab.platform.store import PlatformStore
 from anomaly_lab.platform.timeutil import freq_delta, utcnow
 from anomaly_lab.web.biz_state import biz_headers
@@ -687,7 +686,6 @@ def build_router(
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         try:
             metric = store.get_metric(job.metric_id)
-            source = store.get_source_raw(metric.source_id)
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         rules = runner_module.job_rules(job)
@@ -699,8 +697,10 @@ def build_router(
             )
         end_time = utcnow()
         start_time = end_time - freq_delta(metric.freq) * job.window_points
-        source_path = runner_module.resolve_source_path(source.path, get_data_root())
-        series_list = load_series(metric, source_path, start_time, end_time)
+        # ⚠️ 走连接器层 —— HTTP 数据源的 path 是空的，不能按本地文件解析
+        series_list = runner_module.load_series(
+            store, metric, get_data_root(), start_time, end_time
+        )
         if not series_list:
             raise HTTPException(
                 status_code=404,
@@ -904,7 +904,6 @@ def build_router(
         try:
             job = store.get_job(job_id)
             metric = store.get_metric(job.metric_id)
-            source = store.get_source_raw(metric.source_id)
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         chosen_run = run_id
@@ -928,8 +927,8 @@ def build_router(
             )
             for item in store.list_feedback(job.id)
         ]
-        candidates = _suggestion_candidates(job, metric, source)
-        outcomes = _collect_outcomes(job, metric, source, candidates)
+        candidates = _suggestion_candidates(job, metric)
+        outcomes = _collect_outcomes(job, metric, candidates)
         suggestion = suggest_setting(
             outcomes, annotations, job.detector, current_multiplier
         )
@@ -941,13 +940,13 @@ def build_router(
             **suggestion.as_dict(),
         }
 
-    def _suggestion_candidates(job, metric, source) -> list[str]:
+    def _suggestion_candidates(job, metric) -> list[str]:
         """建议要比较的算法集合：当前设置 + 形态推荐的候选。"""
         names: list[str] = []
         # auto 作为「当前设置」参与比较——它是逐序列选算法的混合表现
         names.append(job.detector)
         try:
-            series_list = _load_window_series(job, metric, source)
+            series_list = _load_window_series(job, metric)
         except (ValueError, FileNotFoundError):
             series_list = []
         for series in series_list:
@@ -961,19 +960,21 @@ def build_router(
         ]
         return unique or list(DEFAULT_DETECTOR_SET)
 
-    def _load_window_series(job, metric, source) -> list:
+    def _load_window_series(job, metric) -> list:
         end_time = utcnow()
         start_time = end_time - freq_delta(metric.freq) * job.window_points
-        source_path = runner_module.resolve_source_path(source.path, get_data_root())
-        return load_series(metric, source_path, start_time, end_time)
+        # ⚠️ 走连接器层 —— HTTP 数据源的 path 是空的，不能按本地文件解析
+        return runner_module.load_series(
+            _store(), metric, get_data_root(), start_time, end_time
+        )
 
-    def _collect_outcomes(job, metric, source, detectors: list[str]) -> dict:
+    def _collect_outcomes(job, metric, detectors: list[str]) -> dict:
         """按算法收集各序列的分数，供反馈评估使用。
 
         `auto` 不是具体算法——它是「每条序列各自选一个」的混合表现，
         所以按序列分别取它会选中的那个算法来算。
         """
-        series_list = _load_window_series(job, metric, source)
+        series_list = _load_window_series(job, metric)
         outcomes: dict[str, list[SeriesOutcome]] = {}
         for detector_name in detectors:
             items: list[SeriesOutcome] = []

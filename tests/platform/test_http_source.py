@@ -15,8 +15,10 @@ from urllib.parse import unquote, urlparse
 import pytest
 
 from anomaly_lab.platform.models import Metric, Source
+from anomaly_lab.platform.runner import load_series
 from anomaly_lab.platform.sources.base import TimeContext
 from anomaly_lab.platform.sources.http_sql import HttpSqlConnector, RemoteError
+from anomaly_lab.platform.store import PlatformStore
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -203,3 +205,47 @@ def test_build_time_condition_is_iso_literal(http_server):
     assert "julianday" not in condition
     assert params == ()
     assert "'2026-10-30T00:00:00+00:00'" in condition
+
+
+def test_runner_load_series_works_with_http_source(http_server, tmp_path):
+    """⚠️ 端到端：HTTP 源经连接器层取数。
+
+    HTTP 源的 path 是空的 —— 走连接器层才不会去解析本地文件路径。
+    """
+    http_server.body = {
+        "data": [
+            {"ts": "2026-10-30T00:00:00+00:00", "value": 1.0, "host": "web-1"},
+            {"ts": "2026-10-30T00:01:00+00:00", "value": 2.0, "host": "web-1"},
+        ]
+    }
+    store = PlatformStore(tmp_path / "platform.db")
+    source = store.add_source(
+        "remote",
+        "",
+        kind="http",
+        config={
+            "url": f"http://127.0.0.1:{http_server.server_port}/query?q={{sql}}",
+            "method": "GET",
+            "format": "json",
+            "rows_path": "data",
+        },
+    )
+    metric = store.add_metric(
+        source_id=source.id,
+        name="demo",
+        query="SELECT ts, value, host FROM t WHERE $timefilter",
+        time_column="ts",
+        value_column="value",
+        group_column="host",
+        time_format="iso_utc",
+        freq="1min",
+    )
+    series = load_series(
+        store,
+        metric,
+        tmp_path,
+        datetime(2026, 10, 30, tzinfo=UTC),
+        datetime(2026, 10, 30, 0, 5, tzinfo=UTC),
+    )
+    assert [item.series_id for item in series] == ["demo:web-1"]
+    assert series[0].values.tolist() == [1.0, 2.0]
