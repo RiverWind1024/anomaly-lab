@@ -181,8 +181,10 @@ SELECT * FROM (SELECT ts, host, value FROM metrics
 | `csv` | CSV，**必须带表头行**（InfluxDB 的 csv format 带头；ClickHouse 的 `FORMAT CSVWithNames` 带头） |
 | `jsonl` | 每行一个 JSON 对象 |
 
-⚠️ 两端必须一致：body 模板里写 `"format": "csv"`，配置里的 `format` 也要是 `csv`，
-否则平台会用 JSON 去解析一段 CSV。
+⚠️ **请求的格式与解析的格式必须一致**：平台按配置里的 `format` 解析响应，
+远端按请求里的 `format` 返回。body 模板里**没写** `"format"` 时，平台会注入
+配置里的那个；写了但与配置不一致 → **当场报错**（否则平台会用 JSON 去解析
+一段 CSV，报错还会指向完全无关的地方）。
 
 ### `rows_path` 的明确限制
 

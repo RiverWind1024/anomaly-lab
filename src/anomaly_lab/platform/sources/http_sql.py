@@ -173,6 +173,17 @@ class HttpSqlConnector:
                     )
                     for key, value in body_template.items()
                 }
+                # ⚠️ 请求的格式必须与解析的格式一致 —— 远端按 body["format"]
+                #    返回，平台按 config["format"] 解析，两边不一致就是解析失败。
+                #    body 里没写就注入配置里的；写了但不一样 → 当场报错。
+                asked = str(body.get("format", "") or "")
+                if not asked:
+                    body["format"] = self._format
+                elif asked != self._format:
+                    raise ValueError(
+                        f"body 里的 format={asked!r} 与配置的 format={self._format!r} 不一致"
+                        "（远端会按前者返回、平台按后者解析）"
+                    )
                 data = json.dumps(body, ensure_ascii=False).encode("utf-8")
                 headers.setdefault("Content-Type", "application/json")
             else:

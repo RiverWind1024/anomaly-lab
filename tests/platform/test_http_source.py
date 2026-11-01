@@ -122,11 +122,44 @@ def test_body_template_receives_raw_sql(http_server):
         http_server,
         url=f"http://127.0.0.1:{http_server.server_port}/query",
         method="POST",
+        format="csv",
         body={"db": "demo", "q": "{sql}", "format": "csv"},
     )
     HttpSqlConnector(source).execute_sql("SELECT ts FROM t")
     assert http_server.requests[0]["q"] == "SELECT ts FROM t"
     assert http_server.requests[0]["db"] == "demo"
+
+
+def test_request_format_is_injected_when_body_omits_it(http_server):
+    """⚠️ 请求的格式必须与解析的格式一致 —— body 没写就注入配置里的。"""
+    http_server.body = {"data": []}
+    source = _source(
+        http_server,
+        url=f"http://127.0.0.1:{http_server.server_port}/query",
+        method="POST",
+        format="json",
+        body={"db": "demo", "q": "{sql}"},
+    )
+    HttpSqlConnector(source).execute_sql("SELECT 1")
+    assert http_server.requests[0]["format"] == "json"
+
+
+def test_mismatched_request_format_raises(http_server):
+    """⚠️ body 里的 format 与配置不一致 → 当场报错。
+
+    否则远端按 body 的格式返回、平台按配置的格式解析 → 解析失败，
+    而且报错信息会指向完全无关的地方。
+    """
+    http_server.body = {"data": []}
+    source = _source(
+        http_server,
+        url=f"http://127.0.0.1:{http_server.server_port}/query",
+        method="POST",
+        format="csv",
+        body={"db": "demo", "q": "{sql}", "format": "json"},
+    )
+    with pytest.raises(ValueError, match="不一致"):
+        HttpSqlConnector(source).execute_sql("SELECT 1")
 
 
 def test_json_response_is_parsed(http_server):
