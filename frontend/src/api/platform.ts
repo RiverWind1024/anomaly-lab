@@ -8,6 +8,7 @@ import type {
   Overview,
   Preview,
   RunSummary,
+  SourceQueryResult,
   Suggestion,
 } from './types'
 
@@ -51,6 +52,25 @@ export const getAlerts = (opts: {
 
 export const createSource = (payload: { name: string; path: string; kind?: string }) =>
   postJson<{ id: number }>('/api/platform/sources', payload)
+
+/**
+ * 数据浏览：在数据源上执行一段只读 SQL，返回列结构与前 N 行。
+ *
+ * ⚠️ 这是**浏览** —— 不落库、不建指标，只是让用户「先看结构、再定指标」。
+ * ⚠️ `time_column` 只有 SQL 里带 `$timefilter` 时才需要。
+ */
+export const querySource = (
+  sourceId: number,
+  payload: {
+    sql: string
+    start?: string
+    end?: string
+    limit?: number
+    time_column?: string
+    time_format?: string
+    source_timezone?: string
+  },
+) => postJson<SourceQueryResult>(`/api/platform/sources/${sourceId}/query`, payload)
 
 /**
  * 改数据源。只传要改的字段，其余保持原样。

@@ -21,6 +21,7 @@ from anomaly_lab.evaluation.exclusions import ExclusionStore, exclusion_key
 from anomaly_lab.platform.store import PlatformStore
 from anomaly_lab.web.biz_state import biz_headers
 from anomaly_lab.web.platform_routes import build_router
+from anomaly_lab.web.source_query_routes import build_source_query_router
 
 
 def _data_root() -> Path:
@@ -116,6 +117,7 @@ def create_app(
 
     app = FastAPI(title="anomaly-lab", lifespan=lifespan)
     app.include_router(build_router(get_store, lambda: data_root))
+    app.include_router(build_source_query_router(get_store, lambda: data_root))
 
     @app.get("/api/health")
     def health() -> dict:

@@ -76,6 +76,26 @@ export interface Catalog {
   detectors: CatalogDetector[]
 }
 
+// ─────────────────────────────────── 数据浏览 /api/platform/sources/{id}/query
+
+/** 浏览结果的一列。`type` 是后端按 dtype 推断的类型名。 */
+export interface SourceQueryColumn {
+  name: string
+  type: string
+}
+
+/** 一次浏览的结果 —— 列结构 + 前 N 行。 */
+export interface SourceQueryResult {
+  columns: SourceQueryColumn[]
+  /** 行是**数组**（不是对象）—— 列名在 columns 里。 */
+  rows: unknown[][]
+  /** 查出来的**总**行数（不受 limit 限制）。 */
+  total: number
+  /** 行数被 limit 截断了。 */
+  truncated: boolean
+  elapsed_ms: number
+}
+
 // ─────────────────────────────────────────── 告警中心 /api/platform/alerts
 
 /**

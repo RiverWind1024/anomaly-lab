@@ -5,7 +5,7 @@
  * EXPECTED_PATHS，缺失即失败。
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { getCatalog, getOverview, createSource, createMetric, createJob, toggleJob, runJob, getRuns, getPreview, getCompare, createFeedback, getFeedback, getSuggestion, applySuggestion, getAlerts, deleteJob, deleteMetric, deleteSource, updateSource, updateMetric } from './platform'
+import { getCatalog, getOverview, createSource, createMetric, createJob, toggleJob, runJob, getRuns, getPreview, getCompare, createFeedback, getFeedback, getSuggestion, applySuggestion, getAlerts, deleteJob, deleteMetric, deleteSource, updateSource, updateMetric, querySource } from './platform'
 import { getSeries, getSeriesValues, getSummary, getBadcases, getExclusions, excludeEvaluationRow, restoreEvaluationRow } from './series'
 import { getAnnotations, saveAnnotations } from './annotate'
 
@@ -26,6 +26,7 @@ const EXPECTED_PATHS = [
   '/api/platform/alerts',
   '/api/platform/sources',
   '/api/platform/sources/{id}',
+  '/api/platform/sources/{id}/query',
   '/api/platform/metrics',
   '/api/platform/metrics/{id}',
   '/api/platform/jobs',
@@ -113,6 +114,7 @@ describe('端点封装层', () => {
     await deleteSource(1)
     await updateSource(1, { name: 'x' })
     await updateMetric(1, { query: 'q' })
+    await querySource(1, { sql: 'SELECT 1' })
     await getSeries()
     await getSeriesValues('a:b')
     await getSummary()
