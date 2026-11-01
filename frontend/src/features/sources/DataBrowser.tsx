@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { Button, Card, DatePicker, Input, Space, Table, Typography } from 'antd'
+import { Button, Card, DatePicker, Input, Select, Space, Table, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import type { Dayjs } from 'dayjs'
 import { querySource } from '../../api/platform'
+import { ROLE_OPTIONS, resolveRoles, roleOf, type RoleChoice } from './roles'
 import type { SourceQueryResult } from '../../api/types'
 
 const { RangePicker } = DatePicker
@@ -45,11 +46,18 @@ export function DataBrowser({
   onUseAsMetric: (payload: {
     sql: string
     columns: SourceQueryResult['columns']
+    roles: {
+      time_column?: string
+      value_column?: string
+      group_column?: string
+    }
   }) => void
 }) {
   const [sql, setSql] = useState('SELECT * FROM metrics LIMIT 100')
   const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>(null)
   const [timeColumn, setTimeColumn] = useState<string>('')
+  /** 列名 → 用户指派的角色（没指派过的列走自动推断）。 */
+  const [assignments, setAssignments] = useState<Record<string, RoleChoice>>({})
 
   const run = useMutation({
     mutationFn: () =>
@@ -64,6 +72,19 @@ export function DataBrowser({
 
   const result = run.data
 
+  /** 指派某一列的角色 —— 一个角色只能属于一列。 */
+  const assign = (columnName: string, choice: RoleChoice) => {
+    setAssignments((prev) => {
+      const next = { ...prev, [columnName]: choice }
+      if (choice !== 'none') {
+        for (const [name, role] of Object.entries(next)) {
+          if (name !== columnName && role === choice) delete next[name]
+        }
+      }
+      return next
+    })
+  }
+
   /**
    * 行是**数组**（列名在 columns 里）—— dataIndex 按列名取不到，只能按**位置**取。
    *
@@ -74,9 +95,21 @@ export function DataBrowser({
 
   const columns: ColumnsType<BrowserRow> = (result?.columns ?? []).map((col, colIndex) => ({
     title: (
-      <Space direction="vertical" size={0}>
-        <span>{col.name}</span>
-        <span className="muted mono">{col.type}</span>
+      <Space direction="vertical" size={2}>
+        <Space size={6}>
+          <span>{col.name}</span>
+          <span className="muted mono">{col.type}</span>
+        </Space>
+        {/* ⚠️ 列 → 角色：自动推断只是默认值，用户能改。 */}
+        <Select
+          size="small"
+          variant="borderless"
+          value={roleOf(result?.columns ?? [], assignments, col.name)}
+          options={ROLE_OPTIONS}
+          onChange={(choice) => assign(col.name, choice)}
+          title={`${col.name} 列的角色`}
+          style={{ width: 92 }}
+        />
       </Space>
     ),
     key: col.name,
@@ -123,7 +156,15 @@ export function DataBrowser({
             scroll={{ x: 'max-content' }}
             columns={columns}
           />
-          <Button onClick={() => onUseAsMetric({ sql, columns: result.columns })}>
+          <Button
+            onClick={() =>
+              onUseAsMetric({
+                sql,
+                columns: result.columns,
+                roles: resolveRoles(result.columns, assignments),
+              })
+            }
+          >
             用这个结果建指标
           </Button>
         </>

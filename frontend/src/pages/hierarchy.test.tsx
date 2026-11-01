@@ -6,7 +6,7 @@
  */
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -227,6 +227,33 @@ describe('SourceDetailPage', () => {
       'LIMIT 100',
     )
   })
+
+  it(
+    '列指派能带进指标表单（分组列）',
+    async () => {
+      // ⚠️ 这一页的表格重绘很慢 —— 逐事件等待 + 指针检查会超时
+      const user = userEvent.setup({ delay: null, pointerEventsCheck: 0 })
+      renderPage('/sources/1', '/sources/:sourceId', <SourceDetailPage />)
+      await user.click(await screen.findByRole('button', { name: /执\s*行/ }))
+
+      // ⚠️ 页面里还有指标表 —— 只在「浏览数据」这张卡里找表头
+      const card = screen.getByText('浏览数据').closest('.ant-card') as HTMLElement
+      const headerRow = within(card).getAllByRole('row')[0]
+      const select = within(headerRow).getAllByTitle('observed_at 列的角色')[0]
+      await user.click(within(select).getByRole('combobox'))
+      await user.click(await screen.findByTitle('分组列'))
+
+      await user.click(await screen.findByRole('button', { name: '用这个结果建指标' }))
+      // ⚠️ 下拉框的隐藏 a11y 列表也有同样的 aria-label —— 只在弹窗里找
+      const dialog = within(screen.getByRole('dialog'))
+      await waitFor(() => {
+        expect((dialog.getByLabelText(/分组列/) as HTMLInputElement).value).toBe('observed_at')
+      })
+      // 被显式指派走的列不再参与自动推断 —— 时间列让位
+      expect((dialog.getByLabelText('时间列') as HTMLInputElement).value).toBe('')
+    },
+    15000,
+  )
 })
 
 describe('MetricDetailPage', () => {

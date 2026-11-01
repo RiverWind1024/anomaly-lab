@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { Button, Form, Input, Modal, Select, Space } from 'antd'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { createSource, updateSource } from '../../api/platform'
@@ -118,6 +118,17 @@ export function SourceForm({
     },
     [editing],
   )
+
+  // ⚠️ antd 的 `initialValues` **只在挂载时生效一次** —— `editing` 从 undefined
+  //    变成某个源时，antd 不会重新应用，表单会留着上一次（新增时）的空值。
+  //    这里显式把新值灌回表单。
+  //    ⚠️ 字段名与 initialValues 的结构一致（config 是嵌套的），所以直接整体传。
+  //    ⚠️ 只在弹窗打开时同步 —— 关闭时 Form 已被销毁（destroyOnClose），
+  //    这时 setFieldsValue 会触发 antd 的「form 没挂上」警告。
+  useEffect(() => {
+    if (!open) return
+    form.setFieldsValue(initialValues)
+  }, [form, initialValues, open])
 
   const save = useMutation({
     mutationFn: (payload: {

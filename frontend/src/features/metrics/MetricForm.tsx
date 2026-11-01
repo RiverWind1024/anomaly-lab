@@ -1,3 +1,4 @@
+import { useEffect, useMemo } from 'react'
 import { Form, Modal } from 'antd'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { createMetric, updateMetric } from '../../api/platform'
@@ -48,6 +49,39 @@ export function MetricForm({
   const qc = useQueryClient()
   const isEditing = Boolean(editing)
 
+  /** 表单初值 —— 编辑态与外部预填合并。 */
+  const initialFormValues = useMemo<Partial<MetricFormValues>>(
+    () =>
+      editing
+        ? { ...editingToValues(editing), ...initialValues }
+        : {
+            source_id: defaultSourceId,
+            // ⚠️ 名字与分组列也要给默认值 —— setFieldsValue 不会清掉
+            //    store 里上一次编辑留下的值
+            name: '',
+            group_column: '',
+            time_column: 'ts',
+            value_column: 'value',
+            time_format: 'iso_utc',
+            source_timezone: 'UTC',
+            missing_policy: 'drop',
+            freq: '5min',
+            query: DEFAULT_METRIC_QUERY,
+            ...initialValues,
+          },
+    [editing, defaultSourceId, initialValues],
+  )
+
+  // ⚠️ antd 的 `initialValues` **只在挂载时生效一次** —— 先开「新增」再开「编辑」，
+  //    或者浏览结果预填后再打开编辑，antd 都不会重新应用。
+  //    这里显式把新值灌回表单。
+  //    ⚠️ 只在弹窗打开时同步 —— 关闭时 Form 已被销毁（destroyOnClose），
+  //    这时 setFieldsValue 会触发 antd 的「form 没挂上」警告。
+  useEffect(() => {
+    if (!open) return
+    form.setFieldsValue(initialFormValues)
+  }, [form, initialFormValues, open])
+
   const save = useMutation({
     mutationFn: (payload: Parameters<typeof createMetric>[0]) =>
       isEditing && editing
@@ -91,21 +125,7 @@ export function MetricForm({
         form={form}
         layout="vertical"
         requiredMark="optional"
-        initialValues={
-          editing
-            ? { ...editingToValues(editing), ...initialValues }
-            : {
-                source_id: defaultSourceId,
-                time_column: 'ts',
-                value_column: 'value',
-                time_format: 'iso_utc',
-                source_timezone: 'UTC',
-                missing_policy: 'drop',
-                freq: '5min',
-                query: DEFAULT_METRIC_QUERY,
-                ...initialValues,
-              }
-        }
+        initialValues={initialFormValues}
       >
         <MetricFormFields sources={sources} />
       </Form>

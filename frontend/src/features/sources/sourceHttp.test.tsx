@@ -41,6 +41,25 @@ function renderWithQuery(node: ReactElement) {
   return render(<QueryClientProvider client={qc}>{node}</QueryClientProvider>)
 }
 
+/**
+ * 能 rerender 的版本 —— 复现「同一个页面会话里先开新增、再开编辑」。
+ *
+ * ⚠️ QueryClientProvider 必须复用同一个实例，所以把 wrapper 记下来。
+ */
+function renderRerenderable(node: ReactElement) {
+  const qc = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  })
+  const wrap = (inner: ReactElement) => (
+    <QueryClientProvider client={qc}>{inner}</QueryClientProvider>
+  )
+  const view = render(wrap(node))
+  return {
+    ...view,
+    rerenderWith: (inner: ReactElement) => view.rerender(wrap(inner)),
+  }
+}
+
 beforeEach(() => {
   calls = []
   vi.stubGlobal(
@@ -67,6 +86,51 @@ describe('HTTP 数据源表单', () => {
   it('类型是下拉框，不是自由文本', () => {
     renderWithQuery(<SourceForm open onCancel={vi.fn()} />)
     expect(screen.getByRole('combobox')).toBeTruthy()
+  })
+
+  it('先开「新增」再开「编辑」，编辑源的值要带出来', async () => {
+    // ⚠️ antd 的 initialValues 只在挂载时生效一次 ——
+    //    editing 从 undefined 变成某个源时，必须显式同步。
+    const { rerenderWith } = renderRerenderable(
+      <SourceForm open editing={null} onCancel={vi.fn()} />,
+    )
+    // 关闭新增弹窗
+    rerenderWith(<SourceForm open={false} editing={null} onCancel={vi.fn()} />)
+    // 打开编辑弹窗
+    rerenderWith(<SourceForm open editing={HTTP_SOURCE} onCancel={vi.fn()} />)
+
+    await waitFor(() => {
+      expect((screen.getByLabelText('名称') as HTMLInputElement).value).toBe('ch-http')
+    })
+    expect((screen.getByLabelText('URL') as HTMLInputElement).value).toBe(
+      'https://ch:8123/?query={sql}',
+    )
+    expect((screen.getByLabelText(/请求头/) as HTMLTextAreaElement).value).toContain('••••')
+  })
+
+  it('先开「新增」再开「编辑」，SQLite 源的路径也要带出来', async () => {
+    const { rerenderWith } = renderRerenderable(
+      <SourceForm open editing={null} onCancel={vi.fn()} />,
+    )
+    rerenderWith(<SourceForm open={false} editing={null} onCancel={vi.fn()} />)
+    rerenderWith(
+      <SourceForm
+        open
+        editing={{
+          id: 3,
+          name: 'demo-sqlite',
+          kind: 'sqlite',
+          path: 'platform/source.db',
+          created_at: '2026-10-30T00:00:00+00:00',
+        }}
+        onCancel={vi.fn()}
+      />,
+    )
+
+    await waitFor(() => {
+      expect((screen.getByLabelText('名称') as HTMLInputElement).value).toBe('demo-sqlite')
+    })
+    expect((screen.getByLabelText('路径') as HTMLInputElement).value).toBe('platform/source.db')
   })
 
   it('编辑 HTTP 源：带出原值，保存时提交完整 config', async () => {

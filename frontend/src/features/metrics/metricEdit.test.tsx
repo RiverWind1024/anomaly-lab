@@ -38,6 +38,21 @@ function renderWithQuery(node: ReactElement) {
   return render(<QueryClientProvider client={qc}>{node}</QueryClientProvider>)
 }
 
+/** 能 rerender 的版本 —— 复现「同一个会话里先开新增、再开编辑」。 */
+function renderRerenderable(node: ReactElement) {
+  const qc = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  })
+  const wrap = (inner: ReactElement) => (
+    <QueryClientProvider client={qc}>{inner}</QueryClientProvider>
+  )
+  const view = render(wrap(node))
+  return {
+    ...view,
+    rerenderWith: (inner: ReactElement) => view.rerender(wrap(inner)),
+  }
+}
+
 beforeEach(() => {
   calls = []
   vi.stubGlobal(
@@ -104,5 +119,40 @@ describe('指标编辑', () => {
       expect(JSON.parse(patch?.body ?? '{}').name).toBe('cpu2')
     })
     expect(calls.some((c) => c.method === 'POST')).toBe(false)
+  })
+
+  it('先开「新增」再开「编辑」，编辑指标的值要带出来', async () => {
+    const { rerenderWith } = renderRerenderable(
+      <MetricForm open sources={[SOURCE]} onCancel={vi.fn()} />,
+    )
+    rerenderWith(<MetricForm open={false} sources={[SOURCE]} onCancel={vi.fn()} />)
+    rerenderWith(
+      <MetricForm open editing={METRIC} sources={[SOURCE]} onCancel={vi.fn()} />,
+    )
+
+    await waitFor(() => {
+      expect((screen.getByLabelText('名称') as HTMLInputElement).value).toBe('cpu')
+    })
+    expect((screen.getByLabelText(/分组列/) as HTMLInputElement).value).toBe('host')
+  })
+
+  it('浏览结果预填后，再打开编辑 —— 编辑的值优先', async () => {
+    const { rerenderWith } = renderRerenderable(
+      <MetricForm
+        open
+        sources={[SOURCE]}
+        onCancel={vi.fn()}
+        initialValues={{ time_column: 'observed_at', value_column: 'metric_value' }}
+      />,
+    )
+    rerenderWith(<MetricForm open={false} sources={[SOURCE]} onCancel={vi.fn()} />)
+    rerenderWith(
+      <MetricForm open editing={METRIC} sources={[SOURCE]} onCancel={vi.fn()} />,
+    )
+
+    await waitFor(() => {
+      expect((screen.getByLabelText('名称') as HTMLInputElement).value).toBe('cpu')
+    })
+    expect((screen.getByLabelText('时间列') as HTMLInputElement).value).toBe('ts')
   })
 })
