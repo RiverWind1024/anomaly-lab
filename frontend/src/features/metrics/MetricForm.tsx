@@ -29,6 +29,7 @@ export function MetricForm({
   sources,
   editing,
   defaultSourceId,
+  initialValues,
   onCancel,
   onSuccess,
 }: {
@@ -38,6 +39,8 @@ export function MetricForm({
   editing?: CatalogMetric | null
   /** 新增时的默认数据源（在数据源详情页新增指标时用）。 */
   defaultSourceId?: number
+  /** 外部预填（从数据浏览器的结果建指标时用）。 */
+  initialValues?: Partial<MetricFormValues>
   onCancel: () => void
   onSuccess?: () => void
 }) {
@@ -90,18 +93,7 @@ export function MetricForm({
         requiredMark="optional"
         initialValues={
           editing
-            ? {
-                source_id: editing.source_id,
-                name: editing.name,
-                query: editing.query,
-                time_column: editing.time_column,
-                value_column: editing.value_column,
-                group_column: editing.group_column ?? '',
-                time_format: editing.time_format,
-                source_timezone: editing.source_timezone,
-                missing_policy: editing.missing_policy,
-                freq: editing.freq,
-              }
+            ? { ...editingToValues(editing), ...initialValues }
             : {
                 source_id: defaultSourceId,
                 time_column: 'ts',
@@ -111,6 +103,7 @@ export function MetricForm({
                 missing_policy: 'drop',
                 freq: '5min',
                 query: DEFAULT_METRIC_QUERY,
+                ...initialValues,
               }
         }
       >
@@ -118,4 +111,20 @@ export function MetricForm({
       </Form>
     </Modal>
   )
+}
+
+/** 编辑态 → 表单初值。 */
+function editingToValues(editing: CatalogMetric): MetricFormValues {
+  return {
+    source_id: editing.source_id,
+    name: editing.name,
+    query: editing.query,
+    time_column: editing.time_column,
+    value_column: editing.value_column,
+    group_column: editing.group_column ?? '',
+    time_format: editing.time_format,
+    source_timezone: editing.source_timezone,
+    missing_policy: editing.missing_policy,
+    freq: editing.freq,
+  }
 }

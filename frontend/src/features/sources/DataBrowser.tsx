@@ -15,6 +15,12 @@ function formatCell(value: unknown): string {
   return String(value)
 }
 
+/** 表格的一行 —— 原始行是数组，包一层是为了给 rowKey 用。 */
+interface BrowserRow {
+  key: string
+  row: unknown[]
+}
+
 /**
  * 时间边界 → ISO 字符串。
  *
@@ -58,9 +64,15 @@ export function DataBrowser({
 
   const result = run.data
 
-  // ⚠️ 行是**数组**（列名在 columns 里）—— dataIndex 按列名取不到，
-  //    只能按**位置**取。
-  const columns: ColumnsType<unknown[]> = (result?.columns ?? []).map((col, colIndex) => ({
+  /**
+   * 行是**数组**（列名在 columns 里）—— dataIndex 按列名取不到，只能按**位置**取。
+   *
+   * ⚠️ 包一层对象是为了给 rowKey 用 —— antd 的 rowKey 不接受数组行，
+   *    而 rowKey 回调的 `index` 参数已废弃。
+   */
+  const rows = (result?.rows ?? []).map((row, index) => ({ key: String(index), row }))
+
+  const columns: ColumnsType<BrowserRow> = (result?.columns ?? []).map((col, colIndex) => ({
     title: (
       <Space direction="vertical" size={0}>
         <span>{col.name}</span>
@@ -68,8 +80,8 @@ export function DataBrowser({
       </Space>
     ),
     key: col.name,
-    render: (_value: unknown, row: unknown[]) => (
-      <span className="mono">{formatCell(row[colIndex])}</span>
+    render: (_value: unknown, record: BrowserRow) => (
+      <span className="mono">{formatCell(record.row[colIndex])}</span>
     ),
   }))
 
@@ -105,8 +117,8 @@ export function DataBrowser({
           </Typography.Text>
           <Table
             size="small"
-            rowKey={(_row, index) => String(index)}
-            dataSource={result.rows}
+            rowKey="key"
+            dataSource={rows}
             pagination={false}
             scroll={{ x: 'max-content' }}
             columns={columns}

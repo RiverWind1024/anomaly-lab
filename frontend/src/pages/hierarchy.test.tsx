@@ -7,6 +7,7 @@
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SourceDetailPage } from './SourceDetailPage'
@@ -107,6 +108,19 @@ const PREVIEW = {
   ],
 }
 
+const QUERY_RESULT = {
+  columns: [
+    // ⚠️ 列名故意跟表单默认值（ts / value）不一样 ——
+    //    否则「预填生效」与「默认值」分不开，测试就是假的
+    { name: 'observed_at', type: 'TIMESTAMP' },
+    { name: 'metric_value', type: 'REAL' },
+  ],
+  rows: [['2026-10-30T09:00:00+00:00', 3.5]],
+  total: 1,
+  truncated: false,
+  elapsed_ms: 7,
+}
+
 let calls: string[] = []
 
 function renderPage(path: string, routePath: string, element: React.ReactElement) {
@@ -139,6 +153,12 @@ beforeEach(() => {
       }
       if (url.includes('/api/platform/jobs/7/preview')) {
         return new Response(JSON.stringify(PREVIEW), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (url.includes('/api/platform/sources/1/query')) {
+        return new Response(JSON.stringify(QUERY_RESULT), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         })
@@ -176,6 +196,36 @@ describe('SourceDetailPage', () => {
     renderPage('/sources/1', '/sources/:sourceId', <SourceDetailPage />)
     expect(await screen.findByText('浏览数据')).toBeTruthy()
     expect(screen.getByPlaceholderText(/SELECT/)).toBeTruthy()
+  })
+
+  it('浏览结果能一键带进指标表单', async () => {
+    const user = userEvent.setup()
+    renderPage('/sources/1', '/sources/:sourceId', <SourceDetailPage />)
+    await user.click(await screen.findByRole('button', { name: /执\s*行/ }))
+    await user.click(await screen.findByRole('button', { name: '用这个结果建指标' }))
+
+    // 列名从浏览结果里带过来：TIMESTAMP → 时间列，数值列 → 值列
+    await waitFor(() => {
+      expect((screen.getByLabelText('时间列') as HTMLInputElement).value).toBe('observed_at')
+    })
+    expect((screen.getByLabelText('值列') as HTMLInputElement).value).toBe('metric_value')
+  })
+
+  it('浏览的 SQL 不含 $timefilter 时不预填查询语句', async () => {
+    const user = userEvent.setup()
+    renderPage('/sources/1', '/sources/:sourceId', <SourceDetailPage />)
+    await user.click(await screen.findByRole('button', { name: /执\s*行/ }))
+    await user.click(await screen.findByRole('button', { name: '用这个结果建指标' }))
+
+    // ⚠️ 指标要求恰好一个 $timefilter —— 预填非法 SQL 会让用户白填一遍
+    await waitFor(() => {
+      expect((screen.getByLabelText('查询语句') as HTMLTextAreaElement).value).toContain(
+        '$timefilter',
+      )
+    })
+    expect((screen.getByLabelText('查询语句') as HTMLTextAreaElement).value).not.toContain(
+      'LIMIT 100',
+    )
   })
 })
 

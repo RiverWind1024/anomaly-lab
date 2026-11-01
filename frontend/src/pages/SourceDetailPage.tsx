@@ -8,7 +8,7 @@ import { DeleteButton } from '../features/delete/DeleteButton'
 import { DataBrowser } from '../features/sources/DataBrowser'
 import { useCatalog } from '../features/jobs/queries'
 import { useDeleteMetric } from '../features/delete/queries'
-import type { CatalogMetric } from '../api/types'
+import type { CatalogMetric, SourceQueryColumn } from '../api/types'
 
 /**
  * 数据源详情页 —— **指标的父级**。
@@ -22,6 +22,14 @@ export function SourceDetailPage() {
   const catalog = useCatalog()
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<CatalogMetric | null>(null)
+  /** 浏览器里查出来的结果 —— 用来给指标表单预填。 */
+  const [browserResult, setBrowserResult] = useState<{
+    sql: string
+    columns: SourceQueryColumn[]
+    time_column?: string
+    value_column?: string
+    time_format?: string
+  } | null>(null)
   const deleteMetric = useDeleteMetric()
 
   const source = catalog.data?.sources.find((item) => item.id === sourceId)
@@ -86,8 +94,22 @@ export function SourceDetailPage() {
     },
   ]
 
-  /** 「用这个结果建指标」—— 先把指标弹窗打开，预填在 Task 9 补。 */
-  const handleUseAsMetric = () => {
+  /**
+   * 「用这个结果建指标」—— 把浏览到的列名带进指标表单。
+   *
+   * ⚠️ 时间列只能从 TIMESTAMP 列里猜、值列从数值列里猜 ——
+   *    猜不到就留空，让用户自己填（留个错的默认值更糟）。
+   */
+  const handleUseAsMetric = (payload: { sql: string; columns: SourceQueryColumn[] }) => {
+    const time = payload.columns.find((c) => c.type === 'TIMESTAMP')
+    const numeric = payload.columns.find((c) => c.type === 'REAL' || c.type === 'INTEGER')
+    setBrowserResult({
+      sql: payload.sql,
+      columns: payload.columns,
+      time_column: time?.name,
+      value_column: numeric?.name,
+      time_format: time ? 'iso_utc' : undefined,
+    })
     setEditing(null)
     setFormOpen(true)
   }
@@ -160,9 +182,27 @@ export function SourceDetailPage() {
         open={formOpen}
         sources={catalog.data?.sources ?? []}
         editing={editing}
+        // ⚠️ 不给默认数据源的话，从浏览器建的指标「数据源」是空的
+        defaultSourceId={sourceId}
+        initialValues={
+          browserResult
+            ? {
+                // ⚠️ 只有 SQL 里带 $timefilter 才预填 query ——
+                //    指标要求恰好一个 $timefilter，预填非法 SQL 会让用户白填一遍
+                ...(browserResult.sql.includes('$timefilter')
+                  ? { query: browserResult.sql }
+                  : {}),
+                time_column: browserResult.time_column ?? '',
+                value_column: browserResult.value_column ?? '',
+                time_format: browserResult.time_format ?? 'iso_utc',
+              }
+            : undefined
+        }
         onCancel={() => {
           setFormOpen(false)
           setEditing(null)
+          // ⚠️ 清掉浏览结果 —— 否则下次打开还带着上次的预填
+          setBrowserResult(null)
         }}
       />
     </div>
