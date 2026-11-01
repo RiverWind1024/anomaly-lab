@@ -2,17 +2,21 @@
 
 from __future__ import annotations
 
+import sqlite3
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pandas as pd
 import pytest
 
-from anomaly_lab.platform.models import Metric
+from anomaly_lab.platform.models import Metric, Source
 from anomaly_lab.platform.sources.base import (
     series_from_frame,
     sql_literal,
+    time_filter_parts,
     time_literal,
 )
+from anomaly_lab.platform.sources.sqlite import SqliteConnector
 
 
 def _metric(**overrides) -> Metric:
@@ -34,6 +38,28 @@ def _metric(**overrides) -> Metric:
     return Metric(**base)
 
 
+def _create_db(root: Path) -> Path:
+    """建一个含 10 个点的 SQLite 源库。"""
+    path = root / "src.db"
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE t (ts TEXT, value REAL)")
+    conn.executemany(
+        "INSERT INTO t VALUES (?, ?)",
+        [
+            (datetime(2026, 1, 1, 0, i, tzinfo=UTC).isoformat(), float(i))
+            for i in range(10)
+        ],
+    )
+    conn.commit()
+    conn.close()
+    return path
+
+
+def _connector(path: Path, data_root: Path) -> SqliteConnector:
+    source = Source(id=1, name="s", kind="sqlite", path=str(path), created_at="")
+    return SqliteConnector(source, data_root)
+
+
 def test_empty_frame_returns_no_series():
     assert series_from_frame(pd.DataFrame(), _metric()) == []
 
@@ -48,6 +74,16 @@ def test_missing_group_column_raises():
     frame = pd.DataFrame(
         {"ts": ["2026-10-30T00:00:00+00:00"], "value": [1.0], "other": [2]}
     )
+    with pytest.raises(ValueError, match="缺少 group_column"):
+        series_from_frame(frame, _metric(group_column="host"))
+
+
+def test_missing_columns_report_group_column_first():
+    """⚠️ 检查顺序与重构前逐位等价 —— group_column 先于 value_column。
+
+    两个列同时缺失时，抛的是 group_column 那条。
+    """
+    frame = pd.DataFrame({"ts": ["2026-10-30T00:00:00+00:00"]})
     with pytest.raises(ValueError, match="缺少 group_column"):
         series_from_frame(frame, _metric(group_column="host"))
 
@@ -142,3 +178,115 @@ def test_sql_literal_quotes_strings_but_not_numbers():
 def test_time_literal_rejects_unknown_format():
     with pytest.raises(ValueError, match="不支持的 time_format"):
         time_literal(datetime(2026, 1, 1, tzinfo=UTC), "nope", "UTC")
+
+
+def test_time_literal_iso_naive_uses_source_timezone_wall_clock():
+    """`iso_naive` 渲染的是**源时区的墙钟**，不带时区后缀。"""
+    value = datetime(2026, 10, 30, 9, 38, tzinfo=UTC)
+    assert time_literal(value, "iso_naive", "Asia/Shanghai") == "2026-10-30T17:38:00"
+    assert sql_literal(value, "iso_naive", "Asia/Shanghai") == "'2026-10-30T17:38:00'"
+
+
+def test_time_filter_parts_renders_julianday_condition():
+    """SQLite 侧用 julianday() 按时间语义比较；参数是**空格**分隔的 UTC 文本。"""
+    start = datetime(2026, 10, 30, tzinfo=UTC)
+    end = datetime(2026, 10, 31, tzinfo=UTC)
+    condition, params = time_filter_parts("ts", "iso_utc", "UTC", start, end)
+    assert condition == 'julianday("ts") >= julianday(?) AND julianday("ts") < julianday(?)'
+    assert params == ("2026-10-30 00:00:00+00:00", "2026-10-31 00:00:00+00:00")
+
+
+def test_series_from_frame_does_not_mutate_input_frame():
+    """⚠️ `series_from_frame` 内部必须 `.copy()` —— 它会把时间列就地换成时间戳。
+
+    改到调用方的 frame 上，调用者手里的原始表就被污染了。
+    """
+    frame = pd.DataFrame(
+        {
+            "ts": ["2026-10-30T00:00:00+00:00", "2026-10-30T00:05:00+00:00"],
+            "value": [1.0, 2.0],
+        }
+    )
+    before = frame.copy()
+    series_from_frame(frame, _metric())
+    pd.testing.assert_frame_equal(frame, before)
+
+
+def test_group_key_none_becomes_nan_label():
+    """⚠️ pandas 的 `groupby(dropna=False)` 给的 key 是 `nan`，不是 `None`。
+
+    所以空分组值的标签是 "nan"（`str(nan)`），而不是 "null"。
+    """
+    frame = pd.DataFrame(
+        {
+            "ts": [
+                "2026-10-30T00:00:00+00:00",
+                "2026-10-30T00:00:00+00:00",
+            ],
+            "value": [1.0, 2.0],
+            "host": [None, "web-1"],
+        }
+    )
+    series = series_from_frame(frame, _metric(group_column="host"))
+    assert [item.series_id for item in series] == ["demo:nan", "demo:web-1"]
+    assert series[0].meta["group"] == "nan"
+
+
+def test_group_key_nan_becomes_nan_label():
+    frame = pd.DataFrame(
+        {
+            "ts": [
+                "2026-10-30T00:00:00+00:00",
+                "2026-10-30T00:00:00+00:00",
+            ],
+            "value": [1.0, 2.0],
+            "host": [float("nan"), "web-1"],
+        }
+    )
+    series = series_from_frame(frame, _metric(group_column="host"))
+    assert [item.series_id for item in series] == ["demo:nan", "demo:web-1"]
+    assert series[0].meta["group"] == "nan"
+
+
+# ---------- SqliteConnector ----------
+
+
+def test_connector_path_resolves_relative_against_data_root(tmp_path):
+    connector = SqliteConnector(
+        Source(id=1, name="s", kind="sqlite", path="sub/src.db", created_at=""),
+        tmp_path,
+    )
+    assert connector.path == tmp_path / "sub" / "src.db"
+
+    absolute = SqliteConnector(
+        Source(id=1, name="s", kind="sqlite", path=str(tmp_path / "x.db"), created_at=""),
+        tmp_path,
+    )
+    assert absolute.path == tmp_path / "x.db"
+
+
+def test_execute_sql_wraps_limit_and_binds_params(tmp_path):
+    connector = _connector(_create_db(tmp_path), tmp_path)
+    unbounded = connector.execute_sql("SELECT value FROM t WHERE value >= ?", params=(5.0,))
+    assert unbounded["value"].tolist() == [5.0, 6.0, 7.0, 8.0, 9.0]
+
+    limited = connector.execute_sql(
+        "SELECT value FROM t WHERE value >= ?", limit=2, params=(5.0,)
+    )
+    assert limited["value"].tolist() == [5.0, 6.0]
+
+
+def test_test_connection_detects_missing_and_corrupt_files(tmp_path):
+    missing_ok, missing_msg = _connector(tmp_path / "nope.db", tmp_path).test_connection()
+    assert missing_ok is False
+    assert "不存在" in missing_msg
+
+    good = _connector(_create_db(tmp_path), tmp_path)
+    assert good.test_connection() == (True, "连接正常")
+
+    # ⚠️ 文件存在但不是 SQLite 库 —— 不能报「连接正常」
+    broken = tmp_path / "broken.db"
+    broken.write_text("this is not a sqlite database", encoding="utf-8")
+    broken_ok, broken_msg = _connector(broken, tmp_path).test_connection()
+    assert broken_ok is False
+    assert "无法打开数据源" in broken_msg

@@ -36,7 +36,11 @@ class TimeContext:
 
 
 def _group_label(value: object) -> str:
-    """分组值的显示形式：None → "null"，空串 → "null"。"""
+    """分组值的显示形式：空串 → "null"；其余按 str() 转换。
+
+    ⚠️ pandas 的 `groupby(dropna=False)` 给的 key 是 `nan` / `<NA>`，不会是 `None`
+       —— 所以这里没有 None 的特例分支。
+    """
     text = str(value)
     return text if text else "null"
 
@@ -160,10 +164,11 @@ def series_from_frame(frame: pd.DataFrame, metric: Metric) -> list[SeriesBundle]
     """
     if frame.empty:
         return []
-    if metric.value_column not in frame.columns:
-        raise ValueError(f"查询结果缺少 value_column: {metric.value_column}")
+    # ⚠️ 检查顺序与重构前逐位等价 —— 先 group_column 再 value_column
     if metric.group_column and metric.group_column not in frame.columns:
         raise ValueError(f"查询结果缺少 group_column: {metric.group_column}")
+    if metric.value_column not in frame.columns:
+        raise ValueError(f"查询结果缺少 value_column: {metric.value_column}")
 
     frame = frame.copy()
     frame[metric.time_column] = _parse_time_column(frame, metric)

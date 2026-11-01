@@ -27,25 +27,29 @@ def _connect(path: Path) -> sqlite3.Connection:
     return sqlite3.connect(uri, uri=True)
 
 
-def fetch_sqlite_series(
-    metric: Metric,
-    source_path: Path,
-    start: datetime,
-    end: datetime,
-) -> list[SeriesBundle]:
-    """在 [start, end) 区间取数，按 group_column 拆成多条序列。"""
+def _validated_query(metric: Metric, path: Path) -> str:
+    """校验查询与列名、确认源库存在，返回去掉尾分号的查询文本。"""
     query = validate_query(metric.query)
     validate_identifier(metric.time_column, "time_column")
     validate_identifier(metric.value_column, "value_column")
     if metric.group_column:
         validate_identifier(metric.group_column, "group_column")
-    path = Path(source_path)
     if not path.exists():
         raise FileNotFoundError(f"数据源不存在: {path}")
+    return query
 
-    condition, params = time_filter_parts(
-        metric.time_column, metric.time_format, metric.source_timezone, start, end
-    )
+
+def _run_sqlite_query(
+    path: Path,
+    query: str,
+    condition: str,
+    params: tuple,
+) -> pd.DataFrame:
+    """执行指标 SQL，返回表格（方言相关的那一段）。
+
+    ⚠️ 时间条件由调用方渲染 —— 连接器走 `build_time_condition`，
+       老的 `fetch_sqlite_series` 走 `time_filter_parts`，两者语义一致。
+    """
     sql = f"SELECT * FROM ({query.replace('$timefilter', condition)}) LIMIT ?"
     with closing(_connect(path)) as conn:
         cursor = conn.execute(sql, (*params, MAX_ROWS + 1))
@@ -53,8 +57,22 @@ def fetch_sqlite_series(
         rows = cursor.fetchall()
     if len(rows) > MAX_ROWS:
         raise ValueError(f"单次查询超过 {MAX_ROWS} 行，请缩小窗口或增加聚合")
+    return pd.DataFrame(rows, columns=columns)
 
-    frame = pd.DataFrame(rows, columns=columns)
+
+def fetch_sqlite_series(
+    metric: Metric,
+    source_path: Path,
+    start: datetime,
+    end: datetime,
+) -> list[SeriesBundle]:
+    """在 [start, end) 区间取数，按 group_column 拆成多条序列。"""
+    path = Path(source_path)
+    query = _validated_query(metric, path)
+    condition, params = time_filter_parts(
+        metric.time_column, metric.time_format, metric.source_timezone, start, end
+    )
+    frame = _run_sqlite_query(path, query, condition, params)
     return series_from_frame(frame, metric)
 
 
@@ -79,6 +97,13 @@ class SqliteConnector:
     def test_connection(self) -> tuple[bool, str]:
         if not self.path.exists():
             return False, f"数据源不存在: {self.path}"
+        # ⚠️ 光看文件存在不算「连接正常」—— 真的开一次库，
+        #    否则损坏的文件会等到取数时才炸，故障被推迟。
+        try:
+            with closing(_connect(self.path)) as conn:
+                conn.execute("SELECT 1 FROM sqlite_master LIMIT 1").fetchall()
+        except sqlite3.Error as exc:
+            return False, f"无法打开数据源: {exc}"
         return True, "连接正常"
 
     def build_time_condition(self, ctx: TimeContext) -> tuple[str, tuple]:
@@ -99,8 +124,7 @@ class SqliteConnector:
 
     def fetch(self, metric: Metric, start: datetime, end: datetime) -> pd.DataFrame:
         """取 [start, end) 的数据（做 `$timefilter` 替换）。"""
-        query = validate_query(metric.query)
-        validate_identifier(metric.time_column, "time_column")
+        query = _validated_query(metric, self.path)
         condition, params = self.build_time_condition(
             TimeContext(
                 column=metric.time_column,
@@ -110,11 +134,4 @@ class SqliteConnector:
                 end=end,
             )
         )
-        sql = f"SELECT * FROM ({query.replace('$timefilter', condition)}) LIMIT ?"
-        with closing(_connect(self.path)) as conn:
-            cursor = conn.execute(sql, (*params, MAX_ROWS + 1))
-            columns = [item[0] for item in cursor.description]
-            rows = cursor.fetchall()
-        if len(rows) > MAX_ROWS:
-            raise ValueError(f"单次查询超过 {MAX_ROWS} 行，请缩小窗口或增加聚合")
-        return pd.DataFrame(rows, columns=columns)
+        return _run_sqlite_query(self.path, query, condition, params)
