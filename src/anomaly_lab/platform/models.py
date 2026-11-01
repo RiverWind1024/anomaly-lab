@@ -7,13 +7,18 @@ from dataclasses import dataclass, field
 
 @dataclass(frozen=True)
 class Source:
-    """一个数据源；第一版只有 SQLite，kind 为后续插件预留。"""
+    """一个数据源。
+
+    ⚠️ `config` 存 kind 专属参数（JSON）—— SQLite 用 `path` 列，
+       HTTP 源用 config 里的 url / method / headers / format 等。
+    """
 
     id: int
     name: str
     kind: str
     path: str
     created_at: str
+    config: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

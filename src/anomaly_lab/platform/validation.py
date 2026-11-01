@@ -17,6 +17,7 @@ _FORBIDDEN = re.compile(
 _LITERAL = re.compile(r"'(?:''|[^'])*'")
 _TIME_FORMATS = {"iso_utc", "iso_naive", "epoch_s", "epoch_ms"}
 _MISSING_POLICIES = {"drop", "interpolate", "error"}
+SUPPORTED_SOURCE_KINDS = ("sqlite", "http")
 
 
 def validate_identifier(value: str, label: str) -> None:
@@ -94,3 +95,32 @@ def validate_interval_seconds(value: int) -> int:
     if value < 10:
         raise ValueError("interval_seconds 至少为 10 秒")
     return int(value)
+
+
+def validate_kind(value: str) -> str:
+    """数据源类型。"""
+    if value not in SUPPORTED_SOURCE_KINDS:
+        raise ValueError(
+            f"不支持的数据源类型: {value!r}（可选 {list(SUPPORTED_SOURCE_KINDS)}）"
+        )
+    return value
+
+
+def validate_http_config(config: dict) -> dict:
+    """HTTP 数据源的配置。"""
+    if isinstance(config, dict):
+        url = config.get("url")
+        if not isinstance(url, str) or not url.strip():
+            raise ValueError("HTTP 数据源必须配置 url")
+        method = str(config.get("method", "GET")).upper()
+        if method not in {"GET", "POST"}:
+            raise ValueError(f"不支持的 method: {method}（可选 GET / POST）")
+        fmt = str(config.get("format", "json"))
+        if fmt not in {"json", "csv", "jsonl"}:
+            raise ValueError(f"不支持的 format: {fmt}（可选 json / csv / jsonl）")
+        timeout = config.get("timeout_seconds", 30)
+        if not isinstance(timeout, (int, float)) or timeout <= 0:
+            raise ValueError("timeout_seconds 必须是正数")
+        return config
+    # ⚠️ 抛 ValueError 而不是 TypeError —— 路由层按 ValueError 返回 400
+    raise ValueError("HTTP 数据源的 config 必须是对象")

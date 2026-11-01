@@ -51,8 +51,9 @@ MissingPolicy = Literal["drop", "interpolate", "error"]
 
 class SourceIn(BaseModel):
     name: str
-    path: str
+    path: str = ""
     kind: str = "sqlite"
+    config: dict | None = None
 
 
 class SourcePatchIn(BaseModel):
@@ -61,6 +62,7 @@ class SourcePatchIn(BaseModel):
     name: str | None = None
     path: str | None = None
     kind: str | None = None
+    config: dict | None = None
 
 
 class MetricPatchIn(BaseModel):
@@ -371,7 +373,9 @@ def build_router(
     @router.post("/api/platform/sources")
     def create_source(payload: SourceIn) -> dict:
         try:
-            source = _store().add_source(payload.name, payload.path, payload.kind)
+            source = _store().add_source(
+                payload.name, payload.path, payload.kind, payload.config or {}
+            )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return asdict(source)
@@ -385,7 +389,11 @@ def build_router(
             raise _not_found(exc) from exc
         try:
             source = store.update_source(
-                source_id, name=payload.name, path=payload.path, kind=payload.kind
+                source_id,
+                name=payload.name,
+                path=payload.path,
+                kind=payload.kind,
+                config=payload.config,
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -679,7 +687,7 @@ def build_router(
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         try:
             metric = store.get_metric(job.metric_id)
-            source = store.get_source(metric.source_id)
+            source = store.get_source_raw(metric.source_id)
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         rules = runner_module.job_rules(job)
@@ -896,7 +904,7 @@ def build_router(
         try:
             job = store.get_job(job_id)
             metric = store.get_metric(job.metric_id)
-            source = store.get_source(metric.source_id)
+            source = store.get_source_raw(metric.source_id)
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         chosen_run = run_id

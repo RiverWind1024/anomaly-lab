@@ -105,7 +105,7 @@ def _run_job(
 ) -> int:
     try:
         metric = store.get_metric(job.metric_id)
-        source = store.get_source(metric.source_id)
+        source = store.get_source_raw(metric.source_id)
         end_time = end or now or utcnow()
         start_time = start or (
             end_time - freq_delta(metric.freq) * job.window_points

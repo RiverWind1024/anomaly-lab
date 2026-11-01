@@ -9,6 +9,7 @@ import json
 import sqlite3
 from collections.abc import Iterator
 from contextlib import closing, contextmanager
+from dataclasses import replace
 from pathlib import Path
 
 from anomaly_lab.platform.alerts import (
@@ -24,8 +25,10 @@ from anomaly_lab.platform.feedback import FEEDBACK_KINDS, normalize_ts
 from anomaly_lab.platform.models import Feedback, Job, Metric, Run, Source
 from anomaly_lab.platform.timeutil import freq_delta, to_iso, utcnow
 from anomaly_lab.platform.validation import (
+    validate_http_config,
     validate_identifier,
     validate_interval_seconds,
+    validate_kind,
     validate_missing_policy,
     validate_name,
     validate_query,
@@ -41,7 +44,8 @@ CREATE TABLE IF NOT EXISTS sources (
   name TEXT NOT NULL UNIQUE,
   kind TEXT NOT NULL DEFAULT 'sqlite',
   path TEXT NOT NULL,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  config TEXT NOT NULL DEFAULT '{}'
 );
 CREATE TABLE IF NOT EXISTS metrics (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -104,6 +108,81 @@ def _pick(fields: dict, key: str, current):
     return current if value is None else value
 
 
+REDACTED = "••••"
+_SECRET_KEYS = ("token", "key", "password", "secret", "authorization")
+
+
+def _redact_url(url: str) -> str:
+    """把 URL 里的 token/key/password 参数替换成哨兵值。
+
+    ⚠️ **没有密钥参数时原样返回** —— 重新编码会把 `{sql}` 变成 `%7Bsql%7D`，
+       模板就废了。
+    """
+    from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+
+    parts = urlparse(url)
+    if not parts.query:
+        return url
+    pairs = parse_qsl(parts.query, keep_blank_values=True)
+    redacted = [
+        (key, REDACTED if key.lower() in _SECRET_KEYS else value)
+        for key, value in pairs
+    ]
+    if redacted == pairs:
+        return url
+    return urlunparse(parts._replace(query=urlencode(redacted)))
+
+
+def _redact_config(config: dict) -> dict:
+    """把 config 里的凭据替换成哨兵值。
+
+    ⚠️ 脱敏在 store 层做 —— 前端拿不到原值，
+       「保留原值」这类合并规则只能后端实现。
+    """
+    out = dict(config)
+    headers = out.get("headers")
+    if isinstance(headers, dict):
+        out["headers"] = {
+            key: (f"{str(value).split(' ', 1)[0]} {REDACTED}" if " " in str(value) else REDACTED)
+            for key, value in headers.items()
+        }
+    body = out.get("body")
+    if isinstance(body, dict):
+        out["body"] = {
+            key: (REDACTED if str(key).lower() in _SECRET_KEYS else value)
+            for key, value in body.items()
+        }
+    url = out.get("url")
+    if isinstance(url, str):
+        out["url"] = _redact_url(url)
+    return out
+
+
+def _merge_config(old: dict, new: dict) -> dict:
+    """合并配置：新值等于旧值的脱敏形式时，沿用旧值。
+
+    ⚠️ 前端拿不到原值，只能把脱敏值原样传回来 ——
+       这时必须识别出来，不能把真值覆盖成 '••••'。
+    """
+    redacted_old = _redact_config(old)
+    merged = dict(new)
+    for key in ("headers", "body"):
+        old_map = old.get(key)
+        new_map = new.get(key)
+        if not isinstance(old_map, dict) or not isinstance(new_map, dict):
+            continue
+        combined = dict(old_map)
+        for name, value in new_map.items():
+            if name in old_map and value == redacted_old.get(key, {}).get(name):
+                continue  # 脱敏值 → 保留原值
+            combined[name] = value
+        merged[key] = combined
+    url = new.get("url")
+    if isinstance(url, str) and url == redacted_old.get("url"):
+        merged["url"] = old.get("url")
+    return merged
+
+
 class PlatformStore:
     """平台元数据的唯一入口；每次操作单独开连接，天然线程安全。"""
 
@@ -151,30 +230,64 @@ class PlatformStore:
             conn.execute(
                 "ALTER TABLE jobs ADD COLUMN alert_rules TEXT NOT NULL DEFAULT '[]'"
             )
+        source_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(sources)")
+        }
+        if "config" not in source_columns:
+            conn.execute(
+                "ALTER TABLE sources ADD COLUMN config TEXT NOT NULL DEFAULT '{}'"
+            )
 
     # ---------- 数据源 ----------
 
-    def add_source(self, name: str, path: str, kind: str = "sqlite") -> Source:
+    def add_source(
+        self,
+        name: str,
+        path: str,
+        kind: str = "sqlite",
+        config: dict | None = None,
+    ) -> Source:
         name = validate_name(name, "数据源名称")
-        path = validate_name(path, "数据源路径")
+        kind = validate_kind(kind)
+        config = config or {}
+        if kind == "sqlite":
+            path = validate_name(path, "数据源路径")
+        else:  # http —— 路径对它没有意义，参数都在 config 里
+            path = path.strip()
+            validate_http_config(config)
         created_at = to_iso(utcnow())
         try:
             with self._conn() as conn:
                 cursor = conn.execute(
-                    "INSERT INTO sources (name, kind, path, created_at) VALUES (?, ?, ?, ?)",
-                    (name, kind, path, created_at),
+                    "INSERT INTO sources (name, kind, path, created_at, config) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (name, kind, path, created_at, json.dumps(config, ensure_ascii=False)),
                 )
                 source_id = int(cursor.lastrowid)
         except sqlite3.IntegrityError as exc:
             raise ValueError(f"数据源名称已存在: {name}") from exc
         return self.get_source(source_id)
 
+    @staticmethod
+    def _to_source(row: sqlite3.Row) -> Source:
+        """行 → Source。config 列是 JSON 文本，这里解成 dict。"""
+        data = dict(row)
+        raw = data.pop("config", None) or "{}"
+        data["config"] = json.loads(raw) if raw else {}
+        return Source(**data)
+
     def get_source(self, source_id: int) -> Source:
+        """取数据源（**已脱敏**）—— 给 API 用。"""
+        source = self.get_source_raw(source_id)
+        return replace(source, config=_redact_config(source.config))
+
+    def get_source_raw(self, source_id: int) -> Source:
+        """取数据源（**未脱敏**）—— 给内部逻辑用（取数、合并配置）。"""
         with self._conn() as conn:
             row = conn.execute("SELECT * FROM sources WHERE id = ?", (source_id,)).fetchone()
         if row is None:
             raise ValueError(f"数据源不存在: {source_id}")
-        return Source(**dict(row))
+        return self._to_source(row)
 
     def update_source(
         self,
@@ -183,35 +296,57 @@ class PlatformStore:
         name: str | None = None,
         path: str | None = None,
         kind: str | None = None,
+        config: dict | None = None,
     ) -> Source:
         """改数据源。只传要改的字段，其余保持原样。
 
         ⚠️ 已经跑过的运行记录不受影响 —— run 的结果早已落盘。
            改动只在**下一次**运行任务时生效。
         """
-        current = self.get_source(source_id)
+        current = self.get_source_raw(source_id)  # ⚠️ 未脱敏 —— 否则密钥会被冲掉
         new_name = validate_name(name if name is not None else current.name, "数据源名称")
-        new_path = validate_name(path if path is not None else current.path, "数据源路径")
-        new_kind = kind if kind is not None else current.kind
+        new_kind = validate_kind(kind if kind is not None else current.kind)
+        new_path = path if path is not None else current.path
+        if new_kind == "sqlite":
+            new_path = validate_name(new_path, "数据源路径")
+        else:  # http —— 路径对它没有意义，参数都在 config 里
+            new_path = new_path.strip()
+        new_config = (
+            current.config if config is None else _merge_config(current.config, config)
+        )
+        if new_kind == "http":
+            validate_http_config(new_config)
         try:
             with self._conn() as conn:
                 conn.execute(
-                    "UPDATE sources SET name = ?, path = ?, kind = ? WHERE id = ?",
-                    (new_name, new_path, new_kind, source_id),
+                    "UPDATE sources SET name = ?, path = ?, kind = ?, config = ? WHERE id = ?",
+                    (
+                        new_name,
+                        new_path,
+                        new_kind,
+                        json.dumps(new_config, ensure_ascii=False),
+                        source_id,
+                    ),
                 )
         except sqlite3.IntegrityError as exc:
             raise ValueError(f"数据源名称已存在: {new_name}") from exc
         return self.get_source(source_id)
 
     def list_sources(self) -> list[Source]:
+        """列数据源（**已脱敏**）—— `catalog` 端点走这里。"""
         with self._conn() as conn:
             rows = conn.execute("SELECT * FROM sources ORDER BY id").fetchall()
-        return [Source(**dict(row)) for row in rows]
+        sources = [self._to_source(row) for row in rows]
+        return [replace(s, config=_redact_config(s.config)) for s in sources]
 
     def find_source_by_name(self, name: str) -> Source | None:
+        """按名字找（**已脱敏**）。"""
         with self._conn() as conn:
             row = conn.execute("SELECT * FROM sources WHERE name = ?", (name,)).fetchone()
-        return Source(**dict(row)) if row is not None else None
+        if row is None:
+            return None
+        source = self._to_source(row)
+        return replace(source, config=_redact_config(source.config))
 
     # ---------- 指标 ----------
 
