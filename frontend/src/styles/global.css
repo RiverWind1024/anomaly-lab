@@ -649,6 +649,11 @@ html.theme-switching *::after {
   margin-bottom: var(--space-3);
 }
 
+/* 数据浏览器 —— 挂在数据源详情页的指标列表下方 */
+.data-browser {
+  margin-top: var(--space-4);
+}
+
 .metric-detail__config,
 .metric-detail__jobs {
   margin-bottom: var(--space-5);

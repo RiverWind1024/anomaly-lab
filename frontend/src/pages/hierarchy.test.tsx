@@ -171,6 +171,12 @@ describe('SourceDetailPage', () => {
     renderPage('/sources/99', '/sources/:sourceId', <SourceDetailPage />)
     expect(await screen.findByText('数据源不存在或已被删除')).toBeTruthy()
   })
+
+  it('挂着数据浏览器 —— 先看结构、再定指标', async () => {
+    renderPage('/sources/1', '/sources/:sourceId', <SourceDetailPage />)
+    expect(await screen.findByText('浏览数据')).toBeTruthy()
+    expect(screen.getByPlaceholderText(/SELECT/)).toBeTruthy()
+  })
 })
 
 describe('MetricDetailPage', () => {

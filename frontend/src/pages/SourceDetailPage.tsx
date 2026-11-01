@@ -5,6 +5,7 @@ import type { ColumnsType } from 'antd/es/table'
 import { StateBoundary } from '../components/StateBoundary'
 import { MetricForm } from '../features/metrics/MetricForm'
 import { DeleteButton } from '../features/delete/DeleteButton'
+import { DataBrowser } from '../features/sources/DataBrowser'
 import { useCatalog } from '../features/jobs/queries'
 import { useDeleteMetric } from '../features/delete/queries'
 import type { CatalogMetric } from '../api/types'
@@ -85,6 +86,12 @@ export function SourceDetailPage() {
     },
   ]
 
+  /** 「用这个结果建指标」—— 先把指标弹窗打开，预填在 Task 9 补。 */
+  const handleUseAsMetric = () => {
+    setEditing(null)
+    setFormOpen(true)
+  }
+
   if (catalog.data && !source) {
     return (
       <div className="page">
@@ -146,6 +153,8 @@ export function SourceDetailPage() {
           />
         )}
       </StateBoundary>
+
+      <DataBrowser sourceId={sourceId} onUseAsMetric={handleUseAsMetric} />
 
       <MetricForm
         open={formOpen}
