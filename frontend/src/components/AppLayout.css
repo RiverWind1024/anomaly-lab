@@ -9,6 +9,8 @@
   min-height: 100vh;
 }
 
+/* ---------- 侧栏 ---------- */
+
 .app-sider {
   position: sticky;
   top: 0;
@@ -16,13 +18,20 @@
   overflow: auto;
   display: flex;
   flex-direction: column;
+  background: var(--surface-panel);
+  border-right: 1px solid var(--border-subtle);
 }
+
+/* ---------- 品牌 ---------- */
 
 .app-brand {
   padding: var(--space-5) var(--space-4) var(--space-4);
 }
 
 .app-brand__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
   font-size: var(--text-lg);
   font-weight: var(--font-weight-bold);
   letter-spacing: -0.01em;
@@ -33,25 +42,185 @@
   color: var(--text-primary);
 }
 
+/* 标记用 accent —— 屏幕上唯一的品牌色 */
+.app-brand__mark {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  color: var(--accent-text);
+}
+
+.app-brand__spark {
+  fill: var(--status-p0);
+}
+
 .app-brand__dot {
   color: var(--accent-text);
 }
 
+/* ---------- 导航 ---------- */
+
 .app-sider .ant-menu {
   border-inline-end: none;
   background: transparent;
+  padding: 0 var(--space-2);
+  font-size: 14px;
 }
+
+.app-sider .ant-menu-item {
+  margin-block: 2px;
+  width: 100%;
+  color: var(--text-secondary);
+}
+
+/* 选中态：**不铺色** —— 文字变亮 + 左侧 1px accent 线（同一屏只出现一次） */
+.app-sider .ant-menu-item-selected {
+  color: var(--text-primary);
+  font-weight: var(--font-weight-medium);
+  background: transparent;
+}
+
+.app-sider .ant-menu-item-selected::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 7px;
+  bottom: 7px;
+  width: 1px;
+  background: var(--accent-text);
+}
+
+.app-sider .ant-menu-item:hover {
+  color: var(--text-primary);
+  background: transparent;
+}
+
+/* 导航上的计数 —— 只给「告警中心」这种待处理的队列 */
+.app-nav__count {
+  margin-left: 6px;
+  color: var(--status-p1);
+  font-size: 12px;
+}
+
+/* ---------- 主题切换 ---------- */
 
 .app-sider__footer {
   margin-top: auto;
-  padding: var(--space-3);
+  padding: var(--space-3) var(--space-4);
   border-top: 1px solid var(--border-subtle);
 }
+
+.app-theme {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.app-theme:hover {
+  color: var(--text-primary);
+}
+
+.app-theme__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-canvas);
+}
+
+.app-theme[aria-pressed='true'] .app-theme__dot {
+  border-color: var(--accent-text);
+  background: var(--accent-text);
+}
+
+/* ---------- 内容区 ---------- */
 
 .app-content {
   padding: var(--space-6);
   background: var(--surface-canvas);
   min-height: 100vh;
+}
+
+/* ---------- 手机顶栏（桌面端隐藏） ---------- */
+
+.app-topbar {
+  display: none;
+  align-items: center;
+  gap: var(--space-3);
+  height: 52px;
+  padding: 0 var(--space-4);
+  background: var(--surface-panel);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.app-topbar__menu {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.app-topbar__menu svg {
+  width: 18px;
+  height: 18px;
+}
+
+.app-topbar__brand {
+  font-size: var(--text-md);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: -0.01em;
+}
+
+.app-topbar__page {
+  margin-left: auto;
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+
+/* ---------- 手机导航抽屉 ---------- */
+
+.app-drawer__brand {
+  font-size: var(--text-md);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: -0.01em;
+}
+
+.app-drawer__foot {
+  margin-top: var(--space-4);
+  padding: var(--space-3) var(--space-2) 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+@media (max-width: 900px) {
+  .app-sider {
+    display: none;
+  }
+
+  .app-topbar {
+    display: flex;
+    position: sticky;
+    top: 0;
+    z-index: 20;
+  }
+
+  .app-content {
+    padding: var(--space-5);
+    min-height: 0;
+  }
 }
 
 /* 占位页 —— 骨架阶段的临时形态，真页面写完就没用了 */

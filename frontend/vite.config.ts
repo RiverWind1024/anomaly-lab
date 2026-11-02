@@ -12,7 +12,16 @@ export default defineConfig({
       // dev 时前端与 API 同源（浏览器只跟 :5173 说话），所以不需要 CORS
       '/api': { target: API_TARGET, changeOrigin: true },
     },
-  },  build: {
+  },
+  preview: {
+    // 生产构建的预览（vite preview）也要能拿到真实数据 ——
+    // 否则验收时看到的是一片「加载失败」。
+    port: 4173,
+    proxy: {
+      '/api': { target: API_TARGET, changeOrigin: true },
+    },
+  },
+  build: {
     outDir: 'dist',
     emptyOutDir: true,
     rollupOptions: {

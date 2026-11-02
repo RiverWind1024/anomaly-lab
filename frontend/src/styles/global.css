@@ -43,12 +43,15 @@ p {
 }
 
 a {
-  color: var(--accent);
+  /* ⚠️ 链接用 --accent-text（accent 的**可读版**）——
+   *    --accent 是按钮的实底色，在暗底上当文字用只有 2.8:1 */
+  color: var(--accent-text);
   text-decoration: none;
 }
 
 a:hover {
-  color: var(--accent-hover);
+  color: var(--accent-text);
+  text-decoration: underline;
 }
 
 /* 数值 / 时间戳一律等宽，便于纵向比对 */
@@ -63,7 +66,7 @@ pre {
 .page {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-5);
   max-width: var(--layout-max-width);
 }
 
@@ -579,6 +582,13 @@ html.theme-switching *::after {
 .detections-list__items {
   max-height: 60vh;
   overflow: auto;
+}
+
+@media (max-width: 900px) {
+  /* 平板/手机上：索引别霸占整屏 —— 让下面的曲线露出来，第一屏才看得到内容 */
+  .detections-list__items {
+    max-height: 34vh;
+  }
 }
 
 .detections-list__item {

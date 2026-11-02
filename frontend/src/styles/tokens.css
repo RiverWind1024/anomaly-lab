@@ -44,6 +44,7 @@
   --surface-sunken: #101012; /* 输入框等内嵌表面 */
   --border-subtle: #26262b; /* 常规描边 */
   --border-strong: #3f3f46; /* 强调描边 / focus */
+  --line-soft: #1c1c20; /* 行分隔线（表格行之间，比描边更淡） */
 
   /* ---- 文本（ink） ---- */
   --text-primary: #fafafa; /* design system: Text */
@@ -76,6 +77,12 @@
   --series-4: #c079d8;
   --series-5: #ca4994;
 
+  /* ---- 主数据元素的那一个色相 ----
+     整屏只留一个数据色（分数轨迹那条线）。它是 accent 的可读版，
+     不是新色 —— 浅色底下 --accent 太深，落在数据上不成比例。 */
+  --chart: #6da8e3;
+  --chart-fill: rgba(109, 168, 227, 0.09);
+
   /* ---- 提示条 ---- */
   --hint-bg: rgba(59, 130, 246, 0.08);
   --hint-border: rgba(59, 130, 246, 0.25);
@@ -98,11 +105,12 @@
   --surface-sunken: #ffffff;
   --border-subtle: #e2e2e5;
   --border-strong: #c7c7cd;
+  --line-soft: #ececef; /* 行分隔线 */
 
   /* ---- 文本（ink） ---- */
   --text-primary: #18181b;
   --text-secondary: #52525b;
-  --text-tertiary: #71717d;
+  --text-tertiary: #6b6b76; /* 12px 标签在浅底上也要 ≥4.5:1 */
   --text-inverse: #ffffff;
 
   /* ---- 语义色（浅底重新取值以保对比度） ---- */
@@ -112,7 +120,7 @@
   --accent-subtle: rgba(12, 92, 171, 0.1);
 
   --status-normal: #218362;
-  --status-p1: #a06a0d;
+  --status-p1: #8f5d09; /* 12px pill 文字在浅底上要 ≥4.5:1 */
   --status-p0: #ca1616;
   --status-info: #1d66af;
 
@@ -127,6 +135,10 @@
   --series-3: #6464ce;
   --series-4: #bd77d4;
   --series-5: #c74d94;
+
+  /* 主数据元素的色相（浅底取深一档） */
+  --chart: #1d66af;
+  --chart-fill: rgba(29, 102, 175, 0.08);
 
   /* ---- 提示条 ---- */
   --hint-bg: rgba(37, 99, 235, 0.06);

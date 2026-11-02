@@ -1,0 +1,594 @@
+/**
+ * 应用屏样式层 —— 自有原语 + AntD 组件覆写。
+ *
+ * 依据 design-taste-frontend 的 app-screens 规则：
+ *   - 表面是平的：1px 线分隔，不投影，不用玻璃态
+ *   - 表格是「线与对齐」：表头无底色、无斑马纹、数字右对齐且等宽
+ *   - 状态色只给状态（P0 / P1 / 正常），不给装饰
+ *   - KPI 是字，不是卡片：一个容器用 1px 分隔线切成几格
+ *   - 数字等宽、时间戳等宽、ID 等宽 —— 纵向比得准
+ *
+ * ⚠️ 颜色一律取 tokens.css 的变量，不写死色值。
+ * ⚠️ 与 design-preview/app.css 是同一套设计语言（暗色 data-terminal）。
+ */
+
+/* ============================================================
+   标题行：先给结论，再给操作
+   ============================================================ */
+
+.titlebar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-5);
+  flex-wrap: wrap;
+}
+
+.titlebar__lead {
+  min-width: 0;
+}
+
+.titlebar h1 {
+  font-size: 26px;
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+}
+
+.titlebar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  flex: none;
+}
+
+/* 发现句 —— 这一屏最该被看见的那件事 */
+.finding {
+  max-width: 62ch;
+  margin-top: 5px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.finding .mono {
+  color: var(--text-primary);
+}
+
+.finding b {
+  color: var(--text-primary);
+  font-weight: var(--font-weight-medium);
+}
+
+/* ============================================================
+   按钮（页面内的动作）
+   ============================================================ */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 34px;
+  padding: 0 13px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.btn:hover {
+  text-decoration: none;
+}
+
+.btn--primary {
+  background: var(--accent);
+  color: var(--text-inverse);
+}
+
+.btn--primary:hover {
+  background: var(--accent-hover);
+  color: var(--text-inverse);
+}
+
+.btn--ghost {
+  background: var(--surface-panel);
+  border-color: var(--border-subtle);
+  color: var(--text-secondary);
+}
+
+.btn--ghost:hover {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+}
+
+/* 行内链接 —— 比正文小一号，不抢注意力 */
+.link {
+  flex: none;
+  color: var(--accent-text);
+  font-size: 12px;
+}
+
+/* 次要信息 —— 代码、路径、说明这类，不必抢注意力 */
+.dim {
+  color: var(--text-tertiary);
+}
+
+/* 浏览数据：SQL 原文 —— 只读，看得见跑的是什么 */
+.browse__sql {
+  display: block;
+  margin-bottom: var(--space-3);
+  padding: 8px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
+  font-size: 12px;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+/* ============================================================
+   键值表 —— 事实对齐了才比得准
+   ============================================================ */
+
+.kvtable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.kvtable th {
+  text-align: left;
+  font-weight: var(--font-weight-regular);
+  color: var(--text-tertiary);
+  font-size: 12px;
+  padding: 4px 20px 4px 0;
+  white-space: nowrap;
+}
+
+.kvtable td {
+  padding: 4px 20px 4px 0;
+  color: var(--text-primary);
+  vertical-align: top;
+}
+
+.kvtable tr + tr th,
+.kvtable tr + tr td {
+  border-top: 1px solid var(--line-soft);
+}
+
+/* ============================================================
+   面板：扁平的承载面
+   ============================================================ */
+.panel {
+  padding: 18px 20px;
+  background: var(--surface-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+}
+
+.panel__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: var(--space-3);
+}
+
+.panel__title {
+  font-size: 15px;
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.3;
+}
+
+.panel__meta {
+  margin-top: 3px;
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+
+.panel__foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 16px;
+  margin-top: var(--space-2);
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+
+/* 表下一行合计 —— 表格自己的账 */
+.tfoot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid var(--line-soft);
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.tfoot b {
+  color: var(--text-secondary);
+  font-weight: var(--font-weight-medium);
+}
+
+/* ============================================================
+   KPI 条：只有字，没有卡片
+   ============================================================ */
+
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  padding: 14px 0;
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 18px;
+  min-width: 0;
+}
+
+.kpi:first-child {
+  padding-left: 0;
+}
+
+.kpi:last-child {
+  padding-right: 0;
+}
+
+.kpi + .kpi {
+  border-left: 1px solid var(--line-soft);
+}
+
+.kpi__k {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.kpi__v {
+  color: var(--text-primary);
+  font-size: 26px;
+  font-weight: var(--font-weight-medium);
+  line-height: 1.2;
+}
+
+.kpi__s {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+/* ============================================================
+   状态 pill —— 只给状态
+   ============================================================ */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  padding: 2px 5px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: var(--font-weight-medium);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+}
+
+.pill--p0 {
+  background: var(--status-p0-subtle);
+  color: var(--status-p0);
+}
+
+.pill--p1 {
+  background: var(--status-p1-subtle);
+  color: var(--status-p1);
+}
+
+.pill--ok {
+  background: var(--status-normal-subtle);
+  color: var(--status-normal);
+}
+
+/* 「自动推荐」这类中性提示，用 accent 而不是状态色 */
+.pill--auto {
+  background: var(--accent-subtle);
+  color: var(--accent-text);
+}
+
+/* ============================================================
+   分段控件（时间窗口 / 序列切换）
+   ============================================================ */
+
+.seg {
+  display: inline-flex;
+  flex: none;
+  gap: 2px;
+  padding: 2px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+}
+
+.seg button {
+  height: 26px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.seg button:hover {
+  color: var(--text-secondary);
+}
+
+.seg button[aria-selected='true'] {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+}
+
+/* ============================================================
+   两栏
+   ============================================================ */
+
+.cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+  gap: var(--space-5);
+  align-items: start;
+}
+
+/* ============================================================
+   告警事件列表
+   ============================================================ */
+
+.eventlist {
+  border-top: 1px solid var(--line-soft);
+}
+
+.event {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.event__main {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.event__series {
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.event__time {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.event__score {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+}
+
+.event__pts {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+/* ============================================================
+   表格里的规则列：过长时省略，tooltip 里看全
+   ============================================================ */
+
+.rules {
+  display: inline-block;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+/* ============================================================
+   AntD 覆写
+   ============================================================ */
+
+/* ---------- 表格：表头无底色，行间细线，数字右对齐 ---------- */
+.ant-table-wrapper .ant-table {
+  background: transparent;
+}
+
+.ant-table-thead > tr > th {
+  background: transparent !important;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: var(--font-weight-regular);
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+/* AntD 表头的分隔线伪元素 —— 去掉，否则表头下会有两条线 */
+.ant-table-thead > tr > th::before {
+  display: none !important;
+}
+
+.ant-table-tbody > tr > td {
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 13px;
+}
+
+.ant-table-tbody > tr:last-child > td {
+  border-bottom: none;
+}
+
+.ant-table-tbody > tr.ant-table-row:hover > td {
+  background: var(--surface-raised);
+}
+
+/* 固定列（操作列）要是不透明底，横向滚动时会透出下层内容 */
+.ant-table-cell-fix-right,
+.ant-table-cell-fix-left {
+  background: var(--surface-panel);
+}
+
+.ant-table-tbody > tr.ant-table-row:hover > td.ant-table-cell-fix-right,
+.ant-table-tbody > tr.ant-table-row:hover > td.ant-table-cell-fix-left {
+  background: var(--surface-raised);
+}
+
+/* ---------- 分页器 ---------- */
+.ant-pagination {
+  margin: var(--space-3) 0 0;
+}
+
+.ant-pagination .ant-pagination-item,
+.ant-pagination .ant-pagination-prev,
+.ant-pagination .ant-pagination-next {
+  font-size: 13px;
+}
+
+/* ---------- 卡片：扁平面，不投影 ---------- */
+.ant-card {
+  background: var(--surface-panel);
+  border: 1px solid var(--border-subtle);
+  box-shadow: none; /* taste-skill-ignore —— 这里是在**去掉**投影 */
+}
+
+.ant-card .ant-card-head {
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 15px;
+  font-weight: var(--font-weight-semibold);
+}
+
+/* ---------- 按钮：34px 高，6px 圆角 ---------- */
+.ant-btn {
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.ant-btn-sm {
+  font-size: 12px;
+}
+
+/* ---------- 表格里的次级操作按钮：像文字，不是像按钮 ---------- */
+.ant-btn-link,
+.ant-btn-text {
+  padding-inline: 6px;
+}
+
+/* ---------- 输入类控件高度统一 ---------- */
+.ant-select-selector,
+.ant-picker,
+.ant-input,
+.ant-input-affix-wrapper {
+  border-radius: 6px !important;
+}
+
+/* ---------- 表单控件的字号：正文 13px ---------- */
+.ant-select-selection-item,
+.ant-select-selection-placeholder,
+.ant-select-arrow,
+.ant-input,
+.ant-input-affix-wrapper,
+.ant-picker,
+.ant-picker-input input {
+  font-size: 13px;
+}
+
+/* 列表项（检测记录的左栏索引） */
+.ant-list-item {
+  font-size: 13px;
+}
+
+/* ---------- 空态：留框、说实话 ---------- */
+.ant-empty-description {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+/* ---------- 提示条：不用图标色块 ---------- */
+.ant-alert {
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+/* ---------- 抽屉（手机导航 / 告警详情） ---------- */
+.ant-drawer .ant-drawer-body {
+  background: var(--surface-panel);
+}
+
+/* ---------- 标签页 ---------- */
+/* ⚠️ AntD 用一层文字光晕假装下划线 —— 去掉，靠那条 1px 的线自己说话。
+   AntD 的样式是运行时注入的，所以要同等权重 + !important 才压得住。 */
+.ant-tabs .ant-tabs-tab.ant-tabs-tab-active .ant-tabs-tab-btn {
+  text-shadow: none !important; /* taste-skill-ignore —— 这里是在**去掉**光晕 */
+}
+
+.ant-tabs-tab {
+  font-size: 13px;
+}
+
+/* ============================================================
+   响应式
+   ============================================================ */
+
+@media (max-width: 1180px) {
+  .kpis {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    row-gap: var(--space-4);
+  }
+
+  .kpi:nth-child(4) {
+    padding-left: 0;
+    border-left: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .kpi:nth-child(3n + 1) {
+    padding-left: 0;
+    border-left: none;
+  }
+
+  .kpi__v {
+    font-size: 22px;
+  }
+
+  .panel {
+    padding: 14px 14px;
+  }
+
+  .titlebar h1 {
+    font-size: 22px;
+  }
+}

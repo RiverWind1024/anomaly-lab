@@ -41,6 +41,12 @@ export function buildAntdTheme(mode: ThemeMode): ThemeConfig {
       fontFamilyCode: readToken('--font-mono', 'ui-monospace, monospace'),
       borderRadius: Number.parseFloat(readToken('--radius-md', '8px')) || 8,
       borderRadiusLG: Number.parseFloat(readToken('--radius-lg', '12px')) || 12,
+      // ⚠️ **不要**把 AntD 的 fontSize 设成 13 ——
+      //    AntD 的字号刻度是从它派生的（`fontSizeSM = fontSize - 3`），
+      //    设成 13 会让「小号」那一档掉到 10px（Tag、small 按钮全变 10px）。
+      //    正文 13px 由 ui.css 的组件覆写负责。
+      controlHeight: 32,
+      lineHeight: 1.5,
     },
     components: {
       Layout: {
@@ -53,26 +59,64 @@ export function buildAntdTheme(mode: ThemeMode): ThemeConfig {
         // 这里把两套都按 token 覆盖 —— 侧栏在两个主题下都用同一套表面色。
         itemBg: readToken('--surface-panel', '#111113'),
         subMenuItemBg: readToken('--surface-panel', '#111113'),
-        itemSelectedBg: readToken('--accent-subtle', 'rgba(12, 92, 171, 0.24)'),
+        // 选中态：**不铺色**，靠文字变亮 + 左侧 1px accent 线标记（见 AppLayout.css）
+        itemSelectedBg: 'transparent',
         itemSelectedColor: readToken('--text-primary', '#fafafa'),
         itemColor: readToken('--text-secondary', '#a1a1aa'),
-        itemHoverBg: readToken('--surface-raised', '#1a1a1e'),
+        itemHoverBg: 'transparent',
         itemHoverColor: readToken('--text-primary', '#fafafa'),
-        itemBorderRadius: Number.parseFloat(readToken('--radius-md', '8px')) || 8,
+        itemBorderRadius: 6,
+        itemHeight: 34,
+        itemMarginInline: 0,
+        iconMarginInlineEnd: 10,
         // 暗色侧栏专用的 dark* 键（Menu theme="dark" 时生效）
         darkItemBg: 'transparent',
         darkSubMenuItemBg: 'transparent',
-        darkItemSelectedBg: readToken('--accent-subtle', 'rgba(12, 92, 171, 0.24)'),
+        darkItemSelectedBg: 'transparent',
         darkItemSelectedColor: readToken('--text-primary', '#fafafa'),
         darkItemColor: readToken('--text-secondary', '#a1a1aa'),
-        darkItemHoverBg: readToken('--surface-raised', '#1a1a1e'),
+        darkItemHoverBg: 'transparent',
         darkItemHoverColor: readToken('--text-primary', '#fafafa'),
       },
       Table: {
-        headerBg: readToken('--surface-raised', '#1a1a1e'),
+        // ⚠️ 表头**不铺底色** —— 表头只有 12px 的灰字 + 一条线（app-screens §7.2）
+        headerBg: 'transparent',
         headerColor: readToken('--text-secondary', '#a1a1aa'),
-        rowHoverBg: readToken('--surface-raised', '#1a1a1e'),
+        headerSplitColor: 'transparent',
         borderColor: readToken('--border-subtle', '#26262b'),
+        rowHoverBg: readToken('--surface-raised', '#1a1a1e'),
+        cellPaddingBlock: 11,
+        cellPaddingInline: 12,
+        cellPaddingBlockSM: 9,
+        cellPaddingInlineSM: 12,
+        headerBorderRadius: 0,
+      },
+      Card: {
+        colorBorderSecondary: readToken('--border-subtle', '#26262b'),
+        borderRadiusLG: 6,
+        headerHeight: 46,
+        headerFontSize: 15,
+      },
+      Tag: {
+        // 状态标签统一走 .pill（见 ui.css），AntD 的 Tag 只留给中性用途
+        defaultBg: 'transparent',
+        defaultColor: readToken('--text-secondary', '#a1a1aa'),
+        borderRadiusSM: 4,
+      },
+      Button: {
+        borderRadius: 6,
+        controlHeight: 32,
+        fontSize: 13,
+        defaultBg: readToken('--surface-panel', '#111113'),
+        defaultBorderColor: readToken('--border-subtle', '#26262b'),
+        defaultShadow: 'none',
+        primaryShadow: 'none',
+      },
+      Select: {
+        optionSelectedBg: readToken('--accent-subtle', 'rgba(12, 92, 171, 0.24)'),
+      },
+      Drawer: {
+        colorBgElevated: readToken('--surface-panel', '#111113'),
       },
     },
   }
