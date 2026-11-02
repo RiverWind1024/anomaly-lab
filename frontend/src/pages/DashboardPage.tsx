@@ -291,9 +291,7 @@ function RetentionCard() {
               </span>
               <span>
                 <span className="muted">保留策略</span>
-                <span className="mono">
-                  最近 {data.policy.max_runs_per_job} 次 / {data.policy.max_age_hours} 小时
-                </span>
+                <span className="mono">最近 {data.policy.retention_days} 天</span>
               </span>
               <span>
                 <span className="muted">上次清理</span>

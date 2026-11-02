@@ -1,10 +1,12 @@
 """数据保留与清理策略。
 
-⚠️ 三条**功能性**约束 —— 破坏任何一条都不是「清理过头」，是**功能坏了**：
+保留期只有**一个维度：时间**。这里守的是两条**功能性**约束 ——
+破坏任何一条都不是「清理过头」，是**功能坏了**：
 
 1. 最新一次运行永远保留（告警中心只读最新 run）；
-2. 正在执行的运行不删（删了它的目录，runner 写文件会失败）；
-3. 人工反馈不删（那是人工数据），只把引用断开。
+2. 正在执行的运行不删（删了它的目录，runner 写文件会失败）。
+
+以及一条**人工数据**约束：人工反馈不删，只把引用断开。
 """
 
 from __future__ import annotations
@@ -15,8 +17,7 @@ from pathlib import Path
 import pytest
 
 from anomaly_lab.platform.retention import (
-    DEFAULT_MAX_AGE_HOURS,
-    DEFAULT_MAX_RUNS_PER_JOB,
+    DEFAULT_RETENTION_DAYS,
     RetentionPolicy,
     prune,
     select_prunable_runs,
@@ -56,14 +57,15 @@ def _add_run(
     store: PlatformStore,
     job_id: int,
     *,
-    age_hours: float = 0.0,
+    age_days: float = 0.0,
     with_dir: bool = False,
     data_root: Path | None = None,
+    size_bytes: int = 0,
 ) -> int:
-    """造一次运行记录（可指定「多久之前」），可选带上它的结果目录。"""
+    """造一次运行记录（可指定「多少天之前」），可选带上它的结果目录。"""
     run = store.create_run(job_id)
     store.finish_run(run.id, "success", n_series=1, n_alerts=0)
-    started = utcnow() - timedelta(hours=age_hours)
+    started = utcnow() - timedelta(days=age_days)
     with store._conn() as conn:
         conn.execute(
             "UPDATE runs SET started_at = ? WHERE id = ?", (to_iso(started), run.id)
@@ -72,50 +74,53 @@ def _add_run(
         target = run_dir(data_root, run.id)
         target.mkdir(parents=True, exist_ok=True)
         (target / "index.json").write_text("{}", encoding="utf-8")
-        (target / "a.npz").write_bytes(b"x" * 128)
+        (target / "a.npz").write_bytes(b"x" * size_bytes)
     return run.id
 
 
-# ---------- 纯函数：保留窗口 ----------
+# ---------- 纯函数：保留期 ----------
 
 
-def test_prunable_respects_run_count_limit(tmp_path):
-    """次数上限：保留最近 N 次，其余待删。"""
+def test_expired_runs_are_prunable(tmp_path):
+    """超过保留期的待删。"""
     store, job_id = _make_store(tmp_path)
-    ids = [_add_run(store, job_id) for _ in range(5)]
-    runs = store.all_runs()  # all_runs 已经是 id 倒序（新的在前）
+    old = _add_run(store, job_id, age_days=200)
+    fresh = _add_run(store, job_id, age_days=10)
+    runs = store.all_runs()  # id 倒序
 
     prunable = select_prunable_runs(
-        runs, RetentionPolicy(max_age_hours=999, max_runs_per_job=2), now=utcnow()
-    )
-    assert set(prunable) == set(ids[:-2])
-
-
-def test_prunable_respects_age_window(tmp_path):
-    """时间窗口：超过保留时长的待删。"""
-    store, job_id = _make_store(tmp_path)
-    old = _add_run(store, job_id, age_hours=48)
-    fresh = _add_run(store, job_id, age_hours=1)
-    runs = store.all_runs()
-
-    prunable = select_prunable_runs(
-        runs, RetentionPolicy(max_age_hours=24, max_runs_per_job=100), now=utcnow()
+        runs, RetentionPolicy(retention_days=180), now=utcnow()
     )
     assert prunable == [old]
     assert fresh not in prunable
 
 
-def test_prunable_keeps_latest_run_even_when_expired(tmp_path):
-    """⚠️ 最新一次**永远**保留 —— 告警中心只读最新 run，删了它整个页面就空了。
-
-    这是功能破坏，不是「清理过头」。
-    """
+def test_runs_within_retention_are_kept(tmp_path):
+    """保留期内的**一条都不删** —— 没有「条数上限」那一说。"""
     store, job_id = _make_store(tmp_path)
-    latest = _add_run(store, job_id, age_hours=999)
+    for _ in range(50):
+        _add_run(store, job_id, age_days=1)
     runs = store.all_runs()
 
     prunable = select_prunable_runs(
-        runs, RetentionPolicy(max_age_hours=1, max_runs_per_job=1), now=utcnow()
+        runs, RetentionPolicy(retention_days=180), now=utcnow()
+    )
+    assert prunable == []
+
+
+def test_prunable_keeps_latest_run_even_when_expired(tmp_path):
+    """⚠️ 最新一次**永远**保留 —— 告警中心只读最新 run，删了它整个页面就空了。
+
+    这在「任务停了半年、你打开平台看告警」时是刚需：
+    那个任务不会再产生新运行，清理每轮都会把最后一条删掉，
+    告警中心就**永久**空了。
+    """
+    store, job_id = _make_store(tmp_path)
+    latest = _add_run(store, job_id, age_days=999)
+    runs = store.all_runs()
+
+    prunable = select_prunable_runs(
+        runs, RetentionPolicy(retention_days=1), now=utcnow()
     )
     assert latest not in prunable
 
@@ -130,13 +135,13 @@ def test_prunable_skips_inflight_run(tmp_path):
        进程 2 不知道、又起了 run 101。
     """
     store, job_id = _make_store(tmp_path)
-    oldest = _add_run(store, job_id, age_hours=48)
-    _add_run(store, job_id, age_hours=0.5)
-    _add_run(store, job_id, age_hours=0)
+    oldest = _add_run(store, job_id, age_days=200)
+    _add_run(store, job_id, age_days=100)
+    _add_run(store, job_id, age_days=0)
     runs = store.all_runs()  # id 倒序
 
-    policy = RetentionPolicy(max_age_hours=1, max_runs_per_job=2)
-    # 不保护时：最老的那次会因数量上限被删
+    policy = RetentionPolicy(retention_days=180)
+    # 不保护时：最老的那次会超保留期
     assert select_prunable_runs(runs, policy, now=utcnow()) == [oldest]
 
     # 保护它 → 不删
@@ -150,14 +155,14 @@ def test_prunable_window_boundary_is_inclusive(tmp_path):
     now = utcnow()
     run = store.create_run(job_id)
     store.finish_run(run.id, "success")
-    exact = now - timedelta(hours=24)
+    exact = now - timedelta(days=30)
     with store._conn() as conn:
         conn.execute(
             "UPDATE runs SET started_at = ? WHERE id = ?", (to_iso(exact), run.id)
         )
     runs = store.all_runs()
     prunable = select_prunable_runs(
-        runs, RetentionPolicy(max_age_hours=24, max_runs_per_job=100), now=now
+        runs, RetentionPolicy(retention_days=30), now=now
     )
     assert prunable == []
 
@@ -166,17 +171,14 @@ def test_prunable_window_boundary_is_inclusive(tmp_path):
 
 
 def test_prune_deletes_rows_and_dirs(tmp_path):
-    """超窗的运行：DB 行与结果目录一起清掉。"""
+    """超保留期的运行：DB 行与结果目录一起清掉。"""
     store, job_id = _make_store(tmp_path)
     data_root = tmp_path / "data"
-    old = _add_run(store, job_id, age_hours=48, with_dir=True, data_root=data_root)
-    _add_run(store, job_id, age_hours=1, with_dir=True, data_root=data_root)
+    old = _add_run(store, job_id, age_days=200, with_dir=True, data_root=data_root)
+    _add_run(store, job_id, age_days=1, with_dir=True, data_root=data_root)
 
     result = prune(
-        store,
-        data_root,
-        RetentionPolicy(max_age_hours=24, max_runs_per_job=100),
-        now=utcnow(),
+        store, data_root, RetentionPolicy(retention_days=180), now=utcnow()
     )
     assert result.deleted_runs == 1
     assert result.deleted_dirs == 1
@@ -193,8 +195,8 @@ def test_prune_keeps_feedback_but_detaches_reference(tmp_path):
     """
     store, job_id = _make_store(tmp_path)
     data_root = tmp_path / "data"
-    old = _add_run(store, job_id, age_hours=48)
-    _add_run(store, job_id, age_hours=1)
+    old = _add_run(store, job_id, age_days=200)
+    _add_run(store, job_id, age_days=1)
     store.add_feedback(
         job_id=job_id,
         run_id=old,
@@ -204,12 +206,7 @@ def test_prune_keeps_feedback_but_detaches_reference(tmp_path):
         kind="false_alarm",
     )
 
-    prune(
-        store,
-        data_root,
-        RetentionPolicy(max_age_hours=24, max_runs_per_job=100),
-        now=utcnow(),
-    )
+    prune(store, data_root, RetentionPolicy(retention_days=180), now=utcnow())
     feedback = store.list_feedback(job_id)
     assert len(feedback) == 1, "人工反馈不该被自动删掉"
     assert feedback[0].run_id is None, "引用断了，但反馈本身要留着"
@@ -244,11 +241,11 @@ def test_prune_dry_run_changes_nothing(tmp_path):
     """`--dry-run` 只报告，不动任何东西。"""
     store, job_id = _make_store(tmp_path)
     data_root = tmp_path / "data"
-    old = _add_run(store, job_id, age_hours=48, with_dir=True, data_root=data_root)
-    _add_run(store, job_id, age_hours=1)
+    old = _add_run(store, job_id, age_days=200, with_dir=True, data_root=data_root)
+    _add_run(store, job_id, age_days=1)
 
     result = prune(
-        store, data_root, RetentionPolicy(max_age_hours=24), now=utcnow(), dry_run=True
+        store, data_root, RetentionPolicy(retention_days=180), now=utcnow(), dry_run=True
     )
     assert result.deleted_runs == 1
     assert result.freed_bytes > 0
@@ -256,32 +253,62 @@ def test_prune_dry_run_changes_nothing(tmp_path):
     assert len(store.all_runs()) == 2, "dry-run 不该删 DB 行"
 
 
-def test_prune_enforces_run_limit_over_many_runs(tmp_path):
-    """造 300 次运行 → 清完每任务保留数 ≤ 上限。"""
+def test_prune_keeps_everything_within_retention(tmp_path):
+    """⚠️ 没有「条数上限」—— 保留期内的**一条都不删**。
+
+    这是简化保留策略的核心承诺：配 180 天就是留 180 天。
+    """
     store, job_id = _make_store(tmp_path)
     data_root = tmp_path / "data"
     for _ in range(300):
-        _add_run(store, job_id, age_hours=0.1, with_dir=True, data_root=data_root)
+        _add_run(store, job_id, age_days=1, with_dir=True, data_root=data_root)
 
-    prune(
-        store,
-        data_root,
-        RetentionPolicy(max_age_hours=999, max_runs_per_job=10),
-        now=utcnow(),
-    )
-    assert len(store.all_runs()) == 10
-    dirs = list(run_dir(data_root, 0).parent.iterdir())
-    assert len(dirs) == 10, "目录也要跟着清"
+    prune(store, data_root, RetentionPolicy(retention_days=180), now=utcnow())
+    assert len(store.all_runs()) == 300
+
+
+def test_disk_cap_catches_high_frequency_jobs(tmp_path, monkeypatch):
+    """⚠️ 磁盘上限兜底 —— 任务频率太高时，「保留 180 天」会撑爆磁盘。
+
+    保留期永远优先，但兜不住时宁可少留 —— **平台不能因为磁盘写满而崩掉**。
+    触发时要在结果里说出来，不藏着。
+    """
+    monkeypatch.setattr("anomaly_lab.platform.retention.MAX_BYTES_PER_JOB", 1024)
+    store, job_id = _make_store(tmp_path)
+    data_root = tmp_path / "data"
+    for _ in range(5):
+        _add_run(
+            store, job_id, age_days=1, with_dir=True, data_root=data_root, size_bytes=512
+        )
+
+    result = prune(store, data_root, RetentionPolicy(retention_days=180), now=utcnow())
+    assert result.disk_capped_jobs == [job_id], "触发了上限就要说出来"
+    assert result.deleted_runs > 0, "超上限的最老的那些要被删"
+    # 最新一次永远保留
+    assert len(store.all_runs()) >= 1
+
+
+def test_disk_cap_does_not_trigger_within_budget(tmp_path, monkeypatch):
+    """占用没超上限时**不额外删** —— 保留期是唯一的策略。"""
+    monkeypatch.setattr("anomaly_lab.platform.retention.MAX_BYTES_PER_JOB", 1024**3)
+    store, job_id = _make_store(tmp_path)
+    data_root = tmp_path / "data"
+    for _ in range(5):
+        _add_run(store, job_id, age_days=1, with_dir=True, data_root=data_root)
+
+    result = prune(store, data_root, RetentionPolicy(retention_days=180), now=utcnow())
+    assert result.disk_capped_jobs == []
+    assert result.deleted_runs == 0
 
 
 def test_prune_records_state(tmp_path):
     """清理状态写进库里 —— 「上次清理时间」要跨进程可见。"""
     store, job_id = _make_store(tmp_path)
     data_root = tmp_path / "data"
-    _add_run(store, job_id, age_hours=48)
-    _add_run(store, job_id, age_hours=1)
+    _add_run(store, job_id, age_days=200)
+    _add_run(store, job_id, age_days=1)
 
-    prune(store, data_root, RetentionPolicy(max_age_hours=24), now=utcnow())
+    prune(store, data_root, RetentionPolicy(retention_days=180), now=utcnow())
     state = store.get_retention_state()
     assert state["pruned_at"] is not None
     assert state["deleted_runs"] == 1
@@ -291,21 +318,20 @@ def test_prune_protects_inflight_run(tmp_path, monkeypatch):
     """端到端：正在执行的 run 不会被清掉。
 
     ⚠️ 同样要把「正在执行的那次」设成**不是最新的一次** ——
-       否则测的是 D84（最新保留），不是 D85。
+       否则测的是「最新保留」，不是「正在执行不删」。
     """
     store, job_id = _make_store(tmp_path)
     data_root = tmp_path / "data"
-    running = _add_run(store, job_id, age_hours=48, with_dir=True, data_root=data_root)
-    _add_run(store, job_id, age_hours=0.5)
-    _add_run(store, job_id, age_hours=0)
+    running = _add_run(
+        store, job_id, age_days=200, with_dir=True, data_root=data_root
+    )
+    _add_run(store, job_id, age_days=100)
+    _add_run(store, job_id, age_days=0)
     monkeypatch.setattr(
         "anomaly_lab.platform.retention.inflight_run_ids", lambda: {running}
     )
 
-    prune(
-        store, data_root, RetentionPolicy(max_age_hours=1, max_runs_per_job=2),
-        now=utcnow(),
-    )
+    prune(store, data_root, RetentionPolicy(retention_days=180), now=utcnow())
     assert run_dir(data_root, running).exists()
     assert running in {run.id for run in store.all_runs()}
 
@@ -314,26 +340,25 @@ def test_prune_protects_inflight_run(tmp_path, monkeypatch):
 
 
 def test_policy_from_env(monkeypatch):
-    monkeypatch.setenv("ANOMALY_LAB_RETENTION_HOURS", "3")
-    monkeypatch.setenv("ANOMALY_LAB_RETENTION_MAX_RUNS", "7")
+    monkeypatch.setenv("ANOMALY_LAB_RETENTION_DAYS", "30")
     policy = RetentionPolicy.from_env()
-    assert policy.max_age_hours == 3
-    assert policy.max_runs_per_job == 7
+    assert policy.retention_days == 30
 
 
 def test_policy_from_env_falls_back_on_garbage(monkeypatch):
     """非法值回落到默认值 —— 不能因为一个环境变量写错就整个平台起不来。"""
-    monkeypatch.setenv("ANOMALY_LAB_RETENTION_HOURS", "不是数字")
-    monkeypatch.setenv("ANOMALY_LAB_RETENTION_MAX_RUNS", "-5")
+    monkeypatch.setenv("ANOMALY_LAB_RETENTION_DAYS", "不是数字")
     policy = RetentionPolicy.from_env()
-    assert policy.max_age_hours == DEFAULT_MAX_AGE_HOURS
-    assert policy.max_runs_per_job == DEFAULT_MAX_RUNS_PER_JOB
+    assert policy.retention_days == DEFAULT_RETENTION_DAYS
 
 
-def test_policy_defaults():
-    policy = RetentionPolicy()
-    assert policy.max_age_hours == DEFAULT_MAX_AGE_HOURS
-    assert policy.max_runs_per_job == DEFAULT_MAX_RUNS_PER_JOB
+def test_policy_from_env_falls_back_on_negative(monkeypatch):
+    monkeypatch.setenv("ANOMALY_LAB_RETENTION_DAYS", "-5")
+    assert RetentionPolicy.from_env().retention_days == DEFAULT_RETENTION_DAYS
+
+
+def test_policy_default():
+    assert RetentionPolicy().retention_days == DEFAULT_RETENTION_DAYS
 
 
 # ---------- 占用统计 ----------
@@ -345,18 +370,12 @@ def test_storage_usage_reports_disk_and_policy(tmp_path):
     _add_run(store, job_id, with_dir=True, data_root=data_root)
 
     usage = storage_usage(store, data_root, RetentionPolicy())
-    assert usage["policy"]["max_runs_per_job"] == DEFAULT_MAX_RUNS_PER_JOB
+    assert usage["policy"]["retention_days"] == DEFAULT_RETENTION_DAYS
     assert usage["runs"]["kept"] == 1
     assert usage["runs"]["n_dirs"] == 1
     assert usage["runs"]["bytes"] > 0
     assert usage["database"]["bytes"] > 0
     assert usage["last_pruned_at"] is None
-
-
-@pytest.mark.parametrize("hours", [0.5, 24])
-def test_policy_age_window_accepts_fractional_hours(hours):
-    """保留时长允许小数小时。"""
-    assert RetentionPolicy(max_age_hours=hours).max_age_hours == hours
 
 
 def test_prune_handles_empty_store(tmp_path):
@@ -370,13 +389,13 @@ def test_prune_handles_empty_store(tmp_path):
 def test_now_can_be_injected(tmp_path):
     """`now` 可注入 —— 判定必须可复现，不能依赖真实时钟。"""
     store, job_id = _make_store(tmp_path)
-    old = _add_run(store, job_id, age_hours=48)
-    _add_run(store, job_id, age_hours=0)
-    future = utcnow() + timedelta(hours=72)
-    prune(
-        store,
-        tmp_path / "data",
-        RetentionPolicy(max_age_hours=24),
-        now=future,
-    )
+    old = _add_run(store, job_id, age_days=200)
+    _add_run(store, job_id, age_days=0)
+    future = utcnow() + timedelta(days=365)
+    prune(store, tmp_path / "data", RetentionPolicy(retention_days=180), now=future)
     assert old not in {run.id for run in store.all_runs()}
+
+
+@pytest.mark.parametrize("days", [1, 30, 365])
+def test_policy_accepts_any_day_count(days):
+    assert RetentionPolicy(retention_days=days).retention_days == days

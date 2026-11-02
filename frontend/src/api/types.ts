@@ -214,10 +214,9 @@ export interface Overview {
 
 // ─────────────────────────────────────────── 存储与保留 /api/platform/storage
 
-/** 保留策略 —— 「最近 N 次」∩「最近 T 小时」。 */
+/** 保留策略 —— 只有一个维度：保留多少天。 */
 export interface RetentionPolicyInfo {
-  max_age_hours: number
-  max_runs_per_job: number
+  retention_days: number
 }
 
 export interface StorageUsage {
@@ -253,6 +252,13 @@ export interface PruneResult {
   freed_bytes: number
   kept_runs: number
   dry_run: boolean
+  /**
+   * 触发了磁盘上限兜底的任务 —— 它们的实际保留期比配置的短。
+   *
+   * ⚠️ 保留期永远优先，但任务频率太高时磁盘会撑不住，
+   *    这时候宁可少留也不能让平台崩掉。触发了要让人知道。
+   */
+  disk_capped_jobs: number[]
   /** 清理后的最新占用 —— 少发一次请求。 */
   storage?: StorageUsage
 }

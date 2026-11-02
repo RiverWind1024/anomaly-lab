@@ -97,14 +97,14 @@ def test_start_and_stop_are_idempotent(tmp_path):
 # ---------- 自动清理 ----------
 
 
-def _expired_run(store, job_id, *, age_hours: float):
-    """造一次「已经超出保留窗口」的运行记录。"""
+def _expired_run(store, job_id, *, age_days: float):
+    """造一次「已经超出保留期」的运行记录。"""
     run = store.create_run(job_id)
     store.finish_run(run.id, "success", n_series=1, n_alerts=0)
     with store._conn() as conn:
         conn.execute(
             "UPDATE runs SET started_at = ? WHERE id = ?",
-            (to_iso(utcnow() - timedelta(hours=age_hours)), run.id),
+            (to_iso(utcnow() - timedelta(days=age_days)), run.id),
         )
     return run.id
 
@@ -117,11 +117,11 @@ def test_tick_prunes_expired_runs(tmp_path, monkeypatch):
     ⚠️ 超窗的那条**不能是最新的一次** —— 最新的一次永远保留
        （告警中心只读它）。所以先造老的、再造一条新的。
     """
-    monkeypatch.setenv("ANOMALY_LAB_RETENTION_HOURS", "24")
+    monkeypatch.setenv("ANOMALY_LAB_RETENTION_DAYS", "180")
     store = PlatformStore(tmp_path / "platform.db")
     job = _job(store)
-    expired = _expired_run(store, job.id, age_hours=48)
-    _expired_run(store, job.id, age_hours=0)
+    expired = _expired_run(store, job.id, age_days=200)
+    _expired_run(store, job.id, age_days=0)
 
     scheduler = Scheduler(store, tmp_path, runner=_recorder([]))
     scheduler.tick(now=utcnow())
@@ -133,11 +133,11 @@ def test_prune_is_throttled(tmp_path, monkeypatch):
     """⚠️ 清理要**节流** —— tick 默认每 2 秒一次，每次都全表扫描太浪费。"""
     from anomaly_lab.platform import retention
 
-    monkeypatch.setenv("ANOMALY_LAB_RETENTION_HOURS", "24")
+    monkeypatch.setenv("ANOMALY_LAB_RETENTION_DAYS", "180")
     store = PlatformStore(tmp_path / "platform.db")
     job = _job(store)
-    _expired_run(store, job.id, age_hours=48)
-    _expired_run(store, job.id, age_hours=0)
+    _expired_run(store, job.id, age_days=200)
+    _expired_run(store, job.id, age_days=0)
 
     calls: list[int] = []
     real_prune = retention.prune
@@ -160,11 +160,11 @@ def test_prune_is_throttled(tmp_path, monkeypatch):
 
 def test_prune_can_be_disabled(tmp_path, monkeypatch):
     """`prune_every_seconds <= 0` → 关掉自动清理。"""
-    monkeypatch.setenv("ANOMALY_LAB_RETENTION_HOURS", "24")
+    monkeypatch.setenv("ANOMALY_LAB_RETENTION_DAYS", "180")
     store = PlatformStore(tmp_path / "platform.db")
     job = _job(store)
-    _expired_run(store, job.id, age_hours=48)
-    _expired_run(store, job.id, age_hours=0)
+    _expired_run(store, job.id, age_days=200)
+    _expired_run(store, job.id, age_days=0)
 
     scheduler = Scheduler(store, tmp_path, runner=_recorder([]), prune_every_seconds=0)
     scheduler.tick(now=utcnow())
@@ -173,7 +173,7 @@ def test_prune_can_be_disabled(tmp_path, monkeypatch):
 
 def test_prune_failure_does_not_kill_the_scheduler(tmp_path, monkeypatch):
     """⚠️ 清理失败**不能**把调度线程带走 —— 否则整个平台再也不会执行任务了。"""
-    monkeypatch.setenv("ANOMALY_LAB_RETENTION_HOURS", "24")
+    monkeypatch.setenv("ANOMALY_LAB_RETENTION_DAYS", "180")
     store = PlatformStore(tmp_path / "platform.db")
     _job(store)
 

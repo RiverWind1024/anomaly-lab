@@ -64,7 +64,7 @@ const SUMMARY = {
 }
 
 const STORAGE = {
-  policy: { max_age_hours: 24, max_runs_per_job: 100 },
+  policy: { retention_days: 180 },
   runs: { kept: 42, n_dirs: 42, bytes: 1048576 },
   database: { path: 'data/platform.db', bytes: 65536 },
   feedback: { total: 5 },
@@ -170,7 +170,7 @@ describe('DashboardPage', () => {
     renderPage()
     expect(await screen.findByText('数据保留')).toBeTruthy()
     await waitFor(() => expect(screen.getByText('保留策略')).toBeTruthy())
-    expect(screen.getByText(/最近 100 次 \/ 24 小时/)).toBeTruthy()
+    expect(screen.getByText(/最近 180 天/)).toBeTruthy()
     expect(screen.getByText('1.0 MB')).toBeTruthy()
   })
 

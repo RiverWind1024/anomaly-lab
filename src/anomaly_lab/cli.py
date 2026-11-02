@@ -172,19 +172,13 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--db", default="mock", help="请求里的 db 字段")
 
-    p = sub.add_parser("prune", help="清理超出保留窗口的运行记录与检测结果文件")
+    p = sub.add_parser("prune", help="清理超出保留期的运行记录与检测结果文件")
     p.add_argument("--data", type=Path, default=None, help="数据根目录，默认 data")
     p.add_argument(
-        "--hours",
-        type=float,
-        default=None,
-        help="保留时长（小时）—— 默认读环境变量，再默认 24",
-    )
-    p.add_argument(
-        "--max-runs",
+        "--days",
         type=int,
         default=None,
-        help="每个任务保留的运行次数 —— 默认读环境变量，再默认 100",
+        help="保留多少天 —— 默认读环境变量，再默认 180",
     )
     p.add_argument(
         "--dry-run", action="store_true", help="只报告要删什么，不真删"
@@ -627,10 +621,8 @@ def _cmd_prune(args: argparse.Namespace) -> int:
 
     data_root = Path(args.data) if args.data else CONFIG.data_dir
     policy = RetentionPolicy.from_env()
-    if args.hours is not None:
-        policy = replace(policy, max_age_hours=max(0.0, args.hours))
-    if args.max_runs is not None:
-        policy = replace(policy, max_runs_per_job=max(0, args.max_runs))
+    if args.days is not None:
+        policy = replace(policy, retention_days=max(0, args.days))
     store = PlatformStore(data_root / "platform.db")
     result = prune(store, data_root, policy, dry_run=args.dry_run)
     prefix = "将要清理" if args.dry_run else "清理完成"
@@ -638,8 +630,13 @@ def _cmd_prune(args: argparse.Namespace) -> int:
         f"{prefix}：删了 {result.deleted_runs} 次运行、"
         f"{result.orphan_dirs} 个孤儿目录，"
         f"释放 {result.freed_bytes / 1024 / 1024:.1f} MB；"
-        f"保留 {result.kept_runs} 次运行"
+        f"保留 {result.kept_runs} 次运行（保留期 {policy.retention_days} 天）"
     )
+    if result.disk_capped_jobs:
+        print(
+            f"  ⚠️ 任务 {result.disk_capped_jobs} 触发了磁盘上限兜底，"
+            "实际保留期比配置短"
+        )
     return 0
 
 

@@ -1,8 +1,15 @@
-"""数据保留与清理：删掉超出保留窗口的运行记录与检测结果文件。
+"""数据保留与清理：删掉超出保留期的运行记录与检测结果文件。
 
 平台的任务每 5 分钟产生一次运行记录（DB 一行 + 一个 npz 目录）。
 不清理的话一年就是 21 万行、几个 GB —— 而且「803 条一模一样的运行记录」
 在作品集演示时是负分。
+
+**保留期只有一个维度：时间。** 配「保留 180 天」就是保留 180 天 ——
+可预测，而且跟 Prometheus / Grafana Cloud 的心智模型一致。
+
+⚠️ **不是「保留最近 N 次」**：两个维度都要解释、都要测，收益却只是给
+   高频任务兜底。兜底该由**磁盘上限**做（见 `MAX_BYTES_PER_JOB`），
+   而不是塞进策略里让人去理解「∩」。
 
 **范围**：只管平台侧。
 
@@ -31,42 +38,37 @@ from anomaly_lab.platform.timeutil import parse_iso, to_iso, utcnow
 
 logger = logging.getLogger(__name__)
 
-#: 默认保留时长（小时）。
-DEFAULT_MAX_AGE_HOURS = 24.0
-#: 默认每个任务保留的运行次数。
-DEFAULT_MAX_RUNS_PER_JOB = 100
+#: 默认保留多少天。
+DEFAULT_RETENTION_DAYS = 180
 
-ENV_MAX_AGE_HOURS = "ANOMALY_LAB_RETENTION_HOURS"
-ENV_MAX_RUNS_PER_JOB = "ANOMALY_LAB_RETENTION_MAX_RUNS"
+ENV_RETENTION_DAYS = "ANOMALY_LAB_RETENTION_DAYS"
+
+#: 单个任务的结果目录上限（字节）。
+#:
+#: ⚠️ 这是**最后一道保险**，不是策略维度 —— 用户配的保留期永远优先。
+#:    存在的理由只有一个：**磁盘写满会让整个平台崩掉**。
+#:    任务频率极高时（每 10 秒一次），「保留 180 天」要 27 GB ——
+#:    那时候宁可少留，也不能让平台撑不住。
+#:    触发时会记进清理结果，不藏着。
+MAX_BYTES_PER_JOB = 4 * 1024**3
 
 
 @dataclass(frozen=True)
 class RetentionPolicy:
-    """保留窗口。
+    """保留策略：**只有保留期天数这一个参数**。"""
 
-    ⚠️ **保留量 = 「最近 N 次」∩「最近 T 小时」** —— 两个条件都要满足。
-       用并集的话上界不成立（高频任务会留下远超 N 条）。
-    """
-
-    #: 保留最近多少小时内的运行。
-    max_age_hours: float = DEFAULT_MAX_AGE_HOURS
-    #: 每个任务最多保留多少次运行。
-    max_runs_per_job: int = DEFAULT_MAX_RUNS_PER_JOB
+    #: 保留最近多少天内的运行。
+    retention_days: int = DEFAULT_RETENTION_DAYS
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> RetentionPolicy:
-        """从环境变量读保留窗口；非法值回落到默认值（并记警告）。
+        """从环境变量读保留期；非法值回落到默认值（并记警告）。
 
         ⚠️ 保留策略是**部署参数**，不是业务配置 —— 所以放环境变量而不是数据库。
            放库里意味着要加设置界面、加校验、加审计，超出这套东西的职责。
         """
         source = os.environ if env is None else env
-        return cls(
-            max_age_hours=_env_float(source, ENV_MAX_AGE_HOURS, DEFAULT_MAX_AGE_HOURS),
-            max_runs_per_job=_env_int(
-                source, ENV_MAX_RUNS_PER_JOB, DEFAULT_MAX_RUNS_PER_JOB
-            ),
-        )
+        return cls(retention_days=_env_int(source, ENV_RETENTION_DAYS, DEFAULT_RETENTION_DAYS))
 
 
 @dataclass
@@ -83,6 +85,8 @@ class PruneResult:
     freed_bytes: int = 0
     #: 清理后保留的运行记录数。
     kept_runs: int = 0
+    #: 触发了磁盘上限兜底的任务（它们的实际保留期比配的短）。
+    disk_capped_jobs: list[int] | None = None
     #: 只报告没真删。
     dry_run: bool = False
 
@@ -93,23 +97,9 @@ class PruneResult:
             "orphan_dirs": self.orphan_dirs,
             "freed_bytes": self.freed_bytes,
             "kept_runs": self.kept_runs,
+            "disk_capped_jobs": self.disk_capped_jobs or [],
             "dry_run": self.dry_run,
         }
-
-
-def _env_float(source: Mapping[str, str], key: str, default: float) -> float:
-    raw = source.get(key)
-    if raw is None or not raw.strip():
-        return default
-    try:
-        value = float(raw)
-    except ValueError:
-        logger.warning("%s 不是数字（%r），用默认值 %s", key, raw, default)
-        return default
-    if value < 0:
-        logger.warning("%s 不能为负（%r），用默认值 %s", key, raw, default)
-        return default
-    return value
 
 
 def _env_int(source: Mapping[str, str], key: str, default: int) -> int:
@@ -128,7 +118,7 @@ def _env_int(source: Mapping[str, str], key: str, default: int) -> int:
 
 
 def _expired(run: Run, cutoff: datetime) -> bool:
-    """这次运行是不是已经超出时间窗口。"""
+    """这次运行是不是已经超出保留期。"""
     try:
         return parse_iso(run.started_at) < cutoff
     except ValueError:
@@ -147,32 +137,28 @@ def select_prunable_runs(
 
     `runs_desc` 是该任务的全部运行，按 id 倒序（新的在前）。
 
-    保留规则：
+    判据只有一个：**早于保留期**。
 
-    1. **最新一次永远保留** —— 告警中心只读最新 run（`collect_alert_events`
-       → `latest_runs()`），删了它整个告警页就空了。那不是「清理旧数据」，
-       是**功能坏了**。
-    2. 最多保留 `max_runs_per_job` 次。
-    3. 只保留最近 `max_age_hours` 小时内的。
-    4. `protected`（正在执行的）一律不删 —— 删了它的目录，
+    两条**功能性**保护（不是策略维度，破坏任何一条都是功能坏了）：
+
+    1. **最新一次永远保留** —— 告警中心只读最新 run
+       （`collect_alert_events` → `latest_runs()`）。删了它整个告警页就空了。
+       ⚠️ 这条在「任务停了半年、然后你打开平台看告警」时是刚需：
+          那个任务不会再产生新运行，清理每轮都会把最后一条删掉，
+          告警中心就**永久**空了。
+    2. `protected`（正在执行的）一律不删 —— 删了它的目录，
        runner 往里写 npz 时就会失败，**清理由别人触发却把别人的运行搞坏**。
     """
-    cutoff = now - timedelta(hours=policy.max_age_hours)
+    cutoff = now - timedelta(days=policy.retention_days)
     prunable: list[int] = []
-    kept = 0
-    for run in runs_desc:
+    for index, run in enumerate(runs_desc):
         if run.id in protected:
-            # 正在执行 —— 不删，但它确实占着一个保留名额
-            kept += 1
             continue
-        if kept == 0:
-            # 最新一次：永远保留
-            kept = 1
+        if index == 0:
+            # 最新一次：永远保留 —— 告警中心只读它
             continue
-        if kept >= policy.max_runs_per_job or _expired(run, cutoff):
+        if _expired(run, cutoff):
             prunable.append(run.id)
-            continue
-        kept += 1
     return prunable
 
 
@@ -187,6 +173,43 @@ def _dir_size(path: Path) -> int:
                 # 文件刚好被别人删了 —— 算它 0 字节，不当错误
                 continue
     return total
+
+
+def _enforce_disk_cap(
+    by_job: dict[int, list[Run]],
+    data_root: Path,
+    already_pruned: set[int],
+    protected: Collection[int],
+) -> tuple[list[int], list[int]]:
+    """单任务结果目录超过上限时，额外删掉最老的运行。
+
+    ⚠️ 这是**最后一道保险**，不是策略维度 —— 用户配的保留期永远优先，
+       只有它兜不住（任务频率太高）时才生效。
+
+    返回 `(要删的 run_id, 触发了上限的任务 id)`。
+    """
+    extra: list[int] = []
+    capped: list[int] = []
+    for job_id, job_runs in by_job.items():
+        if not job_runs:
+            continue
+        # 最新一次与正在执行的都不参与删（与时间窗口同一套保护）
+        keep = {job_runs[0].id} | set(protected)
+        candidates = [
+            run for run in job_runs if run.id not in already_pruned and run.id not in keep
+        ]
+        total = sum(_dir_size(run_dir(data_root, run.id)) for run in candidates)
+        if total <= MAX_BYTES_PER_JOB:
+            continue
+        capped.append(job_id)
+        # 从最老开始删（candidates 是 id 倒序，反过来就是从最老开始）
+        for run in reversed(candidates):
+            if total <= MAX_BYTES_PER_JOB:
+                break
+            size = _dir_size(run_dir(data_root, run.id))
+            extra.append(run.id)
+            total -= size
+    return extra, capped
 
 
 def _prune_orphans(
@@ -229,7 +252,7 @@ def prune(
     now: datetime | None = None,
     dry_run: bool = False,
 ) -> PruneResult:
-    """按保留窗口清理运行记录与检测结果文件。
+    """按保留期清理运行记录与检测结果文件。
 
     ⚠️ **先删文件、再删数据库行** —— 两个方向都有自愈路径，
        但磁盘占用的释放是本模块的主要目标，而「DB 里有条记录但文件没了」
@@ -251,7 +274,15 @@ def prune(
             select_prunable_runs(job_runs, policy, now=now, protected=protected)
         )
 
-    result = PruneResult(dry_run=dry_run, kept_runs=len(runs) - len(prunable))
+    # 磁盘上限兜底：保留期兜不住时（任务频率太高）再删一些最老的
+    extra, capped = _enforce_disk_cap(by_job, data_root, set(prunable), protected)
+    prunable.extend(extra)
+
+    result = PruneResult(
+        dry_run=dry_run,
+        kept_runs=len(runs) - len(prunable),
+        disk_capped_jobs=capped,
+    )
 
     freed = 0
     dirs = 0
@@ -312,10 +343,7 @@ def storage_usage(
     state = store.get_retention_state()
 
     return {
-        "policy": {
-            "max_age_hours": policy.max_age_hours,
-            "max_runs_per_job": policy.max_runs_per_job,
-        },
+        "policy": {"retention_days": policy.retention_days},
         "runs": {
             "kept": len(store.all_runs()),
             "n_dirs": n_dirs,

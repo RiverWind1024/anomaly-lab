@@ -32,13 +32,13 @@ def _client(tmp_path):
     return TestClient(app), store
 
 
-def _add_run(store: PlatformStore, job_id: int, *, age_hours: float) -> int:
+def _add_run(store: PlatformStore, job_id: int, *, age_days: float) -> int:
     run = store.create_run(job_id)
     store.finish_run(run.id, "success", n_series=1, n_alerts=0)
     with store._conn() as conn:
         conn.execute(
             "UPDATE runs SET started_at = ? WHERE id = ?",
-            (to_iso(utcnow() - timedelta(hours=age_hours)), run.id),
+            (to_iso(utcnow() - timedelta(days=age_days)), run.id),
         )
     return run.id
 
@@ -46,25 +46,24 @@ def _add_run(store: PlatformStore, job_id: int, *, age_hours: float) -> int:
 def test_storage_reports_policy_and_usage(tmp_path):
     client, store = _client(tmp_path)
     job_id = store.list_jobs()[0].id
-    _add_run(store, job_id, age_hours=1)
+    _add_run(store, job_id, age_days=1)
 
     resp = client.get("/api/platform/storage")
     assert resp.status_code == 200
     body = resp.json()
-    assert body["policy"]["max_runs_per_job"] == 100
-    assert body["policy"]["max_age_hours"] == 24
+    assert body["policy"]["retention_days"] == 180
     assert body["runs"]["kept"] == 1
     assert body["database"]["bytes"] > 0
     assert body["last_pruned_at"] is None
 
 
 def test_prune_deletes_expired_runs(tmp_path, monkeypatch):
-    """⚠️ 超窗的运行被清掉 —— 这是「所有不断产生的数据会自动清理」的落点。"""
-    monkeypatch.setenv("ANOMALY_LAB_RETENTION_HOURS", "24")
+    """⚠️ 超保留期的运行被清掉 —— 这是「所有不断产生的数据会自动清理」的落点。"""
+    monkeypatch.setenv("ANOMALY_LAB_RETENTION_DAYS", "180")
     client, store = _client(tmp_path)
     job_id = store.list_jobs()[0].id
-    old = _add_run(store, job_id, age_hours=48)
-    _add_run(store, job_id, age_hours=1)
+    old = _add_run(store, job_id, age_days=200)
+    _add_run(store, job_id, age_days=1)
 
     resp = client.post("/api/platform/prune")
     assert resp.status_code == 200
@@ -79,7 +78,7 @@ def test_prune_deletes_expired_runs(tmp_path, monkeypatch):
 def test_prune_records_last_pruned_at(tmp_path):
     client, store = _client(tmp_path)
     job_id = store.list_jobs()[0].id
-    _add_run(store, job_id, age_hours=1)
+    _add_run(store, job_id, age_days=1)
 
     client.post("/api/platform/prune")
     body = client.get("/api/platform/storage").json()
