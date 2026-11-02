@@ -1,16 +1,18 @@
 import { useMemo } from 'react'
-import { Button, Space, Table, Tag, Tooltip } from 'antd'
+import { Button, Space, Table, Tooltip } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { Link } from 'react-router-dom'
 import { StateBoundary } from '../../components/StateBoundary'
 import { DeleteButton } from '../delete/DeleteButton'
-import type { Catalog, CatalogJob } from '../../api/types'
+import type { Catalog, CatalogJob, OverviewJob } from '../../api/types'
 import { formatRules } from './rules'
 
 export interface JobListProps {
   isLoading: boolean
   error: unknown
   catalog: Catalog | undefined
+  /** 概览里的任务状态 —— 表下摘要要它的「上次跑了多少序列、多少告警点」。 */
+  overviewJobs: OverviewJob[]
   runningJobId: number | null
   togglingJobId: number | null
   onRun: (jobId: number) => void
@@ -20,10 +22,24 @@ export interface JobListProps {
   deletingId: number | null
 }
 
+/** 下次运行 —— 相对现在说，别只给一个裸时间戳。 */
+function nextRunLabel(nextRunAt: string | null): string {
+  if (!nextRunAt) return '—'
+  const diff = Date.parse(nextRunAt) - Date.now()
+  if (Number.isNaN(diff)) return '—'
+  const minutes = Math.round(diff / 60000)
+  if (minutes <= 0) return '即将'
+  if (minutes < 60) return `${minutes} 分钟后`
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) return `${hours} 小时后`
+  return `${Math.round(hours / 24)} 天后`
+}
+
 export function JobList({
   isLoading,
   error,
   catalog,
+  overviewJobs,
   runningJobId,
   togglingJobId,
   onRun,
@@ -43,7 +59,8 @@ export function JobList({
       dataIndex: 'id',
       key: 'id',
       width: 70,
-      render: (value: number) => <span className="mono">{value}</span>,
+      align: 'right',
+      render: (value: number) => <span className="mono dim">{value}</span>,
     },
     {
       title: '名称',
@@ -57,7 +74,7 @@ export function JobList({
       key: 'metric_id',
       width: 160,
       render: (value: number) => (
-        <span className="mono">{metricNameById.get(value) ?? String(value)}</span>
+        <span className="mono dim">{metricNameById.get(value) ?? String(value)}</span>
       ),
     },
     {
@@ -65,9 +82,12 @@ export function JobList({
       dataIndex: 'detector',
       key: 'detector',
       width: 130,
-      render: (value: string) => (
-        value === 'auto' ? <Tag color="processing">自动推荐</Tag> : <span className="mono">{value}</span>
-      ),
+      render: (value: string) =>
+        value === 'auto' ? (
+          <span className="pill pill--auto">自动推荐</span>
+        ) : (
+          <span className="mono dim">{value}</span>
+        ),
     },
     {
       title: '告警规则',
@@ -76,7 +96,7 @@ export function JobList({
       width: 220,
       render: (value: CatalogJob['alert_rules']) => (
         <Tooltip title={formatRules(value)}>
-          <span className="mono job-list__rules">{formatRules(value)}</span>
+          <span className="mono dim rules">{formatRules(value)}</span>
         </Tooltip>
       ),
     },
@@ -86,7 +106,7 @@ export function JobList({
       key: 'interval_seconds',
       width: 90,
       align: 'right',
-      render: (value: number) => <span className="mono">{value}s</span>,
+      render: (value: number) => <span className="mono dim">{value}s</span>,
     },
     {
       title: '状态',
@@ -94,7 +114,9 @@ export function JobList({
       key: 'enabled',
       width: 90,
       render: (value: boolean) => (
-        <Tag color={value ? 'success' : 'default'}>{value ? '启用' : '停用'}</Tag>
+        <span className={`pill ${value ? 'pill--ok' : 'pill--p1'}`}>
+          {value ? '启用' : '停用'}
+        </span>
       ),
     },
     {
@@ -148,13 +170,18 @@ export function JobList({
       }
     >
       {(data) => (
-        <>
-          <div className="job-list__toolbar">
-            <span className="muted">共 {data.jobs.length} 个任务</span>
-            <Button type="primary" onClick={onCreate}>
-              新建任务
-            </Button>
+        <section className="panel" aria-labelledby="jobsTitle">
+          <div className="panel__head">
+            <div>
+              <h2 className="panel__title" id="jobsTitle">
+                任务
+              </h2>
+              <p className="panel__meta mono">
+                {data.jobs.length} 个任务 · {data.jobs.filter((j) => j.enabled).length} 个启用
+              </p>
+            </div>
           </div>
+
           <Table<CatalogJob>
             rowKey="id"
             columns={columns}
@@ -163,7 +190,30 @@ export function JobList({
             pagination={{ pageSize: 20, showSizeChanger: true }}
             scroll={{ x: 'max-content' }}
           />
-        </>
+
+          {/* 表下一行摘要 —— 每个任务上次跑到哪、下次什么时候 */}
+          <div className="tfoot">
+            {data.jobs.map((job) => {
+              const state = overviewJobs.find((j) => j.id === job.id)
+              const last = state?.last_run
+              return (
+                <span key={job.id}>
+                  <b>{job.name}</b>
+                  {last ? (
+                    <>
+                      {' '}
+                      上次 #<b>{last.id}</b> · <b>{last.n_series}</b> 条序列 ·{' '}
+                      <b>{last.n_alerts}</b> 个告警点
+                    </>
+                  ) : (
+                    ' 还没运行过'
+                  )}{' '}
+                  · 下次 {nextRunLabel(job.next_run_at)}
+                </span>
+              )
+            })}
+          </div>
+        </section>
       )}
     </StateBoundary>
   )

@@ -81,7 +81,7 @@ export function SourceDetailPage() {
           >
             编辑
           </Button>
-          {/* ⚠️ 删除必须走 DeleteButton —— 它带**影响预览**与二次确认。
+          {/* ⚠️ 删除必须走 DeleteButton —— 它带**影响预览**与二次确认。 taste-skill-ignore
               裸按钮误点就没了，而删指标会连带删掉任务与运行记录。 */}
           <DeleteButton
             target="metric"

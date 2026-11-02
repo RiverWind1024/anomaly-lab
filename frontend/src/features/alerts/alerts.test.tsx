@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
 import type { AlertEvent, AlertListResponse } from '../../api/types'
@@ -77,8 +77,10 @@ describe('AlertList', () => {
       jobs: [{ id: 1, name: 'demo-job' }],
       skipped: [],
     })
-    expect(screen.getByText('3')).toBeTruthy()
-    expect(screen.getByText('4.20')).toBeTruthy()
+    // ⚠️ 数字在表里，也要能在表外的合计行里 —— 所以这里要限定在表内找
+    const table = screen.getByRole('table')
+    expect(within(table).getByText('3')).toBeTruthy()
+    expect(within(table).getByText('4.20')).toBeTruthy()
   })
 
   it('有任务但没有事件时显示「当前没有告警」', () => {

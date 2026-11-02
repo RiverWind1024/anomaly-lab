@@ -65,9 +65,10 @@ export function buildAnnotateOption(
   const { data, annotations } = props
   invalidateCssVarCache(themeMode)
 
-  const textPrimary = cssVar('--text-primary', '#fafafa')
   const textTertiary = cssVar('--text-tertiary', '#7f7f8b')
   const border = cssVar('--border-subtle', '#26262b')
+  // ⚠️ 主数据元素（信号本身）用**这一个数据色** —— 全用中性色就成了没有身份的 kit
+  const chart = cssVar('--chart', '#6da8e3')
 
   const areas = annotations.map((item) => [
     { xAxis: item.start, itemStyle: { color: cssVarAlpha('--status-p0', 0.22, 'rgba(239,68,68,0.22)') } },
@@ -81,7 +82,7 @@ export function buildAnnotateOption(
         type: 'line',
         data: data.values,
         symbol: 'none',
-        lineStyle: { color: textPrimary, width: 1.6 },
+        lineStyle: { color: chart, width: 1.6 },
         markArea: { silent: true, data: areas },
       },
     ],
@@ -89,13 +90,13 @@ export function buildAnnotateOption(
       type: 'category',
       data: data.timestamps,
       boundaryGap: false,
-      axisLabel: { color: textTertiary, fontSize: 10 },
+      axisLabel: { color: textTertiary, fontSize: 11 },
       axisLine: { lineStyle: { color: border } },
     },
     yAxis: {
       type: 'value',
       scale: true,
-      axisLabel: { color: textTertiary, fontSize: 10 },
+      axisLabel: { color: textTertiary, fontSize: 11 },
       splitLine: { lineStyle: { color: border, opacity: 0.45 } },
     },
     dataZoom: [
@@ -107,7 +108,7 @@ export function buildAnnotateOption(
         borderColor: border,
         fillerColor: cssVarAlpha('--text-tertiary', 0.18, 'rgba(120,120,120,0.18)'),
         handleStyle: { color: border },
-        textStyle: { color: textTertiary, fontSize: 10 },
+        textStyle: { color: textTertiary, fontSize: 11 },
       },
     ],
     // 刷选 —— 只在 x 轴上，单选
@@ -210,11 +211,13 @@ export function AnnotatePage() {
 
   return (
     <div className="page">
-      <header className="page__header">
-        <h1 className="page__title">标注</h1>
-        <p className="page__subtitle">
-          在波形上刷选异常区间，选择异常类型后保存。标注存成 JSONL，供评估与调参使用。
-        </p>
+      <header className="titlebar">
+        <div className="titlebar__lead">
+          <h1>标注</h1>
+          <p className="finding">
+            在波形上刷选异常区间，选择异常类型后保存。标注存成 JSONL，供评估与调参使用。
+          </p>
+        </div>
       </header>
 
       <div className="runs-view__bar">

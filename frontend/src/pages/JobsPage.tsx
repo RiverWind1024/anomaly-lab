@@ -1,15 +1,18 @@
 import { useState } from 'react'
-import { message } from 'antd'
+import { Button, message } from 'antd'
 import { JobForm, buildJobPayload, type JobFormValues } from '../features/jobs/JobForm'
 import { JobList } from '../features/jobs/JobList'
+import { RecentRuns } from '../features/jobs/RecentRuns'
 import { useCatalog, useCreateJob, useRunJob, useToggleJob } from '../features/jobs/queries'
 import { useDeleteJob } from '../features/delete/queries'
+import { useOverview } from '../features/overview/queries'
 
 /** 任务列表页。 */
 export function JobsPage() {
   const [formOpen, setFormOpen] = useState(false)
 
   const catalog = useCatalog()
+  const overview = useOverview()
   const runJob = useRunJob()
   const toggleJob = useToggleJob()
   const createJob = useCreateJob()
@@ -49,19 +52,42 @@ export function JobsPage() {
     })
   }
 
+  const jobs = catalog.data?.jobs ?? []
+  const enabled = jobs.filter((j) => j.enabled).length
+  const overviewJobs = overview.data?.jobs ?? []
+  const lastAlertJob = overviewJobs
+    .filter((j) => j.last_run && j.last_run.n_alerts > 0)
+    .sort((a, b) => (a.last_run?.id ?? 0) < (b.last_run?.id ?? 0) ? 1 : -1)[0]
+
   return (
     <div className="page">
-      <header className="page__header">
-        <h1 className="page__title">检测任务</h1>
-        <p className="page__subtitle">
-          {catalog.data ? `共 ${catalog.data.jobs.length} 个任务` : '加载中…'}
-        </p>
+      <header className="titlebar">
+        <div className="titlebar__lead">
+          <h1>检测任务</h1>
+          <p className="finding">
+            共 <span className="mono">{jobs.length}</span> 个任务 ·{' '}
+            <span className="mono">{enabled}</span> 个启用
+            {lastAlertJob?.last_run ? (
+              <>
+                {' '}
+                —— <b>{lastAlertJob.name}</b> 上次跑出{' '}
+                <span className="mono">{lastAlertJob.last_run.n_alerts}</span> 个告警点
+              </>
+            ) : null}
+          </p>
+        </div>
+        <div className="titlebar__actions">
+          <Button type="primary" onClick={() => setFormOpen(true)}>
+            新建任务
+          </Button>
+        </div>
       </header>
 
       <JobList
         isLoading={catalog.isPending}
         error={catalog.error}
         catalog={catalog.data}
+        overviewJobs={overviewJobs}
         runningJobId={runJob.isPending ? runJob.variables : null}
         togglingJobId={toggleJob.isPending ? toggleJob.variables?.jobId : null}
         onRun={handleRun}
@@ -70,6 +96,13 @@ export function JobsPage() {
         onDelete={handleDelete}
         deletingId={deleteJob.isPending ? (deleteJob.variables ?? null) : null}
       />
+
+      {jobs.length > 0 ? (
+        <RecentRuns
+          jobs={jobs}
+          defaultJobId={overviewJobs[0]?.id ?? jobs[0]?.id}
+        />
+      ) : null}
 
       <JobForm
         open={formOpen}

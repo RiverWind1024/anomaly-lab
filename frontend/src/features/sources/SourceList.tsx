@@ -38,7 +38,8 @@ export function SourceList({
       dataIndex: 'id',
       key: 'id',
       width: 70,
-      render: (value: number) => <span className="mono">{value}</span>,
+      align: 'right',
+      render: (value: number) => <span className="mono dim">{value}</span>,
     },
     {
       title: '名称',
@@ -62,13 +63,13 @@ export function SourceList({
       dataIndex: 'kind',
       key: 'kind',
       width: 120,
-      render: (value: string) => <span className="mono">{value}</span>,
+      render: (value: string) => <span className="mono dim">{value}</span>,
     },
     {
       title: '路径',
       dataIndex: 'path',
       key: 'path',
-      render: (value: string) => <span className="mono">{value}</span>,
+      render: (value: string) => <span className="mono dim">{value}</span>,
     },
     {
       title: '操作',

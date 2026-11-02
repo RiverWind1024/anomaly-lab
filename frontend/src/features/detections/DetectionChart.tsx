@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Space, Tag } from 'antd'
+import { Space } from 'antd'
 import ReactECharts from 'echarts-for-react'
 import { useThemeModeValue } from '../../theme/ThemeModeContext'
 import { buildDetectionOption } from './detectionChart'
@@ -18,9 +18,10 @@ export function DetectionChart({ data }: { data: Badcases }) {
         style={{ height: 420, width: '100%' }}
         opts={{ renderer: 'canvas' }}
       />
+      {/* ⚠️ 用状态色的 pill，不用 AntD 的 preset Tag —— 它的橙/红文字对比度不够 taste-skill-ignore */}
       <Space size="small" wrap className="badcase-chart__legend">
-        <Tag color="warning">橙色区间 = 误报（报了但没异常）</Tag>
-        <Tag color="error">红色区间 = 漏报（有异常但没报）</Tag>
+        <span className="pill pill--p1">橙色区间 = 误报（报了但没异常）</span>
+        <span className="pill pill--p0">红色区间 = 漏报（有异常但没报）</span>
       </Space>
     </div>
   )

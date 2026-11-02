@@ -128,13 +128,13 @@ export function buildCompareOption(
       type: 'category',
       data: timestamps,
       boundaryGap: false,
-      axisLabel: { color: textTertiary, fontSize: 10 },
+      axisLabel: { color: textTertiary, fontSize: 11 },
       axisLine: { lineStyle: { color: border } },
     },
     yAxis: {
       type: 'value',
       scale: true,
-      axisLabel: { color: textTertiary, fontSize: 10 },
+      axisLabel: { color: textTertiary, fontSize: 11 },
       splitLine: { lineStyle: { color: border, opacity: 0.45 } },
     },
     dataZoom: [
@@ -146,7 +146,7 @@ export function buildCompareOption(
         borderColor: border,
         fillerColor: cssVarAlpha('--text-tertiary', 0.18, 'rgba(120,120,120,0.18)'),
         handleStyle: { color: border },
-        textStyle: { color: textTertiary, fontSize: 10 },
+        textStyle: { color: textTertiary, fontSize: 11 },
       },
     ],
   }

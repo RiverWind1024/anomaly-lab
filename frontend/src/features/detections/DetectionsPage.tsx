@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Space, Tag } from 'antd'
+import { Table } from 'antd'
+import type { ColumnsType } from 'antd/es/table'
 import { useSearchParams } from 'react-router-dom'
 import { StateBoundary } from '../../components/StateBoundary'
 import { fmtMetric } from '../../lib/format'
@@ -75,6 +76,18 @@ export function DetectionsPage() {
   }, [selected, filtered, pageSize])
 
   /**
+   * 默认选中第一条记录。
+   *
+   * ⚠️ 不选的话右栏是空的 —— 第一屏就只剩一个空框。
+   *    选中项写在 URL 里，深链接与「从评估页点进来」都能对上。
+   */
+  useEffect(() => {
+    if (seriesId || filtered.length === 0) return
+    const first = filtered[0]
+    setParams({ series_id: first.series_id, detector: first.detector })
+  }, [seriesId, filtered, setParams])
+
+  /**
    * 把左栏滚动到选中的记录。
    *
    * ⚠️ 从评估报告点进来时，选中的序列可能在列表很靠后的位置 ——
@@ -92,19 +105,28 @@ export function DetectionsPage() {
 
   return (
     <div className="page">
-      <header className="page__header">
-        <h1 className="page__title">检测记录</h1>
-        <p className="page__subtitle">
-          每条序列一次检测的完整结果：数值、分数、阈值，以及与真值比对出的误报、漏报区间。
-        </p>
+      <header className="titlebar">
+        <div className="titlebar__lead">
+          <h1>检测记录</h1>
+          <p className="finding">
+            每条序列一次检测的完整结果：数值、分数、阈值，以及与真值比对出的误报、漏报区间。
+            {rows.length > 0 ? (
+              <>
+                {' '}
+                共 <span className="mono">{rows.length}</span> 条记录
+                {filtered.length !== rows.length ? (
+                  <>
+                    ，筛选后 <span className="mono">{filtered.length}</span> 条
+                  </>
+                ) : null}
+              </>
+            ) : null}
+          </p>
+        </div>
       </header>
 
       <div className="filter-bar">
         <FilterBar rows={rows} filters={filters} onChange={setFilters} />
-      </div>
-
-      <div className="detections__meta muted">
-        筛选后 {filtered.length} / {rows.length} 条记录
       </div>
 
       <div className="badcases-layout">
@@ -141,7 +163,7 @@ export function DetectionsPage() {
               filteredOut={filteredOut}
             />
           ) : null}
-          {/* ⚠️ **没选中就自己画空态** —— 详情查询是「禁用」的，
+          {/* ⚠️ **没选中就自己画空态** —— 详情查询是「禁用」的， taste-skill-ignore
               `StateBoundary` 拿到 `data === undefined` 会返回 null，
               什么都不显示（连提示都没有）。 */}
           {selected === undefined ? (
@@ -179,6 +201,8 @@ export function DetectionsPage() {
  * 详情头：这条记录是谁。
  *
  * ⚠️ 有了筛选，列表与详情可能对不上 —— 头里说清「我在看哪条」才不让人猜。
+ *
+ * ⚠️ 用表格而不是一排标签 —— 这些是**键值事实**，对齐了才比得准。
  */
 function DetectionDetailHead({
   selected,
@@ -191,18 +215,34 @@ function DetectionDetailHead({
 }) {
   return (
     <div className="detections-detail__head">
-      <Space wrap size="small">
-        <span className="mono">{selected.series_id}</span>
-        {selected.detector ? <Tag>{selected.detector}</Tag> : null}
-        {row ? <Tag color="blue">{metricClassLabel(row.metric_class)}</Tag> : null}
-        {row ? (
-          <span className="muted">
-            Precision <span className="mono">{fmtMetric(row.precision)}</span>
-            · Recall <span className="mono">{fmtMetric(row.recall)}</span>
-            · F1 <span className="mono">{fmtMetric(row.f1)}</span>
-          </span>
-        ) : null}
-      </Space>
+      <table className="kvtable">
+        <tbody>
+          <tr>
+            <th>序列</th>
+            <td className="mono">{selected.series_id}</td>
+            <th>算法</th>
+            <td className="mono">{selected.detector ?? '—'}</td>
+          </tr>
+          <tr>
+            <th>形态</th>
+            <td>{row ? metricClassLabel(row.metric_class) : '—'}</td>
+            <th>阈值</th>
+            <td className="mono">{row ? fmtMetric(row.threshold) : '—'}</td>
+          </tr>
+          <tr>
+            <th>Precision</th>
+            <td className="mono">{row ? fmtMetric(row.precision) : '—'}</td>
+            <th>Recall</th>
+            <td className="mono">{row ? fmtMetric(row.recall) : '—'}</td>
+          </tr>
+          <tr>
+            <th>F1</th>
+            <td className="mono">{row ? fmtMetric(row.f1) : '—'}</td>
+            <th>Range-F1</th>
+            <td className="mono">{row ? fmtMetric(row.range_f1) : '—'}</td>
+          </tr>
+        </tbody>
+      </table>
       {filteredOut ? (
         <p className="muted detections-detail__note">这条记录不在当前筛选结果里。</p>
       ) : null}
@@ -210,27 +250,57 @@ function DetectionDetailHead({
   )
 }
 
-/** 检测偏差明细列表：类型 + 分组 + 原因。 */
+/** 检测偏差明细：类型 + 分组 + 原因。 */
 function BadcaseList({ badcases }: { badcases: Badcase[] }) {
+  const columns: ColumnsType<Badcase> = [
+    {
+      title: '类型',
+      dataIndex: 'kind',
+      key: 'kind',
+      width: 90,
+      render: (value: string) => (
+        <span className={`pill ${value === 'false_positive' ? 'pill--p1' : 'pill--p0'}`}>
+          {badcaseLabel(value)}
+        </span>
+      ),
+    },
+    {
+      title: '分组',
+      dataIndex: 'group',
+      key: 'group',
+      width: 160,
+      render: (value: string) => <span className="mono dim">{value}</span>,
+    },
+    {
+      title: '点区间',
+      key: 'range',
+      width: 190,
+      render: (_value, row) => (
+        <span className="mono">
+          {row.indices.length} 点（{row.indices[0]} ~ {row.indices[row.indices.length - 1]}）
+        </span>
+      ),
+    },
+    {
+      title: '原因',
+      dataIndex: 'reason',
+      key: 'reason',
+      render: (value: string) => <span className="dim">{value}</span>,
+    },
+  ]
+
   if (!badcases.length) {
     return <p className="muted">这条序列没有检测偏差 —— 检测结果与真值一致。</p>
   }
+
   return (
-    <ul className="badcase-list">
-      {badcases.map((item, index) => (
-        <li key={index}>
-          <Space size="small" wrap>
-            <Tag color={item.kind === 'false_positive' ? 'warning' : 'error'}>
-              {badcaseLabel(item.kind)}
-            </Tag>
-            <span className="mono muted">{item.group}</span>
-            <span className="muted">
-              {item.indices.length} 点（{item.indices[0]} ~ {item.indices[item.indices.length - 1]}）
-            </span>
-          </Space>
-          <p className="badcase-list__reason">{item.reason}</p>
-        </li>
-      ))}
-    </ul>
+    <Table<Badcase>
+      rowKey={(_row, index) => String(index)}
+      columns={columns}
+      dataSource={badcases}
+      size="small"
+      pagination={false}
+      scroll={{ x: 'max-content' }}
+    />
   )
 }

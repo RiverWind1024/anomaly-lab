@@ -83,10 +83,12 @@ export function buildDetectionOption(
   const { data } = props
   invalidateCssVarCache(themeMode)
 
-  const textPrimary = cssVar('--text-primary', '#fafafa')
+  const textSecondary = cssVar('--text-secondary', '#a1a1aa')
   const textTertiary = cssVar('--text-tertiary', '#7f7f8b')
   const border = cssVar('--border-subtle', '#26262b')
-  const accent = cssVar('--accent-text', '#6da8e3')
+  // ⚠️ 主数据元素（信号本身）用**这一个数据色** —— 分数线退成中性色，
+  //    否则整屏没有数据色（app-screens §6.4 no-data-hue）
+  const chart = cssVar('--chart', '#6da8e3')
   const p0 = cssVar('--status-p0', '#ef4444')
   const p1 = cssVar('--status-p1', '#f59e0b')
 
@@ -112,7 +114,10 @@ export function buildDetectionOption(
         type: 'line',
         data: data.values,
         symbol: 'none',
-        lineStyle: { color: textPrimary, width: 1.6 },
+        lineStyle: { color: chart, width: 1.6 },
+        // ⚠️ 线下压一层极淡的同色 —— 主数据元素要真的带上那一个色相，
+        //    光靠一条 1.6px 的线在整屏里几乎看不见颜色
+        areaStyle: { color: chart, opacity: 0.09 },
         markArea: { silent: true, data: areas },
       },
       {
@@ -121,7 +126,7 @@ export function buildDetectionOption(
         yAxisIndex: 1,
         data: data.scores,
         symbol: 'none',
-        lineStyle: { color: accent, width: 1, opacity: 0.7 },
+        lineStyle: { color: textSecondary, width: 1, opacity: 0.7 },
       },
       {
         name: '阈值',
@@ -148,7 +153,7 @@ export function buildDetectionOption(
       type: 'category',
       data: data.timestamps,
       boundaryGap: false,
-      axisLabel: { color: textTertiary, fontSize: 10 },
+      axisLabel: { color: textTertiary, fontSize: 11 },
       axisLine: { lineStyle: { color: border } },
     },
     yAxis: [
@@ -157,7 +162,7 @@ export function buildDetectionOption(
         name: '值',
         scale: true,
         nameTextStyle: { color: textTertiary, fontSize: 11 },
-        axisLabel: { color: textTertiary, fontSize: 10 },
+        axisLabel: { color: textTertiary, fontSize: 11 },
         splitLine: { lineStyle: { color: border, opacity: 0.45 } },
       },
       {
@@ -165,7 +170,7 @@ export function buildDetectionOption(
         name: '分数',
         min: 0,
         nameTextStyle: { color: textTertiary, fontSize: 11 },
-        axisLabel: { color: textTertiary, fontSize: 10 },
+        axisLabel: { color: textTertiary, fontSize: 11 },
         splitLine: { show: false },
       },
     ],
@@ -178,7 +183,7 @@ export function buildDetectionOption(
         borderColor: border,
         fillerColor: cssVarAlpha('--text-tertiary', 0.18, 'rgba(120,120,120,0.18)'),
         handleStyle: { color: border },
-        textStyle: { color: textTertiary, fontSize: 10 },
+        textStyle: { color: textTertiary, fontSize: 11 },
       },
     ],
   }

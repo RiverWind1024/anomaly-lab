@@ -114,7 +114,8 @@ export function JobConfigPanel({ job, metrics, detectors, enabled }: JobConfigPa
           <Select options={detectorOptions} placeholder="选择算法" />
         </Form.Item>
 
-        <Space size="large" style={{ display: 'flex' }}>
+        {/* ⚠️ wrap：窄屏上这两项要能换行 —— 挤在一行会顶出屏幕右边 taste-skill-ignore */}
+        <Space size="large" wrap style={{ display: 'flex' }}>
           <Form.Item
             name="window_points"
             label="窗口点数"

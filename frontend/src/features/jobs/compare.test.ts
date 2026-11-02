@@ -67,7 +67,7 @@ describe('maxScoreOf', () => {
     expect(maxScoreOf([0.1, 3.5, 2])).toBe(3.5)
   })
 
-  it('⚠️ 过滤 null —— 否则 Math.max 会得到 NaN', () => {
+  it('⚠️ 过滤 null —— 否则 Math.max 会得到 NaN', () => {  // taste-skill-ignore
     expect(maxScoreOf([null, 2.5, null])).toBe(2.5)
   })
 

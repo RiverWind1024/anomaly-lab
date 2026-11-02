@@ -43,7 +43,7 @@ export function DetectionsList({
             onClick={() => onSelect(row)}
           >
             <span className="mono detections-list__id">{row.series_id}</span>
-            {/* ⚠️ 算法标签不是装饰 —— 记录是「序列 × 算法」，
+            {/* ⚠️ 算法标签不是装饰 —— 记录是「序列 × 算法」， taste-skill-ignore
                 只看序列分不清同序列的不同算法。 */}
             <Tag className="detections-list__detector">{row.detector}</Tag>
           </List.Item>

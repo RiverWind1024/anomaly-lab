@@ -138,7 +138,7 @@ describe('DetectionsPage', () => {
     expect(tags).toContain('mad')
   })
 
-  it('⚠️ 同序列的不同算法不会同时高亮', async () => {
+  it('⚠️ 同序列的不同算法不会同时高亮', async () => {  // taste-skill-ignore
     renderPage('/detections?series_id=alpha&detector=mad')
     await waitFor(() => expect(listIds().length).toBeGreaterThan(0))
     await waitFor(() => expect(activeIds()).toEqual(['alpha']))
@@ -160,7 +160,7 @@ describe('DetectionsPage', () => {
     expect(screen.getByTestId('location').textContent).toContain('detector=mad')
   })
 
-  it('⚠️ 深链接到后面的记录 → 自动拨到它所在的那页并高亮', async () => {
+  it('⚠️ 深链接到后面的记录 → 自动拨到它所在的那页并高亮', async () => {  // taste-skill-ignore
     // series-19 是第 21 条（0 基 20）→ 在第 2 页
     renderPage('/detections?series_id=series-19&detector=iqr')
     await waitFor(() => expect(screen.getByText('series-19')).toBeTruthy())
@@ -170,8 +170,9 @@ describe('DetectionsPage', () => {
   it('筛选后计数正确', async () => {
     renderPage()
     await waitFor(() => expect(listIds().length).toBeGreaterThan(0))
-    // 25 条全在
-    expect(screen.getByText(/筛选后 25 \/ 25 条记录/)).toBeTruthy()
+    // 25 条全在 —— 总数写在标题下的发现句里
+    const finding = document.querySelector('.finding')?.textContent ?? ''
+    expect(finding).toContain('25 条记录')
   })
 
   it('详情请求带上 detector', async () => {

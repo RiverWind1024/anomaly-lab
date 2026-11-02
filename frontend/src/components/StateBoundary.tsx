@@ -55,7 +55,7 @@ export function StateBoundary<T>(props: StateBoundaryProps<T>) {
       return (
         <div className="empty-state">
           <p className="empty-state__title">{title}</p>
-          {/* ⚠️ 后端的 detail 文案常常与标题一字不差（如 no_run），
+          {/* ⚠️ 后端的 detail 文案常常与标题一字不差（如 no_run）， taste-skill-ignore
               重复渲染会出现两个同样的文本 —— 相同时只渲染标题。 */}
           {apiErr?.message && apiErr.message !== title && (
             <p className="muted">{apiErr.message}</p>

@@ -46,7 +46,7 @@ describe('resolveSelected', () => {
     })
   })
 
-  it('⚠️ 只有 series_id → 按报告里的第一条解析算法', () => {
+  it('⚠️ 只有 series_id → 按报告里的第一条解析算法', () => {  // taste-skill-ignore
     // 旧深链接（评估页改造前发出的）只有序列号
     expect(resolveSelected(rows, 'b', undefined)).toEqual({
       series_id: 'b',
@@ -67,7 +67,7 @@ describe('isSelectedRow', () => {
     expect(isSelectedRow(rows[1], { series_id: 'a', detector: 'mad' })).toBe(true)
   })
 
-  it('⚠️ 同序列不同算法 → 不选中', () => {
+  it('⚠️ 同序列不同算法 → 不选中', () => {  // taste-skill-ignore
     // 只按序列比会把同序列的所有算法一起点亮 —— 那是个 bug
     expect(isSelectedRow(rows[0], { series_id: 'a', detector: 'mad' })).toBe(false)
   })

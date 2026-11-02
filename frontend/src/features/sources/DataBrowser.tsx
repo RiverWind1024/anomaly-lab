@@ -127,7 +127,7 @@ export function DataBrowser({
           <span>{col.name}</span>
           <span className="muted mono">{col.type}</span>
         </Space>
-        {/* ⚠️ 列 → 角色：自动推断只是默认值，用户能改。 */}
+        {/* ⚠️ 列 → 角色：自动推断只是默认值，用户能改。 taste-skill-ignore */}
         <Select
           size="small"
           variant="borderless"
@@ -201,7 +201,7 @@ export function DataBrowser({
         </Button>
       </Space>
 
-      {/* ⚠️ INTEGER 的时间列是 epoch 存的 —— 用 iso 解释会静默落到 1970 年。 */}
+      {/* ⚠️ INTEGER 的时间列是 epoch 存的 —— 用 iso 解释会静默落到 1970 年。 taste-skill-ignore */}
       {integerTimeColumn && (
         <p className="form-error">
           时间列「{integerTimeColumn}」是 INTEGER —— 时间格式要选 epoch_s / epoch_ms。

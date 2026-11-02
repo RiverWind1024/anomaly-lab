@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Alert, Button, DatePicker, Select, Space, Table, Tag } from 'antd'
+import { Alert, Button, DatePicker, Select, Space, Table } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { Link } from 'react-router-dom'
 import { StateBoundary } from '../../components/StateBoundary'
@@ -16,15 +16,18 @@ export interface AlertListProps {
 }
 
 /**
- * 档位越严重颜色越重。
+ * 等级 → 状态色。
  *
  * ⚠️ 用 `level_index` 而不是档位名 —— 档位名是自定义的（「注意」「P0」），
  *    没法按名字判严重度。
+ *
+ * ⚠️ 只有两档颜色：P0（level_index ≥ 2）与其余。
+ *    告警三档是平台定死的，不能另起颜色。
  */
-function levelColor(levelIndex: number): string {
-  if (levelIndex >= 3) return 'red'
-  if (levelIndex === 2) return 'orange'
-  return 'gold'
+function levelPill(levelIndex: number, level: string) {
+  return (
+    <span className={`pill ${levelIndex >= 2 ? 'pill--p0' : 'pill--p1'}`}>{level}</span>
+  )
 }
 
 /**
@@ -51,9 +54,7 @@ export function AlertList({ isLoading, error, data, filters, onFiltersChange }: 
       dataIndex: 'level',
       key: 'level',
       width: 90,
-      render: (value: string, row) => (
-        <Tag color={levelColor(row.level_index)}>{value}</Tag>
-      ),
+      render: (value: string, row) => levelPill(row.level_index, value),
     },
     {
       title: '时间',
@@ -72,7 +73,7 @@ export function AlertList({ isLoading, error, data, filters, onFiltersChange }: 
       render: (value: number) => <span className="mono">{value}</span>,
     },
     {
-      title: '峰值分数',
+      title: '峰值 σ',
       dataIndex: 'max_score',
       key: 'max_score',
       width: 110,
@@ -97,7 +98,7 @@ export function AlertList({ isLoading, error, data, filters, onFiltersChange }: 
       dataIndex: 'detector',
       key: 'detector',
       width: 130,
-      render: (value: string) => <span className="mono">{value}</span>,
+      render: (value: string) => <span className="mono dim">{value}</span>,
     },
     {
       title: '操作',
@@ -131,7 +132,19 @@ export function AlertList({ isLoading, error, data, filters, onFiltersChange }: 
       emptyHint="先建一个数据源与指标，再创建任务"
     >
       {(d) => (
-        <>
+        <section className="panel" aria-labelledby="listTitle">
+          <div className="panel__head">
+            <div>
+              <h2 className="panel__title" id="listTitle">
+                告警事件
+              </h2>
+              <p className="panel__meta mono">
+                {d.events.length} 条
+                {d.events.length > 0 ? ` · 覆盖 ${d.events.reduce((a, e) => a + e.n_points, 0)} 个告警点` : ''}
+              </p>
+            </div>
+          </div>
+
           <div className="alert-list__toolbar">
             <Space wrap>
               <Select
@@ -189,6 +202,7 @@ export function AlertList({ isLoading, error, data, filters, onFiltersChange }: 
               ) : null}
             </Space>
           </div>
+
           {d.events.length === 0 ? (
             <Alert
               className="alert-list__notice"
@@ -215,6 +229,7 @@ export function AlertList({ isLoading, error, data, filters, onFiltersChange }: 
               }
             />
           ) : null}
+
           <Table<AlertEvent>
             rowKey={(row) => `${row.job_id}-${row.series_id}-${row.start_ts}`}
             columns={columns}
@@ -223,8 +238,24 @@ export function AlertList({ isLoading, error, data, filters, onFiltersChange }: 
             pagination={{ pageSize: 20, showSizeChanger: true }}
             scroll={{ x: 'max-content' }}
           />
+
+          <div className="tfoot">
+            <span>
+              共 <b>{d.events.length}</b> 条告警事件
+            </span>
+            <span>
+              覆盖 <b>{d.events.reduce((a, e) => a + e.n_points, 0)}</b> 个告警点
+            </span>
+            <span>
+              P0 <b>{d.events.filter((e) => e.level_index >= 2).length}</b> 条
+            </span>
+            <span>
+              P1 <b>{d.events.filter((e) => e.level_index < 2).length}</b> 条
+            </span>
+          </div>
+
           <AlertDetailDrawer event={detail} onClose={() => setDetail(null)} />
-        </>
+        </section>
       )}
     </StateBoundary>
   )

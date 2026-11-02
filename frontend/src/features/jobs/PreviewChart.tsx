@@ -183,7 +183,7 @@ export function buildPreviewOption(
     markLine: {
       silent: true,
       symbol: 'none',
-      label: { color: textTertiary, fontSize: 10 },
+      label: { color: textTertiary, fontSize: 11 },
       data: [
         {
           yAxis: alertThreshold,
@@ -216,7 +216,7 @@ export function buildPreviewOption(
       type: 'category',
       data: timestamps,
       boundaryGap: false,
-      axisLabel: { color: textTertiary, fontSize: 10, formatter: '{value}' },
+      axisLabel: { color: textTertiary, fontSize: 11, formatter: '{value}' },
       axisLine: { lineStyle: { color: border } },
     },
     yAxis: [
@@ -225,7 +225,7 @@ export function buildPreviewOption(
         scale: true,
         name: '值',
         nameTextStyle: { color: textTertiary, fontSize: 11 },
-        axisLabel: { color: textTertiary, fontSize: 10 },
+        axisLabel: { color: textTertiary, fontSize: 11 },
         splitLine: { lineStyle: { color: border, opacity: 0.45 } },
       },
       {
@@ -233,7 +233,7 @@ export function buildPreviewOption(
         min: 0,
         name: '分数',
         nameTextStyle: { color: textTertiary, fontSize: 11 },
-        axisLabel: { color: textTertiary, fontSize: 10 },
+        axisLabel: { color: textTertiary, fontSize: 11 },
         splitLine: { show: false },
       },
     ],
@@ -246,7 +246,7 @@ export function buildPreviewOption(
         borderColor: border,
         fillerColor: cssVarAlpha('--text-tertiary', 0.18, 'rgba(120,120,120,0.18)'),
         handleStyle: { color: border },
-        textStyle: { color: textTertiary, fontSize: 10 },
+        textStyle: { color: textTertiary, fontSize: 11 },
       },
     ],
   }

@@ -54,7 +54,7 @@ describe('FilterBar', () => {
     expect(placeholders).toEqual(['全部算法', '全部形态', '全部来源'])
   })
 
-  it('⚠️ 时间范围是**受控**的 —— filters 清空后输入框也跟着清空', () => {
+  it('⚠️ 时间范围是**受控**的 —— filters 清空后输入框也跟着清空', () => {  // taste-skill-ignore
     const { rerender } = render(
       <FilterBar
         rows={rows}

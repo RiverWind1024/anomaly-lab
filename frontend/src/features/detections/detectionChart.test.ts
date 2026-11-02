@@ -49,7 +49,7 @@ describe('toRanges', () => {
 })
 
 describe('buildDetectionOption', () => {
-  it('⚠️ 用 badcases[].indices 真正画出异常区间（旧版是空对象 markArea，等于没画）', () => {
+  it('⚠️ 用 badcases[].indices 真正画出异常区间（旧版是空对象 markArea，等于没画）', () => {  // taste-skill-ignore
     const option = buildDetectionOption({ data: badcases })
     const areas = option.series[0].markArea?.data as Array<Array<{ xAxis: number }>>
     expect(areas).toHaveLength(2)

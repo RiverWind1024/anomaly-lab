@@ -72,7 +72,9 @@ export function CompareTable({
       dataIndex: 'is_auto',
       key: 'is_auto',
       width: 110,
-      render: (value: boolean) => (value ? '✓ 自动推荐' : ''),
+      // 用 pill，不用 ✓ 符号 —— 符号字符在界面上是噪音
+      render: (value: boolean) =>
+        value ? <span className="pill pill--auto">自动推荐</span> : '',
     },
     {
       title: '告警数',
