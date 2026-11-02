@@ -3,7 +3,7 @@ import { MemoryRouter } from 'react-router-dom'
 import type { ReactElement } from 'react'
 import { describe, expect, it } from 'vitest'
 import type { EvaluationRow, Summary } from '../../api/types'
-import { EvaluationTable, fmtMetric } from './EvaluationPage'
+import { EvaluationTable } from './EvaluationPage'
 
 const row: EvaluationRow = {
   series_id: 'demo-1',
@@ -37,18 +37,6 @@ const summary: Summary = {
   },
   rows: [row],
 }
-
-describe('fmtMetric', () => {
-  it('保留三位小数', () => {
-    expect(fmtMetric(0.5)).toBe('0.500')
-  })
-
-  it('非有限值显示「—」', () => {
-    expect(fmtMetric(NaN)).toBe('—')
-    expect(fmtMetric(null)).toBe('—')
-    expect(fmtMetric(undefined)).toBe('—')
-  })
-})
 
 /** EvaluationTable 里有 react-router 的 Link —— 必须包 Router。 */
 function renderTable(node: ReactElement) {
@@ -117,7 +105,7 @@ describe('EvaluationTable', () => {
     expect(screen.getByText('暂无报告，请先运行 evaluate')).toBeTruthy()
   })
 
-  it('序列列链到检测记录页', () => {
+  it('序列列链到检测记录页（带上算法）', () => {
     renderTable(
       <EvaluationTable
         isLoading={false}
@@ -129,6 +117,7 @@ describe('EvaluationTable', () => {
       />,
     )
     const link = screen.getByText('demo-1') as HTMLAnchorElement
-    expect(link.getAttribute('href')).toBe('/detections?series_id=demo-1')
+    // ⚠️ 必须带 detector —— 记录是「序列 × 算法」
+    expect(link.getAttribute('href')).toBe('/detections?series_id=demo-1&detector=iqr')
   })
 })

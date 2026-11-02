@@ -1,6 +1,19 @@
 import '@testing-library/jest-dom/vitest'
 
 /**
+ * jsdom 不实现 `Element.scrollIntoView`。
+ *
+ * 检测记录页要「把左栏滚动到选中的那条」—— 不 mock 就抛
+ * `TypeError: active?.scrollIntoView is not a function`，
+ * 而 React 会把它当成渲染错误，把整棵树拆掉。
+ */
+if (!Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = function scrollIntoView() {
+    /* jsdom 没有布局，滚动无意义 —— 空实现即可 */
+  }
+}
+
+/**
  * jsdom 不实现 `window.matchMedia`。
  *
  * AntD 的响应式组件（Descriptions 的 column={{ xs, sm, lg }}、

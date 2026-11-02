@@ -19,6 +19,7 @@ from anomaly_lab.data.loader import load_dataset
 from anomaly_lab.evaluation.badcases import attribute_badcases
 from anomaly_lab.evaluation.exclusions import ExclusionStore, exclusion_key
 from anomaly_lab.platform.store import PlatformStore
+from anomaly_lab.platform.validation import validate_identifier
 from anomaly_lab.web.biz_state import biz_headers
 from anomaly_lab.web.platform_routes import build_router
 from anomaly_lab.web.source_query_routes import build_source_query_router
@@ -211,11 +212,23 @@ def create_app(
         return {"restored": True}
 
     @app.get("/api/badcases")
-    def badcases(series_id: str) -> dict:
+    def badcases(series_id: str, detector: str = "iqr") -> dict:
+        """一条序列在某个检测算法下的结果。
+
+        ⚠️ `detector` 会拼进文件路径（`cache/detections/<detector>/<id>.npz`）——
+           **必须校验**，否则就是路径穿越。用 `validate_identifier`：
+           无点、无斜杠，而 `stl_residual` / `deseasonalized_iqr` 这类名字都合法。
+
+        ⚠️ 默认 `iqr` —— 老调用方（不带这个参数）行为不变。
+        """
         series = _series_map().get(series_id)
         if series is None:
             raise HTTPException(status_code=404, detail="序列不存在")
-        detection_dir = _detections_root() / "iqr"
+        try:
+            validate_identifier(detector, "detector")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        detection_dir = _detections_root() / detector
         path = detection_dir / f"{series_id}.npz"
         if not path.exists():
             raise HTTPException(

@@ -10,8 +10,11 @@ export const getSeriesValues = (seriesId: string) =>
 
 export const getSummary = () => request<Summary>('/api/summary')
 
-export const getBadcases = (seriesId: string) =>
-  request<Badcases>(`/api/badcases?series_id=${encodeURIComponent(seriesId)}`)
+export const getBadcases = (seriesId: string, detector?: string) =>
+  request<Badcases>(
+    `/api/badcases?series_id=${encodeURIComponent(seriesId)}` +
+      (detector ? `&detector=${encodeURIComponent(detector)}` : ''),
+  )
 
 export const getExclusions = () =>
   request<{ excluded: Exclusion[] }>('/api/evaluation/exclusions')

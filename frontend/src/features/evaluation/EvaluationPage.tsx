@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react'
-import { Button, DatePicker, Drawer, Popconfirm, Select, Space, Table, Tag } from 'antd'
+import { Button, Drawer, Popconfirm, Select, Space, Table, Tag } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { Link } from 'react-router-dom'
 import { StateBoundary } from '../../components/StateBoundary'
+import { fmtMetric } from '../../lib/format'
 import { aggregateBy } from './aggregate'
-import { DIMENSIONS, distinctValues, filterRows, type DimensionKey, type EvaluationFilters } from './filters'
+import { FilterBar } from './FilterBar'
+import { DIMENSIONS, filterRows, type DimensionKey, type EvaluationFilters } from './filters'
 import { useExcludeEvaluationRow, useRestoreEvaluationRow, useSummary } from './queries'
 import { metricClassLabel } from '../jobs/ClassificationCard'
 import type { EvaluationRow, Exclusion, Summary as SummaryType } from '../../api/types'
@@ -17,11 +19,6 @@ export interface EvaluationTableProps {
   excludedCount: number
   onOpenExcluded: () => void
   onExclude: (row: EvaluationRow) => void
-}
-
-/** 数值格式化：非有限值显示「—」（旧版 report.js 的 fmt）。 */
-export function fmtMetric(value: number | null | undefined): string {
-  return Number.isFinite(value) ? Number(value).toFixed(3) : '—'
 }
 
 /**
@@ -52,9 +49,15 @@ export function EvaluationTable({
         title: '序列',
         dataIndex: 'series_id',
         key: 'series_id',
-        render: (value: string) => (
+        render: (value: string, row: EvaluationRow) => (
           // 点行看这条序列的检测记录（旧版是点行弹图，新版是独立路由）
-          <Link to={`/detections?series_id=${encodeURIComponent(value)}`}>{value}</Link>
+          // ⚠️ **带上 detector** —— 记录是「序列 × 算法」，
+          //    只带序列的话详情端点只能按默认算法（iqr）去猜。
+          <Link
+            to={`/detections?series_id=${encodeURIComponent(value)}&detector=${encodeURIComponent(row.detector)}`}
+          >
+            {value}
+          </Link>
         ),
       },
       {
@@ -206,8 +209,6 @@ export function EvaluationTable({
     },
   ]
 
-  const hasFilters = Object.values(filters).some((value) => value !== undefined)
-
   return (
     <StateBoundary
       isLoading={isLoading}
@@ -239,62 +240,11 @@ export function EvaluationTable({
               </span>
             </div>
           )}
-          <div className="evaluation__toolbar">
-            <Space wrap>
-              <DatePicker.RangePicker
-                showTime
-                placeholder={['开始时间', '结束时间']}
-                onChange={(range) => {
-                  const [from, to] = range ?? []
-                  setFilters((prev) => ({
-                    ...prev,
-                    since: from ? from.format('YYYY-MM-DDTHH:mm:ss') : undefined,
-                    until: to ? to.format('YYYY-MM-DDTHH:mm:ss') : undefined,
-                  }))
-                }}
-              />
-              <Select
-                allowClear
-                placeholder="全部算法"
-                style={{ width: 150 }}
-                value={filters.detector}
-                onChange={(value) => setFilters((prev) => ({ ...prev, detector: value }))}
-                options={distinctValues(rows, (row) => row.detector).map((v) => ({
-                  value: v,
-                  label: v,
-                }))}
-              />
-              <Select
-                allowClear
-                placeholder="全部形态"
-                style={{ width: 150 }}
-                value={filters.metricClass}
-                onChange={(value) => setFilters((prev) => ({ ...prev, metricClass: value }))}
-                options={distinctValues(rows, (row) => row.metric_class).map((v) => ({
-                  value: v,
-                  label: v,
-                }))}
-              />
-              <Select
-                allowClear
-                placeholder="全部来源"
-                style={{ width: 150 }}
-                value={filters.source}
-                onChange={(value) => setFilters((prev) => ({ ...prev, source: value }))}
-                options={distinctValues(rows, (row) => row.source ?? '').map((v) => ({
-                  value: v,
-                  label: v,
-                }))}
-              />
-              {hasFilters ? (
-                <Button size="small" onClick={() => setFilters({})}>
-                  重置
-                </Button>
-              ) : null}
-              <Button size="small" onClick={onOpenExcluded}>
-                已排除记录{excludedCount > 0 ? `（${excludedCount}）` : ''}
-              </Button>
-            </Space>
+          <div className="filter-bar">
+            <FilterBar rows={rows} filters={filters} onChange={setFilters} />
+            <Button size="small" onClick={onOpenExcluded}>
+              已排除记录{excludedCount > 0 ? `（${excludedCount}）` : ''}
+            </Button>
           </div>
 
           <div className="evaluation__meta muted">

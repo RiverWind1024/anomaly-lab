@@ -542,7 +542,7 @@ html.theme-switching *::after {
 /* Bad Case 页 */
 .badcases-layout {
   display: grid;
-  grid-template-columns: 280px 1fr;
+  grid-template-columns: 320px 1fr;
   gap: var(--space-4);
   align-items: start;
 }
@@ -553,9 +553,8 @@ html.theme-switching *::after {
   }
 }
 
+/* 侧栏本身不滚 —— 滚的是里面的列表，分页器留在滚动区之外 */
 .badcases-layout__list {
-  max-height: 70vh;
-  overflow: auto;
   border: 1px solid var(--border-subtle);
   border-radius: 6px;
   padding: var(--space-1);
@@ -568,6 +567,49 @@ html.theme-switching *::after {
 
 .badcases-layout__detail {
   min-width: 0;
+}
+
+/* 检测记录左栏 */
+.detections-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.detections-list__items {
+  max-height: 60vh;
+  overflow: auto;
+}
+
+.detections-list__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  cursor: pointer;
+}
+
+.detections-list__id {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detections-list__detector {
+  margin-inline-end: 0;
+  flex: none;
+}
+
+.detections-detail__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-bottom: var(--space-2);
+}
+
+.detections-detail__note {
+  font-size: 12px;
+  margin: 0;
 }
 
 .badcase-detail {
@@ -602,7 +644,8 @@ html.theme-switching *::after {
 }
 
 /* 评估报告：筛选条 + 聚合视图 */
-.evaluation__toolbar {
+/* 筛选栏 —— 评估页与检测记录页共用 */
+.filter-bar {
   display: flex;
   align-items: center;
   gap: var(--space-3);
@@ -610,7 +653,8 @@ html.theme-switching *::after {
   margin-bottom: var(--space-2);
 }
 
-.evaluation__meta {
+.evaluation__meta,
+.detections__meta {
   margin-bottom: var(--space-3);
   font-size: 12px;
 }
