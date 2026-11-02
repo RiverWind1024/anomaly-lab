@@ -114,9 +114,14 @@ export interface SourceQueryResult {
   columns: SourceQueryColumn[]
   /** 行是**数组**（不是对象）—— 列名在 columns 里。 */
   rows: unknown[][]
-  /** 查出来的**总**行数（不受 limit 限制）。 */
+  /**
+   * 本次取到的**行数**（≤ limit）。
+   *
+   * ⚠️ **不是**结果集的真实总行数 —— limit 已下推到 SQL，
+   *    平台根本没看到更多的行。
+   */
   total: number
-  /** 行数被 limit 截断了。 */
+  /** 还有更多行没取到（本次取到的行数已经撞到 limit）。 */
   truncated: boolean
   elapsed_ms: number
 }

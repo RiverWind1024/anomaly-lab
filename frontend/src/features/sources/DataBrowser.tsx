@@ -10,6 +10,20 @@ import type { SourceQueryResult } from '../../api/types'
 const { RangePicker } = DatePicker
 const { TextArea } = Input
 
+/**
+ * 时间格式的取值 —— 必须与后端 `SourceQueryIn.time_format` 一致。
+ *
+ * ⚠️ 浏览时**必须**跟着请求一起发 —— 浏览与指标运行时用同一套
+ *    `$timefilter` 渲染（D11），浏览不声明的话，epoch / `iso_naive` 源的
+ *    预览 ≠ 跑出来的。
+ */
+export const TIME_FORMAT_OPTIONS = [
+  { value: 'iso_utc', label: 'iso_utc' },
+  { value: 'iso_naive', label: 'iso_naive' },
+  { value: 'epoch_s', label: 'epoch_s' },
+  { value: 'epoch_ms', label: 'epoch_ms' },
+]
+
 /** 单元格的值 → 文本。空值显示成破折号，别显示 "null"。 */
 function formatCell(value: unknown): string {
   if (value === null || value === undefined) return '—'
@@ -40,9 +54,12 @@ function toIso(value: Dayjs | null): string | undefined {
  */
 export function DataBrowser({
   sourceId,
+  kind,
   onUseAsMetric,
 }: {
   sourceId: number
+  /** 数据源类型 —— 决定渲染 SQL 编辑器还是该源专属表单（spec §6.4）。 */
+  kind: string
   onUseAsMetric: (payload: {
     sql: string
     columns: SourceQueryResult['columns']
@@ -51,11 +68,17 @@ export function DataBrowser({
       value_column?: string
       group_column?: string
     }
+    /** 面板上选的时间格式 —— 建指标时作为默认值。 */
+    time_format: string
   }) => void
 }) {
   const [sql, setSql] = useState('SELECT * FROM metrics LIMIT 100')
   const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>(null)
   const [timeColumn, setTimeColumn] = useState<string>('')
+  /** 时间格式 —— 缺省与后端一致（iso_utc）。 */
+  const [timeFormat, setTimeFormat] = useState<string>('iso_utc')
+  /** 源时区 —— 缺省与后端一致（UTC）。 */
+  const [sourceTimezone, setSourceTimezone] = useState<string>('UTC')
   /** 列名 → 用户指派的角色（没指派过的列走自动推断）。 */
   const [assignments, setAssignments] = useState<Record<string, RoleChoice>>({})
 
@@ -65,6 +88,10 @@ export function DataBrowser({
         sql,
         limit: 100,
         time_column: timeColumn || undefined,
+        // ⚠️ 时间格式与源时区必须一起发 —— 否则浏览与指标运行时的
+        //    `$timefilter` 条件不一样，预览 ≠ 跑出来的（D11）。
+        time_format: timeFormat,
+        source_timezone: sourceTimezone,
         start: toIso(range?.[0] ?? null),
         end: toIso(range?.[1] ?? null),
       }),
@@ -118,6 +145,26 @@ export function DataBrowser({
     ),
   }))
 
+  /** 时间列的类型 —— INTEGER 说明它是 epoch 存的。 */
+  // ⚠️ 时间列有两个来源：列头下拉的**指派**，与「时间列」输入框。
+  //    两个都要看 —— 用户用哪个都行，但时间格式得跟着对。
+  const assignedTimeColumn = resolveRoles(result?.columns ?? [], assignments).time_column
+  const integerTimeColumn = [assignedTimeColumn, timeColumn]
+    .filter((name): name is string => Boolean(name))
+    .find((name) => result?.columns.find((col) => col.name === name)?.type === 'INTEGER')
+
+  // ⚠️ spec §6.4：SQL 型源才渲染 SQL 编辑器 ——
+  //    第二层连接器（未来）显示该源专属表单，不显示编辑器。
+  if (kind !== 'sqlite' && kind !== 'http') {
+    return (
+      <Card size="small" title="浏览数据" className="data-browser">
+        <Typography.Text type="secondary">
+          该数据源类型（{kind}）暂不支持 SQL 浏览。
+        </Typography.Text>
+      </Card>
+    )
+  }
+
   return (
     <Card size="small" title="浏览数据" className="data-browser">
       <TextArea
@@ -135,18 +182,39 @@ export function DataBrowser({
           onChange={(e) => setTimeColumn(e.target.value)}
           style={{ width: 280 }}
         />
+        <Select
+          value={timeFormat}
+          options={TIME_FORMAT_OPTIONS}
+          onChange={(value) => setTimeFormat(value)}
+          title="时间格式"
+          style={{ width: 140 }}
+        />
+        <Input
+          placeholder="源时区（默认 UTC）"
+          value={sourceTimezone}
+          onChange={(e) => setSourceTimezone(e.target.value)}
+          style={{ width: 170 }}
+          title="源时区"
+        />
         <Button type="primary" loading={run.isPending} onClick={() => run.mutate()}>
           执行
         </Button>
       </Space>
+
+      {/* ⚠️ INTEGER 的时间列是 epoch 存的 —— 用 iso 解释会静默落到 1970 年。 */}
+      {integerTimeColumn && (
+        <p className="form-error">
+          时间列「{integerTimeColumn}」是 INTEGER —— 时间格式要选 epoch_s / epoch_ms。
+        </p>
+      )}
 
       {run.error instanceof Error && <p className="form-error">{run.error.message}</p>}
 
       {result && (
         <>
           <Typography.Text type="secondary">
-            {result.columns.length} 列 · 共 {result.total} 行（显示 {result.rows.length} 行）·
-            {result.elapsed_ms} ms
+            {result.columns.length} 列 · {result.total} 行
+            {result.truncated ? '（还有更多）' : ''} · {result.elapsed_ms} ms
           </Typography.Text>
           <Table
             size="small"
@@ -162,6 +230,7 @@ export function DataBrowser({
                 sql,
                 columns: result.columns,
                 roles: resolveRoles(result.columns, assignments),
+                time_format: timeFormat,
               })
             }
           >

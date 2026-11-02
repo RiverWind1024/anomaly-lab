@@ -106,14 +106,25 @@ export function SourceDetailPage() {
     sql: string
     columns: SourceQueryColumn[]
     roles: ColumnRoles
+    time_format: string
   }) => {
+    const timeColumn = payload.roles.time_column
+    const timeType = payload.columns.find((col) => col.name === timeColumn)?.type
+    // ⚠️ INTEGER 的时间列是 epoch 存的 —— 按纳秒解释会静默落到 1970 年，
+    //    不报错但结果是错的。所以这里不能一律填 iso_utc。
+    const epochTime = timeType === 'INTEGER'
+    const format = epochTime
+      ? payload.time_format.startsWith('epoch')
+        ? payload.time_format
+        : 'epoch_s'
+      : payload.time_format
     setBrowserResult({
       sql: payload.sql,
       columns: payload.columns,
-      time_column: payload.roles.time_column,
+      time_column: timeColumn,
       value_column: payload.roles.value_column,
       group_column: payload.roles.group_column,
-      time_format: payload.roles.time_column ? 'iso_utc' : undefined,
+      time_format: format,
     })
     setEditing(null)
     setFormOpen(true)
@@ -205,7 +216,11 @@ export function SourceDetailPage() {
         )}
       </StateBoundary>
 
-      <DataBrowser sourceId={sourceId} onUseAsMetric={handleUseAsMetric} />
+      <DataBrowser
+        sourceId={sourceId}
+        kind={source?.kind ?? 'sqlite'}
+        onUseAsMetric={handleUseAsMetric}
+      />
 
       <MetricForm
         open={formOpen}

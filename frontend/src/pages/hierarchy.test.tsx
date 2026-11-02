@@ -254,6 +254,68 @@ describe('SourceDetailPage', () => {
     },
     15000,
   )
+
+  it(
+    'INTEGER 的时间列 → 指标表单预填 epoch，并让用户选精度',
+    async () => {
+      /* ⚠️ INTEGER 列按 iso 解释会静默落到 1970 年 ——
+         不报错，但时间是错的，指标整条都错。 */
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL) => {
+          const url = String(input)
+          calls.push(url)
+          if (url.includes('/api/platform/catalog')) {
+            return new Response(JSON.stringify(CATALOG), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            })
+          }
+          if (url.includes('/api/platform/sources/1/query')) {
+            return new Response(
+              JSON.stringify({
+                columns: [
+                  { name: 'ts_epoch', type: 'INTEGER' },
+                  { name: 'metric_value', type: 'REAL' },
+                ],
+                rows: [[1793318400, 3.5]],
+                total: 1,
+                truncated: false,
+                elapsed_ms: 7,
+              }),
+              { status: 200, headers: { 'Content-Type': 'application/json' } },
+            )
+          }
+          return new Response(JSON.stringify({ detail: '没有数据' }), {
+            status: 404,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        }),
+      )
+      const user = userEvent.setup({ delay: null, pointerEventsCheck: 0 })
+      renderPage('/sources/1', '/sources/:sourceId', <SourceDetailPage />)
+      await user.click(await screen.findByRole('button', { name: /执\s*行/ }))
+
+      // ⚠️ INTEGER 列默认被当成「值列」—— 要手动指派成时间列
+      const card = screen.getByText('浏览数据').closest('.ant-card') as HTMLElement
+      const headerRow = within(card).getAllByRole('row')[0]
+      const roleSelect = within(headerRow).getAllByTitle('ts_epoch 列的角色')[0]
+      await user.click(within(roleSelect).getByRole('combobox'))
+      await user.click(await screen.findByTitle('时间列'))
+
+      await user.click(await screen.findByRole('button', { name: '用这个结果建指标' }))
+
+      const dialog = within(screen.getByRole('dialog'))
+      await waitFor(() => {
+        expect((dialog.getByLabelText('时间列') as HTMLInputElement).value).toBe('ts_epoch')
+      })
+      // ⚠️ 时间格式必须是 epoch —— iso 会静默落到 1970 年
+      expect(dialog.getAllByTitle('epoch_s').length).toBeGreaterThan(0)
+      // 浏览面板里给出提示 —— 指派 INTEGER 列做时间列时要用 epoch 精度
+      expect(screen.getByText(/是 INTEGER/)).toBeTruthy()
+    },
+    15000,
+  )
 })
 
 describe('MetricDetailPage', () => {
