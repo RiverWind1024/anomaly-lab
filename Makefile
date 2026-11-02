@@ -4,7 +4,7 @@ PIP_INDEX ?= https://pypi.tuna.tsinghua.edu.cn/simple
 NPM ?= npm
 
 .PHONY: setup test lint generate classify detect evaluate compare report validate-auto serve smoke platform-demo platform-smoke compliance-check clean \
-	frontend-install frontend-test frontend-build dev mock-tsdb mock-demo
+	frontend-install frontend-test frontend-build dev mock-tsdb mock-demo prune
 
 setup:
 	uv python install 3.12
@@ -88,6 +88,12 @@ smoke:
 
 platform-smoke:
 	./scripts/platform_smoke.sh
+
+# 清理超出保留窗口的运行记录与检测结果文件。
+#
+# ⚠️ 调度器本来就会每小时自动清一次 —— 这个是手动入口（先看会删什么用 --dry-run）。
+prune:
+	$(PY) -m anomaly_lab.cli prune --data data
 
 compliance-check:
 	$(PY) -m anomaly_lab.cli compliance-check

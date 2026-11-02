@@ -7,9 +7,11 @@ import type {
   FeedbackList,
   Overview,
   Preview,
+  PruneResult,
   RunSummary,
   SourceConfig,
   SourceQueryResult,
+  StorageUsage,
   Suggestion,
 } from './types'
 
@@ -235,3 +237,18 @@ export const deleteMetric = (metricId: number) =>
 
 export const deleteSource = (sourceId: number) =>
   request<{ deleted: DeleteStats }>(`/api/platform/sources/${sourceId}`, { method: 'DELETE' })
+
+/**
+ * 存储占用与保留策略。
+ *
+ * ⚠️ 「自动清理」不可见的话，用户没法判断它在不在工作 ——
+ *    作品集演示时，「数据在自动滚动」本身就是个卖点。
+ */
+export const getStorage = () => request<StorageUsage>('/api/platform/storage')
+
+/**
+ * 立即清理超出保留窗口的数据。
+ *
+ * ⚠️ 调度器本来就会每小时自动清一次 —— 这个是「现在就清」的手动入口。
+ */
+export const pruneData = () => postJson<PruneResult>('/api/platform/prune', {})

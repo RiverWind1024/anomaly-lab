@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -170,6 +171,24 @@ def _build_parser() -> argparse.ArgumentParser:
         "--base-url", default="http://127.0.0.1:8181", help="假远端地址"
     )
     p.add_argument("--db", default="mock", help="请求里的 db 字段")
+
+    p = sub.add_parser("prune", help="清理超出保留窗口的运行记录与检测结果文件")
+    p.add_argument("--data", type=Path, default=None, help="数据根目录，默认 data")
+    p.add_argument(
+        "--hours",
+        type=float,
+        default=None,
+        help="保留时长（小时）—— 默认读环境变量，再默认 24",
+    )
+    p.add_argument(
+        "--max-runs",
+        type=int,
+        default=None,
+        help="每个任务保留的运行次数 —— 默认读环境变量，再默认 100",
+    )
+    p.add_argument(
+        "--dry-run", action="store_true", help="只报告要删什么，不真删"
+    )
 
     sub.add_parser("compliance-check", help="合规自检")
 
@@ -597,6 +616,33 @@ def _cmd_mock_demo(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_prune(args: argparse.Namespace) -> int:
+    """手动清理超出保留窗口的数据。
+
+    ⚠️ 调度器也会自动清（每小时一次）—— 这个命令是给
+       「想现在就清」和「想先看看会删什么」（`--dry-run`）用的。
+    """
+    from anomaly_lab.platform.retention import RetentionPolicy, prune
+    from anomaly_lab.platform.store import PlatformStore
+
+    data_root = Path(args.data) if args.data else CONFIG.data_dir
+    policy = RetentionPolicy.from_env()
+    if args.hours is not None:
+        policy = replace(policy, max_age_hours=max(0.0, args.hours))
+    if args.max_runs is not None:
+        policy = replace(policy, max_runs_per_job=max(0, args.max_runs))
+    store = PlatformStore(data_root / "platform.db")
+    result = prune(store, data_root, policy, dry_run=args.dry_run)
+    prefix = "将要清理" if args.dry_run else "清理完成"
+    print(
+        f"{prefix}：删了 {result.deleted_runs} 次运行、"
+        f"{result.orphan_dirs} 个孤儿目录，"
+        f"释放 {result.freed_bytes / 1024 / 1024:.1f} MB；"
+        f"保留 {result.kept_runs} 次运行"
+    )
+    return 0
+
+
 def _cmd_compliance(args: argparse.Namespace) -> int:
     hits = scan_repo(Path.cwd())
     if hits:
@@ -633,6 +679,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_mock_tsdb(args)
     if args.command == "mock-demo":
         return _cmd_mock_demo(args)
+    if args.command == "prune":
+        return _cmd_prune(args)
     if args.command == "compliance-check":
         return _cmd_compliance(args)
     if args.command in _UNIMPLEMENTED:

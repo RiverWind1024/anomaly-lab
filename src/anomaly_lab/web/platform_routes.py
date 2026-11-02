@@ -14,6 +14,7 @@ import numpy as np
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from anomaly_lab.platform import retention
 from anomaly_lab.platform import runner as runner_module
 from anomaly_lab.platform.alert_events import collect_alert_events
 from anomaly_lab.platform.alerts import (
@@ -1026,5 +1027,24 @@ def build_router(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return asdict(updated)
+
+    @router.get("/api/platform/storage")
+    def storage() -> dict:
+        """当前占用与保留策略 —— 让「自动清理」可见。
+
+        ⚠️ 「自动清理」如果完全不可见，用户没法判断它在不在工作 ——
+           作品集演示时，「数据在自动滚动」本身就是个卖点。
+        """
+        return retention.storage_usage(_store(), get_data_root())
+
+    @router.post("/api/platform/prune")
+    def prune_now() -> dict:
+        """立即清理超出保留窗口的数据（调度器也会每小时自动清一次）。"""
+        store = _store()
+        result = retention.prune(store, get_data_root())
+        return {
+            **result.as_dict(),
+            "storage": retention.storage_usage(store, get_data_root()),
+        }
 
     return router

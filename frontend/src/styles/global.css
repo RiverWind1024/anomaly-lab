@@ -798,6 +798,22 @@ html.theme-switching *::after {
   font-size: 12px;
 }
 
+/* 数据保留卡片 */
+.retention {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+/* 每项里的标签与数值之间留点空 —— 挤在一起读起来像一句话 */
+.retention .ant-space-item > span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
 .evaluation__metric-class {
   display: flex;
   flex-direction: column;

@@ -212,6 +212,51 @@ export interface Overview {
   jobs: OverviewJob[]
 }
 
+// ─────────────────────────────────────────── 存储与保留 /api/platform/storage
+
+/** 保留策略 —— 「最近 N 次」∩「最近 T 小时」。 */
+export interface RetentionPolicyInfo {
+  max_age_hours: number
+  max_runs_per_job: number
+}
+
+export interface StorageUsage {
+  policy: RetentionPolicyInfo
+  runs: {
+    /** 保留中的运行记录数。 */
+    kept: number
+    /** 结果目录数。 */
+    n_dirs: number
+    /** 结果目录占用的字节数。 */
+    bytes: number
+  }
+  database: {
+    path: string
+    bytes: number
+  }
+  feedback: {
+    total: number
+  }
+  /** 上次清理时间；还没清过是 null。 */
+  last_pruned_at: string | null
+  last_pruned: {
+    deleted_runs: number
+    freed_bytes: number
+  }
+}
+
+/** 一次清理的结果。 */
+export interface PruneResult {
+  deleted_runs: number
+  deleted_dirs: number
+  orphan_dirs: number
+  freed_bytes: number
+  kept_runs: number
+  dry_run: boolean
+  /** 清理后的最新占用 —— 少发一次请求。 */
+  storage?: StorageUsage
+}
+
 export interface AlertListResponse {
   events: AlertEvent[]
   levels: string[]

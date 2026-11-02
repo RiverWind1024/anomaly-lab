@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import closing, contextmanager
 from dataclasses import replace
 from pathlib import Path
@@ -94,6 +94,15 @@ CREATE TABLE IF NOT EXISTS feedback (
   kind TEXT NOT NULL,
   note TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL
+);
+-- 清理状态：单行表（id 恒为 1），记「上次清理是什么时候、删了多少」。
+-- ⚠️ 放库里而不是文件里 —— 「上次清理时间」要跨进程可见
+--    （Web 请求看到的要和调度器写的是同一份状态）。
+CREATE TABLE IF NOT EXISTS retention_state (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  pruned_at TEXT,
+  deleted_runs INTEGER NOT NULL DEFAULT 0,
+  freed_bytes INTEGER NOT NULL DEFAULT 0
 );
 """
 
@@ -1141,3 +1150,67 @@ class PlatformStore:
             "feedback": feedback,
             "run_ids": run_ids,
         }
+
+    # ---------- 保留策略 ----------
+
+    def all_runs(self) -> list[Run]:
+        """全部运行记录（按 id 倒序 —— 新的在前）。
+
+        保留策略要按任务分组判定，所以这里给全量而不是分页。
+        ⚠️ `runs` 表正是「会一直变大」的那张表 —— 但保留窗口会把它压住，
+           清理前最多也就几千行，全量读得动。
+        """
+        with self._conn() as conn:
+            rows = conn.execute("SELECT * FROM runs ORDER BY id DESC").fetchall()
+        return [Run(**dict(row)) for row in rows]
+
+    def delete_runs(self, run_ids: Sequence[int]) -> dict[str, int]:
+        """删若干次运行记录，并把引用它们的反馈的 `run_id` 置空。
+
+        ⚠️ **反馈本身不删** —— 那是人工产生的数据，删它等于丢弃用户的劳动成果。
+           只把指向已删运行的引用断开（表里没有外键约束，必须手动置 NULL）。
+
+        返回 `{"runs": 删除数, "feedback_detached": 断开引用的反馈数}`。
+        """
+        ids = [int(item) for item in run_ids]
+        if not ids:
+            return {"runs": 0, "feedback_detached": 0}
+        placeholders = ",".join("?" * len(ids))
+        with self._conn() as conn:
+            cursor = conn.execute(
+                f"UPDATE feedback SET run_id = NULL WHERE run_id IN ({placeholders})",
+                ids,
+            )
+            detached = int(cursor.rowcount or 0)
+            conn.execute(f"DELETE FROM runs WHERE id IN ({placeholders})", ids)
+        return {"runs": len(ids), "feedback_detached": detached}
+
+    def get_retention_state(self) -> dict:
+        """清理状态（上次清理时间 / 上次删了多少）。"""
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT pruned_at, deleted_runs, freed_bytes FROM retention_state"
+                " WHERE id = 1"
+            ).fetchone()
+        if row is None:
+            return {"pruned_at": None, "deleted_runs": 0, "freed_bytes": 0}
+        return {
+            "pruned_at": row["pruned_at"],
+            "deleted_runs": int(row["deleted_runs"]),
+            "freed_bytes": int(row["freed_bytes"]),
+        }
+
+    def set_retention_state(
+        self, *, pruned_at: str, deleted_runs: int, freed_bytes: int
+    ) -> None:
+        """写清理状态（单行 upsert）。"""
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT INTO retention_state (id, pruned_at, deleted_runs, freed_bytes)"
+                " VALUES (1, ?, ?, ?)"
+                " ON CONFLICT(id) DO UPDATE SET"
+                " pruned_at = excluded.pruned_at,"
+                " deleted_runs = excluded.deleted_runs,"
+                " freed_bytes = excluded.freed_bytes",
+                (pruned_at, int(deleted_runs), int(freed_bytes)),
+            )

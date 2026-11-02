@@ -5,7 +5,7 @@
  * EXPECTED_PATHS，缺失即失败。
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { getCatalog, getOverview, createSource, createMetric, createJob, toggleJob, runJob, getRuns, getPreview, getCompare, createFeedback, getFeedback, getSuggestion, applySuggestion, getAlerts, deleteJob, deleteMetric, deleteSource, updateSource, updateMetric, querySource } from './platform'
+import { getCatalog, getOverview, createSource, createMetric, createJob, toggleJob, runJob, getRuns, getPreview, getCompare, createFeedback, getFeedback, getSuggestion, applySuggestion, getAlerts, deleteJob, deleteMetric, deleteSource, updateSource, updateMetric, querySource, getStorage, pruneData } from './platform'
 import { getSeries, getSeriesValues, getSummary, getBadcases, getExclusions, excludeEvaluationRow, restoreEvaluationRow } from './series'
 import { getAnnotations, saveAnnotations } from './annotate'
 
@@ -39,6 +39,8 @@ const EXPECTED_PATHS = [
   '/api/platform/jobs/{id}/feedback',
   '/api/platform/jobs/{id}/feedback/suggestion',
   '/api/platform/jobs/{id}/apply-suggestion',
+  '/api/platform/storage',
+  '/api/platform/prune',
   '/api/series',
   '/api/series/{id}/values',
   '/api/summary',
@@ -112,6 +114,8 @@ describe('端点封装层', () => {
     await deleteJob(7)
     await deleteMetric(1)
     await deleteSource(1)
+    await getStorage()
+    await pruneData()
     await updateSource(1, { name: 'x' })
     await updateMetric(1, { query: 'q' })
     await querySource(1, { sql: 'SELECT 1' })

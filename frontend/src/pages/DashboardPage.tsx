@@ -1,9 +1,9 @@
 import { Link } from 'react-router-dom'
-import { Card, Col, Row, Space, Statistic, Table, Tag, Tooltip } from 'antd'
+import { Button, Card, Col, Row, Space, Statistic, Table, Tag, Tooltip } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { StateBoundary } from '../components/StateBoundary'
-import { getOverview } from '../api/platform'
+import { getOverview, getStorage, pruneData } from '../api/platform'
 import { getSummary } from '../api/series'
 import type { OverviewJob } from '../api/types'
 
@@ -44,6 +44,19 @@ function runStatusTag(status: string | undefined): React.ReactNode {
   if (status === 'success') return <Tag color="success">成功</Tag>
   if (status === 'running') return <Tag color="processing">运行中</Tag>
   return <Tag color="error">失败</Tag>
+}
+
+/** 字节数 → 人类可读。 */
+export function fmtBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB']
+  let value = bytes
+  let index = 0
+  while (value >= 1024 && index < units.length - 1) {
+    value /= 1024
+    index += 1
+  }
+  return `${value.toFixed(index === 0 ? 0 : 1)} ${units[index]}`
 }
 
 /** 概览页：整个平台的运行状况。 */
@@ -105,8 +118,10 @@ export function DashboardPage() {
               </Col>
               <Col span={4}>
                 <Card size="small">
+                  {/* ⚠️ 不是「累计运行」—— 保留策略会把超窗的清掉，
+                      这个数字是**保留窗口内**的运行次数。叫「累计」就是撒谎。 */}
                   <Statistic
-                    title="累计运行"
+                    title="保留期运行"
                     value={data.runs.total}
                     suffix={
                       <span className="muted dashboard__stat-suffix">
@@ -231,10 +246,71 @@ export function DashboardPage() {
                 <p className="muted">还没有回测报告 —— 先运行 <code>make evaluate</code>。</p>
               )}
             </Card>
+
+            <RetentionCard />
           </div>
         )}
       </StateBoundary>
     </div>
+  )
+}
+
+/**
+ * 数据保留卡片：占用、策略、上次清理。
+ *
+ * ⚠️ 「自动清理」如果完全不可见，用户没法判断它在不在工作 ——
+ *    作品集演示时，「数据在自动滚动」本身就是个卖点。
+ */
+function RetentionCard() {
+  const qc = useQueryClient()
+  const storage = useQuery({ queryKey: ['storage'], queryFn: getStorage })
+  const prune = useMutation({
+    mutationFn: pruneData,
+    onSuccess: () => {
+      // 清理会改「保留期运行」的数 —— 两边都要刷新
+      void qc.invalidateQueries({ queryKey: ['storage'] })
+      void qc.invalidateQueries({ queryKey: ['overview'] })
+    },
+  })
+
+  return (
+    <Card size="small" title="数据保留">
+      <StateBoundary
+        isLoading={storage.isPending}
+        error={storage.error}
+        data={storage.data}
+      >
+        {(data) => (
+          <div className="retention">
+            <Space size="large" wrap>
+              <span>
+                <span className="muted">运行记录</span>
+                <span className="mono">{data.runs.kept}</span>
+                <span className="muted">条</span>
+                <span className="mono">{fmtBytes(data.runs.bytes)}</span>
+              </span>
+              <span>
+                <span className="muted">保留策略</span>
+                <span className="mono">
+                  最近 {data.policy.max_runs_per_job} 次 / {data.policy.max_age_hours} 小时
+                </span>
+              </span>
+              <span>
+                <span className="muted">上次清理</span>
+                <span>{data.last_pruned_at ? sinceLabel(data.last_pruned_at) : '还没清过'}</span>
+              </span>
+            </Space>
+            <Button
+              size="small"
+              loading={prune.isPending}
+              onClick={() => prune.mutate()}
+            >
+              立即清理
+            </Button>
+          </div>
+        )}
+      </StateBoundary>
+    </Card>
   )
 }
 

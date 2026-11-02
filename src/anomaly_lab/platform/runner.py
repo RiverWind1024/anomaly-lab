@@ -77,6 +77,16 @@ def is_running(job_id: int) -> bool:
         return job_id in _INFLIGHT
 
 
+def inflight_run_ids() -> set[int]:
+    """当前正在执行的 run_id 集合。
+
+    保留策略用它来避开「正在写」的那次运行 ——
+    删掉它的目录，runner 往里写 npz 时就会失败。
+    """
+    with _INFLIGHT_LOCK:
+        return set(_INFLIGHT.values())
+
+
 def _file_name(series_id: str) -> str:
     digest = hashlib.sha1(series_id.encode("utf-8")).hexdigest()[:16]
     return f"{digest}.npz"
