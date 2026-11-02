@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>anomaly·lab — 数据源设计样张</title>
+    <link rel="stylesheet" href="app.css" />
+    <script>
+      ;(function () {
+        try {
+          var saved = localStorage.getItem('anomaly-lab-sample-theme')
+          if (saved === 'dark' || saved === 'light') {
+            document.documentElement.setAttribute('data-theme', saved)
+          }
+        } catch (e) {}
+      })()
+    </script>
+  </head>
+  <body>
+    <a class="skip" href="#main">跳到主要内容</a>
+
+    <div class="shell">
+      <main class="main" id="main">
+        <header class="titlebar">
+          <div class="titlebar__lead">
+            <h1>数据源</h1>
+            <p class="finding" id="finding"></p>
+          </div>
+        </header>
+
+        <div class="toolbar">
+          <button class="btn btn--primary btn--sm" type="button">新建数据源</button>
+        </div>
+
+        <section class="panel" aria-labelledby="srcTitle">
+          <div class="panel__head">
+            <div>
+              <h2 class="panel__title" id="srcTitle">数据源</h2>
+              <p class="panel__meta num" id="srcMeta"></p>
+            </div>
+          </div>
+          <table class="dtable">
+            <thead>
+              <tr>
+                <th class="r">ID</th>
+                <th>名称</th>
+                <th class="r">指标</th>
+                <th>类型</th>
+                <th>路径</th>
+                <th class="col-opt"></th>
+              </tr>
+            </thead>
+            <tbody id="srcRows"></tbody>
+          </table>
+        </section>
+
+        <section class="panel" aria-labelledby="metricTitle" style="margin-top: 20px">
+          <div class="panel__head">
+            <div>
+              <h2 class="panel__title" id="metricTitle">demo-sqlite 的指标</h2>
+              <p class="panel__meta num" id="metricMeta"></p>
+            </div>
+            <a class="link" href="http://127.0.0.1:5173/sources/1">打开数据源详情</a>
+          </div>
+          <table class="dtable">
+            <thead>
+              <tr>
+                <th class="r">ID</th>
+                <th>名称</th>
+                <th class="r">频率</th>
+                <th>时间列</th>
+                <th>值列</th>
+                <th>分组列</th>
+                <th>时区</th>
+                <th>缺失</th>
+                <th class="col-opt">创建于</th>
+              </tr>
+            </thead>
+            <tbody id="metricRows"></tbody>
+          </table>
+          <div class="tfoot" id="metricFoot"></div>
+        </section>
+
+        <section class="panel" aria-labelledby="browseTitle" style="margin-top: 20px">
+          <div class="panel__head">
+            <div>
+              <h2 class="panel__title" id="browseTitle">浏览数据</h2>
+              <p class="panel__meta num" id="browseMeta"></p>
+            </div>
+            <span class="toolbar__note">只读查询，不落库</span>
+          </div>
+          <table class="dtable">
+            <thead>
+              <tr>
+                <th>ts</th>
+                <th>series</th>
+                <th class="r">value</th>
+              </tr>
+            </thead>
+            <tbody id="browseRows"></tbody>
+          </table>
+        </section>
+
+        <footer class="pagefoot">
+          <span id="footStamp"></span>
+          <span>真实接口：/api/platform/catalog · /api/platform/overview · /sources/{id}/query</span>
+        </footer>
+      </main>
+    </div>
+
+    <script src="data-sources.js"></script>
+    <script>
+      ;(function () {
+        window.SAMPLE.counts = { alerts: window.SAMPLE.sources.alerts_total }
+        window.SAMPLE.page = {
+          key: 'sources',
+        }
+      })()
+    </script>
+    <script src="chart.js"></script>
+    <script src="shell.js"></script>
+    <script>
+      ;(function () {
+        var S = window.SAMPLE.sources
+        var fmtTime = window.SampleChart.fmtTime
+
+        var src = S.sources[0]
+        var m = S.metrics[0]
+        var alertPoints = S.series.reduce(function (a, s) { return a + s.n_alerts }, 0)
+
+        document.getElementById('finding').innerHTML =
+          '共 <span class="num">' + S.sources.length + '</span> 个数据源 —— ' +
+          '<b>' + m.name + '</b> 每 <span class="num">' + m.freq + '</span> 一个点，' +
+          '按 <b>' + m.group_column + '</b> 分组，' +
+          '<span class="num">' + S.series.length + '</span> 条序列、' +
+          '<span class="num">' + alertPoints + '</span> 个告警点'
+
+        document.getElementById('srcMeta').textContent =
+          S.sources.length + ' 个数据源 · ' + S.metrics.length + ' 个指标 · ' +
+          S.jobs.length + ' 个任务'
+
+        // ── 数据源列表 ──
+        document.getElementById('srcRows').innerHTML = S.sources.map(function (s) {
+          var nMetrics = S.metrics.filter(function (x) { return x.source_id === s.id }).length
+          return (
+            '<tr>' +
+              '<td class="r num dim">' + s.id + '</td>' +
+              '<td><a href="http://127.0.0.1:5173/sources/' + s.id + '">' + s.name + '</a></td>' +
+              '<td class="r num">' + nMetrics + '</td>' +
+              '<td class="num dim">' + s.kind + '</td>' +
+              '<td class="num dim">' + s.path + '</td>' +
+              '<td class="col-opt">' +
+                '<span class="btn btn--ghost btn--sm">编辑</span> ' +
+                '<span class="btn btn--ghost btn--sm">删除</span>' +
+              '</td>' +
+            '</tr>'
+          )
+        }).join('')
+
+        // ── 指标列表（数据源详情页的内容） ──
+        document.getElementById('metricRows').innerHTML = S.metrics.map(function (x) {
+          return (
+            '<tr>' +
+              '<td class="r num dim">' + x.id + '</td>' +
+              '<td><a href="http://127.0.0.1:5173/metrics/' + x.id + '">' + x.name + '</a></td>' +
+              '<td class="r num">' + x.freq + '</td>' +
+              '<td class="num dim">' + x.time_column + '</td>' +
+              '<td class="num dim">' + x.value_column + '</td>' +
+              '<td class="num dim">' + x.group_column + '</td>' +
+              '<td class="num dim">' + x.source_timezone + '</td>' +
+              '<td class="num dim">' + x.missing_policy + '</td>' +
+              '<td class="col-opt num dim">' + fmtTime(x.created_at) + '</td>' +
+            '</tr>'
+          )
+        }).join('')
+        document.getElementById('metricMeta').textContent =
+          S.metrics.length + ' 个指标 · ' + S.series.length + ' 条序列'
+        document.getElementById('metricFoot').innerHTML =
+          '<span>查询 <b>' + m.query + '</b></span>' +
+          '<span>时间格式 <b>' + m.time_format + '</b></span>' +
+          '<span>窗口 <b>$timefilter</b></span>'
+
+        // ── 浏览数据：数据源上只读地查几行 ──
+        var browse = S.browse
+        document.getElementById('browseMeta').textContent =
+          browse.columns.length + ' 列 · ' + browse.rows.length + ' 行' +
+          (browse.truncated ? '（已截断）' : '')
+        document.getElementById('browseRows').innerHTML = browse.rows.map(function (row) {
+          return (
+            '<tr>' +
+              '<td class="num dim">' + row[0] + '</td>' +
+              '<td class="num">' + row[1] + '</td>' +
+              '<td class="r num">' + Number(row[2]).toFixed(3) + '</td>' +
+            '</tr>'
+          )
+        }).join('')
+
+        var stamp = '快照 ' + fmtTime(S.snapshot) + ' UTC'
+        window.SAMPLE.setStamp(stamp)
+        document.getElementById('footStamp').textContent =
+          '设计样张 · 数据快照 ' + S.snapshot.replace('T', ' ').slice(0, 16) + ' UTC'
+      })()
+    </script>
+  </body>
+</html>

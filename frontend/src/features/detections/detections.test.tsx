@@ -170,9 +170,9 @@ describe('DetectionsPage', () => {
   it('筛选后计数正确', async () => {
     renderPage()
     await waitFor(() => expect(listIds().length).toBeGreaterThan(0))
-    // 25 条全在 —— 总数写在标题下的发现句里
-    const finding = document.querySelector('.finding')?.textContent ?? ''
-    expect(finding).toContain('25 条记录')
+    // 25 条全在 —— 计数在筛选栏右端
+    const count = document.querySelector('.filter-bar__count')?.textContent ?? ''
+    expect(count).toContain('25 条记录')
   })
 
   it('详情请求带上 detector', async () => {

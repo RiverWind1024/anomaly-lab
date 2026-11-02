@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>anomaly·lab — 告警中心设计样张</title>
+    <link rel="stylesheet" href="app.css" />
+    <script>
+      ;(function () {
+        try {
+          var saved = localStorage.getItem('anomaly-lab-sample-theme')
+          if (saved === 'dark' || saved === 'light') {
+            document.documentElement.setAttribute('data-theme', saved)
+          }
+        } catch (e) {}
+      })()
+    </script>
+  </head>
+  <body>
+    <a class="skip" href="#main">跳到主要内容</a>
+
+    <div class="shell">
+      <main class="main" id="main">
+        <header class="titlebar">
+          <div class="titlebar__lead">
+            <h1>告警中心</h1>
+            <p class="finding" id="finding"></p>
+          </div>
+        </header>
+
+        <section class="panel" aria-labelledby="listTitle">
+          <div class="panel__head">
+            <div>
+              <h2 class="panel__title" id="listTitle">告警事件</h2>
+              <p class="panel__meta num" id="listMeta"></p>
+            </div>
+            <a class="link" href="index.html">看分数轨迹</a>
+          </div>
+
+          <div class="filters">
+            <select class="select" id="jobSelect" aria-label="按任务筛选"></select>
+            <select class="select" id="levelSelect" aria-label="按等级筛选"></select>
+            <select class="select" id="seriesSelect" aria-label="按序列筛选"></select>
+            <select class="select" id="daySelect" aria-label="按时间范围筛选"></select>
+          </div>
+
+          <table class="dtable">
+            <thead>
+              <tr>
+                <th>等级</th>
+                <th>时间</th>
+                <th class="r">点数</th>
+                <th class="r">峰值分数</th>
+                <th>任务</th>
+                <th>序列</th>
+                <th class="col-opt">算法</th>
+                <th class="col-opt"></th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+          <div class="tfoot" id="foot"></div>
+        </section>
+
+        <footer class="pagefoot">
+          <span id="footStamp"></span>
+          <span>真实接口：/api/platform/alerts · /api/platform/overview</span>
+        </footer>
+      </main>
+    </div>
+
+    <script src="data-alerts.js"></script>
+    <script>
+      ;(function () {
+        window.SAMPLE.counts = { alerts: window.SAMPLE.alerts.total }
+        window.SAMPLE.page = {
+          key: 'alerts',
+        }
+      })()
+    </script>
+    <script src="chart.js"></script>
+    <script src="shell.js"></script>
+    <script>
+      ;(function () {
+        var A = window.SAMPLE.alerts
+        var fmtTime = window.SampleChart.fmtTime
+
+        var job = 'all'
+        var level = 'all'
+        var series = 'all'
+        var day = 'all'
+        var open = null
+
+        function dayOf(e) {
+          return e.start.slice(0, 10)
+        }
+
+        function days() {
+          var out = []
+          A.events.forEach(function (e) {
+            if (out.indexOf(dayOf(e)) < 0) out.push(dayOf(e))
+          })
+          return out.sort()
+        }
+
+        function opt(value, label, active) {
+          return '<option value="' + value + '"' + (active ? ' selected' : '') + '>' + label + '</option>'
+        }
+
+        var sorted = A.events.slice().sort(function (a, b) { return a.start < b.start ? 1 : -1 })
+        var heaviest = sorted.reduce(function (a, b) { return b.points > a.points ? b : a }, sorted[0])
+        document.getElementById('finding').innerHTML =
+          '<span class="num">' + A.total + '</span> 条告警事件（取各任务最近一次运行） · ' +
+          '<span class="num">' + A.by_level[0].count + '</span> 条 P0 —— ' +
+          '最重的一段是 <b>' + fmtTime(heaviest.start) + ' – ' + fmtTime(heaviest.end).slice(6) + '</b>，' +
+          '<span class="num">' + heaviest.points + '</span> 个点'
+
+        // ── 筛选（真实页面用 Select，这里用原生 select，行为一致） ──
+        function renderSelects() {
+          var p0 = A.events.filter(function (e) { return e.level_index >= 2 }).length
+          document.getElementById('jobSelect').innerHTML =
+            opt('all', '全部任务', job === 'all') +
+            A.jobs.map(function (j) {
+              return opt(j.name, j.name, job === j.name)
+            }).join('')
+          document.getElementById('levelSelect').innerHTML =
+            opt('all', '全部等级', level === 'all') +
+            opt('p0', 'P0（' + p0 + '）', level === 'p0') +
+            opt('p1', 'P1（' + (A.events.length - p0) + '）', level === 'p1')
+          document.getElementById('seriesSelect').innerHTML =
+            opt('all', '全部序列', series === 'all') +
+            A.series.map(function (s) {
+              return opt(s, s.split(':').pop(), series === s)
+            }).join('')
+          document.getElementById('daySelect').innerHTML =
+            opt('all', '全部时间', day === 'all') +
+            days().map(function (d) {
+              return opt(d, d, day === d)
+            }).join('')
+        }
+
+        document.getElementById('jobSelect').addEventListener('change', function () {
+          job = this.value
+          renderRows()
+        })
+        document.getElementById('levelSelect').addEventListener('change', function () {
+          level = this.value
+          renderRows()
+        })
+        document.getElementById('seriesSelect').addEventListener('change', function () {
+          series = this.value
+          renderRows()
+        })
+        document.getElementById('daySelect').addEventListener('change', function () {
+          day = this.value
+          renderRows()
+        })
+
+        function filtered() {
+          return A.events.filter(function (e) {
+            if (level === 'p0' && e.level_index < 2) return false
+            if (level === 'p1' && e.level_index >= 2) return false
+            if (series !== 'all' && e.series !== series) return false
+            if (job !== 'all' && e.job !== job) return false
+            if (day !== 'all' && dayOf(e) !== day) return false
+            return true
+          }).sort(function (a, b) { return a.start < b.start ? 1 : -1 })
+        }
+
+        function renderRows() {
+          var list = filtered()
+          document.getElementById('rows').innerHTML = list.map(function (e) {
+            var id = e.start + '|' + e.series
+            return (
+              '<tr>' +
+                '<td><span class="pill pill--' + (e.level_index >= 2 ? 'p0' : 'p1') + '">' + e.level + '</span></td>' +
+                '<td class="num">' + fmtTime(e.start) +
+                  (e.end !== e.start ? ' – ' + fmtTime(e.end).slice(6) : '') + '</td>' +
+                '<td class="r num">' + e.points + '</td>' +
+                '<td class="r num ' + (e.level_index >= 2 ? 'p0' : '') + '">' + e.score.toFixed(2) + 'σ</td>' +
+                '<td class="num dim">' + e.job + '</td>' +
+                '<td class="num">' + e.group + '</td>' +
+                '<td class="col-opt num dim">' + e.detector + '</td>' +
+                '<td class="col-opt"><button class="btn btn--ghost btn--sm" data-id="' + id + '">详情</button></td>' +
+              '</tr>' +
+              (open === id ? detailRow(e) : '')
+            )
+          }).join('') || (
+            '<tr><td colspan="8">' +
+              '<div class="empty" style="margin:10px 0">' +
+                '<p class="empty__t">当前没有告警</p>' +
+                '<p class="empty__d">换个筛选条件看看</p>' +
+              '</div></td></tr>'
+          )
+
+          ;[].forEach.call(document.querySelectorAll('#rows button[data-id]'), function (b) {
+            b.addEventListener('click', function () {
+              open = open === b.dataset.id ? null : b.dataset.id
+              renderRows()
+            })
+          })
+
+          var points = list.reduce(function (a, e) { return a + e.points }, 0)
+          document.getElementById('listMeta').textContent =
+            list.length + ' 条' + (list.length === A.total ? '' : ' / 共 ' + A.total + ' 条')
+          document.getElementById('foot').innerHTML =
+            '<span>当前筛选 <b>' + list.length + '</b> 条 / 共 ' + A.total + ' 条</span>' +
+            '<span>覆盖 <b>' + points + '</b> 个告警点</span>' +
+            '<span>P0 <b>' + list.filter(function (e) { return e.level_index >= 2 }).length + '</b> 条</span>'
+        }
+
+        function detailRow(e) {
+          return (
+            '<tr class="rowdetail"><td colspan="8"><dl>' +
+              '<dt>指标</dt><dd>' + e.metric + '</dd>' +
+              '<dt>运行</dt><dd>#' + e.run_id + '</dd>' +
+              '<dt>检测器</dt><dd>' + e.detector + '</dd>' +
+              '<dt>分数类型</dt><dd>' + e.score_type + '</dd>' +
+              '<dt>区间</dt><dd>' + fmtTime(e.start) + ' → ' + fmtTime(e.end) + '</dd>' +
+              '<dt>告警点</dt><dd>' + e.points + '</dd>' +
+              '<dt>峰值</dt><dd>' + e.score.toFixed(2) + 'σ</dd>' +
+              '<dt>序列</dt><dd>' + e.series + '</dd>' +
+            '</dl></td></tr>'
+          )
+        }
+
+        renderSelects()
+        renderRows()
+
+        var stamp = '快照 ' + fmtTime(A.snapshot) + ' UTC'
+        window.SAMPLE.setStamp(stamp)
+        document.getElementById('footStamp').textContent =
+          '设计样张 · 数据快照 ' + A.snapshot.replace('T', ' ').slice(0, 16) + ' UTC'
+      })()
+    </script>
+  </body>
+</html>

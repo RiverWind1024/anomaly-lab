@@ -53,29 +53,12 @@ export function JobsPage() {
   }
 
   const jobs = catalog.data?.jobs ?? []
-  const enabled = jobs.filter((j) => j.enabled).length
   const overviewJobs = overview.data?.jobs ?? []
-  const lastAlertJob = overviewJobs
-    .filter((j) => j.last_run && j.last_run.n_alerts > 0)
-    .sort((a, b) => (a.last_run?.id ?? 0) < (b.last_run?.id ?? 0) ? 1 : -1)[0]
 
   return (
     <div className="page">
       <header className="titlebar">
-        <div className="titlebar__lead">
-          <h1>检测任务</h1>
-          <p className="finding">
-            共 <span className="mono">{jobs.length}</span> 个任务 ·{' '}
-            <span className="mono">{enabled}</span> 个启用
-            {lastAlertJob?.last_run ? (
-              <>
-                {' '}
-                —— <b>{lastAlertJob.name}</b> 上次跑出{' '}
-                <span className="mono">{lastAlertJob.last_run.n_alerts}</span> 个告警点
-              </>
-            ) : null}
-          </p>
-        </div>
+        <h1>检测任务</h1>
         <div className="titlebar__actions">
           <Button type="primary" onClick={() => setFormOpen(true)}>
             新建任务

@@ -106,27 +106,18 @@ export function DetectionsPage() {
   return (
     <div className="page">
       <header className="titlebar">
-        <div className="titlebar__lead">
-          <h1>检测记录</h1>
-          <p className="finding">
-            每条序列一次检测的完整结果：数值、分数、阈值，以及与真值比对出的误报、漏报区间。
-            {rows.length > 0 ? (
-              <>
-                {' '}
-                共 <span className="mono">{rows.length}</span> 条记录
-                {filtered.length !== rows.length ? (
-                  <>
-                    ，筛选后 <span className="mono">{filtered.length}</span> 条
-                  </>
-                ) : null}
-              </>
-            ) : null}
-          </p>
-        </div>
+        <h1>检测记录</h1>
       </header>
 
       <div className="filter-bar">
         <FilterBar rows={rows} filters={filters} onChange={setFilters} />
+        {/* 记录总数 —— 筛选之后才知道还剩几条 */}
+        {rows.length > 0 ? (
+          <span className="filter-bar__count mono dim">
+            共 {rows.length} 条记录
+            {filtered.length !== rows.length ? ` · 筛选后 ${filtered.length} 条` : ''}
+          </span>
+        ) : null}
       </div>
 
       <div className="badcases-layout">

@@ -20,8 +20,16 @@ export function KpiStrip({
   summary: Summary | undefined
 }) {
   const bt = summary?.summary?.overall
+  // ⚠️ 平台级的 P0 数**只在这里**出现 —— 页面顶部那行说明已去掉，
+  //    这一格是它唯一的落点
+  const p0 = overview.alerts.by_level.find((l) => l.level === 'P0')?.count ?? 0
   return (
     <section className="kpis" aria-label="平台规模">
+      <div className="kpi">
+        <span className="kpi__k">告警</span>
+        <span className="kpi__v mono">{overview.alerts.total}</span>
+        <span className="kpi__s">{p0 > 0 ? `${p0} 条 P0` : '没有 P0'}</span>
+      </div>
       <div className="kpi">
         <span className="kpi__k">检测任务</span>
         <span className="kpi__v mono">{overview.counts.jobs}</span>

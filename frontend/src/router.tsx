@@ -28,6 +28,9 @@ const SourceDetailPage = lazy(() =>
 const MetricDetailPage = lazy(() =>
   import('./pages/MetricDetailPage').then((m) => ({ default: m.MetricDetailPage })),
 )
+const MetricPreviewPage = lazy(() =>
+  import('./pages/MetricPreviewPage').then((m) => ({ default: m.MetricPreviewPage })),
+)
 const JobDetailPage = lazy(() =>
   import('./pages/JobDetailPage').then((m) => ({ default: m.JobDetailPage })),
 )
@@ -50,6 +53,8 @@ export function AppRoutes() {
         <Route path="/sources" element={<SourcesPage />} />
         <Route path="/sources/:sourceId" element={<SourceDetailPage />} />
         <Route path="/metrics/:metricId" element={<MetricDetailPage />} />
+        {/* 指标取数预览 —— 从指标的新增/编辑表单里开新标签页跳过来 */}
+        <Route path="/metric-preview" element={<MetricPreviewPage />} />
         {/* 旧的平级「指标」页 → 指标现在是数据源的子级 */}
         <Route path="/metrics" element={<Navigate to="/sources" replace />} />
         <Route path="/jobs" element={<JobsPage />} />

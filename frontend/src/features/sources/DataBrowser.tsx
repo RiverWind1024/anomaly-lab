@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { Button, Card, DatePicker, Input, Select, Space, Table, Typography } from 'antd'
+import { Button, DatePicker, Input, Select, Space, Table, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import type { Dayjs } from 'dayjs'
 import { querySource } from '../../api/platform'
@@ -47,40 +47,122 @@ function toIso(value: Dayjs | null): string | undefined {
   return value.toISOString()
 }
 
+/** 「用这个结果建指标」带回去的东西。 */
+export interface BrowserResult {
+  sql: string
+  columns: SourceQueryResult['columns']
+  roles: {
+    time_column?: string
+    value_column?: string
+    group_column?: string
+  }
+  time_format: string
+  source_timezone: string
+}
+
+export interface DataBrowserProps {
+  sourceId: number
+  /** 数据源类型 —— 决定渲染 SQL 编辑器还是该源专属表单（spec §6.4）。 */
+  kind: string
+  /** 初始 SQL —— 从指标配置带过来 */
+  initialSql?: string
+  /** 初始时间列 */
+  initialTimeColumn?: string
+  /** 初始时间格式 */
+  initialTimeFormat?: string
+  /** 初始源时区 */
+  initialSourceTimezone?: string
+  /** 已知列角色（编辑已有指标时预置） */
+  initialAssignments?: Record<string, RoleChoice>
+  /**
+   * 结果跑出来之后的动作 —— 「用这个结果建指标」。
+   *
+   * ⚠️ 可选：预览页自己决定下一步（保存回指标 / 带回表单）。
+   */
+  onUseAsMetric?: (payload: BrowserResult) => void
+  /** 「用这个结果建指标」按钮的文案 */
+  useAsLabel?: string
+  /**
+   * 编辑器里的当前状态。
+   *
+   * ⚠️ 页面上的「保存」按钮要拿到**用户改过**的 SQL 与列指派 ——
+   *    它在浏览器外面，只能靠回调拿。
+   */
+  onStateChange?: (state: {
+    sql: string
+    timeColumn: string
+    timeFormat: string
+    sourceTimezone: string
+    assignments: Record<string, RoleChoice>
+  }) => void
+  /**
+   * 跑出来的结果（含列角色解析）。
+   *
+   * ⚠️ 只有跑过查询才有 —— 保存按钮靠它决定能不能点。
+   */
+  onResult?: (payload: BrowserResult) => void
+  /**
+   * 打开就执行一次。
+   *
+   * ⚠️ 预览页要这样 —— 打开空着等用户点「执行」，
+   *    「预览」这件事就没有意义了。
+   */
+  autoRun?: boolean
+}
+
 /**
- * 数据浏览器。
+ * 数据浏览器 —— 在数据源上跑一段**只读**查询，看几行原始数据。
  *
  * ⚠️ 目的是「先看结构、再定指标」—— 用户不该闭着眼睛写 SQL。
+ *
+ * ⚠️ 它住在**指标的编辑流程里**（预览页），不占数据源详情页的位置 ——
+ *    数据的用途就是定指标，放在数据源页上只是个孤立的工具。
  */
 export function DataBrowser({
   sourceId,
   kind,
+  initialSql,
+  initialTimeColumn,
+  initialTimeFormat,
+  initialSourceTimezone,
+  initialAssignments,
   onUseAsMetric,
-}: {
-  sourceId: number
-  /** 数据源类型 —— 决定渲染 SQL 编辑器还是该源专属表单（spec §6.4）。 */
-  kind: string
-  onUseAsMetric: (payload: {
-    sql: string
-    columns: SourceQueryResult['columns']
-    roles: {
-      time_column?: string
-      value_column?: string
-      group_column?: string
-    }
-    /** 面板上选的时间格式 —— 建指标时作为默认值。 */
-    time_format: string
-  }) => void
-}) {
-  const [sql, setSql] = useState('SELECT * FROM metrics LIMIT 100')
+  useAsLabel = '用这个结果建指标',
+  onStateChange,
+  onResult,
+  autoRun = false,
+}: DataBrowserProps) {
+  const [sql, setSql] = useState(initialSql ?? 'SELECT * FROM metrics LIMIT 100')
   const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>(null)
-  const [timeColumn, setTimeColumn] = useState<string>('')
+  const [timeColumn, setTimeColumn] = useState<string>(initialTimeColumn ?? '')
   /** 时间格式 —— 缺省与后端一致（iso_utc）。 */
-  const [timeFormat, setTimeFormat] = useState<string>('iso_utc')
+  const [timeFormat, setTimeFormat] = useState<string>(initialTimeFormat ?? 'iso_utc')
   /** 源时区 —— 缺省与后端一致（UTC）。 */
-  const [sourceTimezone, setSourceTimezone] = useState<string>('UTC')
+  const [sourceTimezone, setSourceTimezone] = useState<string>(initialSourceTimezone ?? 'UTC')
   /** 列名 → 用户指派的角色（没指派过的列走自动推断）。 */
-  const [assignments, setAssignments] = useState<Record<string, RoleChoice>>({})
+  const [assignments, setAssignments] = useState<Record<string, RoleChoice>>(initialAssignments ?? {})
+
+  /**
+   * 初值同步。
+   *
+   * ⚠️ 指标配置是**异步**取到的（catalog 请求回来之前先渲染）——
+   *    不同步的话，编辑指标时打开预览页看到的是默认 SQL，不是这个指标的 SQL。
+   */
+  useEffect(() => {
+    if (initialSql != null) setSql(initialSql)
+  }, [initialSql])
+  useEffect(() => {
+    if (initialTimeColumn != null) setTimeColumn(initialTimeColumn)
+  }, [initialTimeColumn])
+  useEffect(() => {
+    if (initialTimeFormat != null) setTimeFormat(initialTimeFormat)
+  }, [initialTimeFormat])
+  useEffect(() => {
+    if (initialSourceTimezone != null) setSourceTimezone(initialSourceTimezone)
+  }, [initialSourceTimezone])
+  useEffect(() => {
+    if (initialAssignments) setAssignments(initialAssignments)
+  }, [initialAssignments])
 
   const run = useMutation({
     mutationFn: () =>
@@ -98,6 +180,54 @@ export function DataBrowser({
   })
 
   const result = run.data
+
+  /**
+   * 打开就跑一次。
+   *
+   * ⚠️ 用 ref 守卫 —— effect 会因为依赖变化重跑，
+   *    每跑一次都是一次多余的查询。
+   */
+  const autoRan = useRef(false)
+  useEffect(() => {
+    if (!autoRun || autoRan.current) return
+    autoRan.current = true
+    run.mutate()
+    // ⚠️ run 是每次渲染的新对象 —— 不放进依赖里，靠 ref 守卫只跑一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoRun])
+
+  /**
+   * 把状态报给外面。
+   *
+   * ⚠️ 回调用 ref 存 —— 否则父组件每次渲染都给新函数，
+   *    effect 会被反复触发（父组件 setState → 重渲染 → 又触发）。
+   */
+  const onStateChangeRef = useRef(onStateChange)
+  onStateChangeRef.current = onStateChange
+  const onResultRef = useRef(onResult)
+  onResultRef.current = onResult
+
+  useEffect(() => {
+    onStateChangeRef.current?.({
+      sql,
+      timeColumn,
+      timeFormat,
+      sourceTimezone,
+      assignments,
+    })
+  }, [sql, timeColumn, timeFormat, sourceTimezone, assignments])
+
+  // 跑出结果时报告一次 —— 带着解析后的列角色
+  useEffect(() => {
+    if (!result) return
+    onResultRef.current?.({
+      sql,
+      columns: result.columns,
+      roles: resolveRoles(result.columns, assignments),
+      time_format: timeFormat,
+      source_timezone: sourceTimezone,
+    })
+  }, [result, sql, assignments, timeFormat, sourceTimezone])
 
   /** 指派某一列的角色 —— 一个角色只能属于一列。 */
   const assign = (columnName: string, choice: RoleChoice) => {
@@ -157,16 +287,14 @@ export function DataBrowser({
   //    第二层连接器（未来）显示该源专属表单，不显示编辑器。
   if (kind !== 'sqlite' && kind !== 'http') {
     return (
-      <Card size="small" title="浏览数据" className="data-browser">
-        <Typography.Text type="secondary">
-          该数据源类型（{kind}）暂不支持 SQL 浏览。
-        </Typography.Text>
-      </Card>
+      <section className="panel">
+        <p className="muted">该数据源类型（{kind}）暂不支持 SQL 浏览。</p>
+      </section>
     )
   }
 
   return (
-    <Card size="small" title="浏览数据" className="data-browser">
+    <section className="panel">
       <TextArea
         rows={5}
         value={sql}
@@ -224,20 +352,23 @@ export function DataBrowser({
             scroll={{ x: 'max-content' }}
             columns={columns}
           />
-          <Button
-            onClick={() =>
-              onUseAsMetric({
-                sql,
-                columns: result.columns,
-                roles: resolveRoles(result.columns, assignments),
-                time_format: timeFormat,
-              })
-            }
-          >
-            用这个结果建指标
-          </Button>
+          {onUseAsMetric ? (
+            <Button
+              onClick={() =>
+                onUseAsMetric({
+                  sql,
+                  columns: result.columns,
+                  roles: resolveRoles(result.columns, assignments),
+                  time_format: timeFormat,
+                  source_timezone: sourceTimezone,
+                })
+              }
+            >
+              {useAsLabel}
+            </Button>
+          ) : null}
         </>
       )}
-    </Card>
+    </section>
   )
 }

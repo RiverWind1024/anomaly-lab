@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>anomaly·lab — 检测记录设计样张</title>
+    <link rel="stylesheet" href="app.css" />
+    <script>
+      ;(function () {
+        try {
+          var saved = localStorage.getItem('anomaly-lab-sample-theme')
+          if (saved === 'dark' || saved === 'light') {
+            document.documentElement.setAttribute('data-theme', saved)
+          }
+        } catch (e) {}
+      })()
+    </script>
+  </head>
+  <body>
+    <a class="skip" href="#main">跳到主要内容</a>
+
+    <div class="shell">
+      <main class="main" id="main">
+        <header class="titlebar">
+          <div class="titlebar__lead">
+            <h1>检测记录</h1>
+            <p class="finding" id="finding"></p>
+          </div>
+        </header>
+
+        <section class="panel" aria-labelledby="filterTitle" style="margin-bottom: 20px">
+          <div class="panel__head">
+            <div>
+              <h2 class="panel__title" id="filterTitle">筛选</h2>
+              <p class="panel__meta num" id="seriesMeta"></p>
+            </div>
+            <button class="btn btn--ghost btn--sm" type="button" id="reset">重置</button>
+          </div>
+          <div class="filters">
+            <span class="filters__k">形态</span>
+            <div class="chips" id="clsChips" role="group" aria-label="按形态筛选"></div>
+            <span class="filters__k">算法</span>
+            <div class="chips" id="detChips" role="group" aria-label="按算法筛选"></div>
+            <span class="filters__k">来源</span>
+            <div class="chips" id="srcChips" role="group" aria-label="按来源筛选"></div>
+            <span class="filters__k">时间</span>
+            <div class="chips" id="timeChips" role="group" aria-label="按时间筛选"></div>
+          </div>
+        </section>
+
+        <div class="split">
+          <div>
+            <div class="serieslist" id="seriesList" role="listbox" aria-label="记录索引"></div>
+            <div class="toolbar" id="pager" style="margin-top: 10px"></div>
+          </div>
+
+          <section class="panel" id="detail" aria-live="polite"></section>
+        </div>
+
+        <footer class="pagefoot">
+          <span id="footStamp"></span>
+          <span>真实接口：/api/series · /api/series/{id}/values · /api/badcases · /api/summary</span>
+        </footer>
+      </main>
+    </div>
+
+    <script src="data-detections.js"></script>
+    <script>
+      ;(function () {
+        window.SAMPLE.counts = { alerts: window.SAMPLE.detections.alerts_total }
+        window.SAMPLE.page = {
+          key: 'detections',
+        }
+      })()
+    </script>
+    <script src="chart.js"></script>
+    <script src="shell.js"></script>
+    <script src="series-page.js"></script>
+    <script>
+      ;(function () {
+        var D = window.SAMPLE.detections
+        var fmtTime = window.SampleChart.fmtTime
+        var truth = D.rows.reduce(function (a, r) { return a + r.n_truth }, 0)
+        var pred = D.rows.reduce(function (a, r) { return a + r.n_pred }, 0)
+        var recall = truth ? D.rows.reduce(function (a, r) { return a + r.n_truth * r.recall }, 0) / truth : 0
+
+        document.getElementById('finding').innerHTML =
+          '<span class="num">' + D.rows.length + '</span> 条记录 · ' +
+          '<span class="num">' + truth.toLocaleString('en-US') + '</span> 个真值异常点 —— ' +
+          '报出 <span class="num">' + pred.toLocaleString('en-US') + '</span> 个点，' +
+          '只命中 <span class="num">' + (recall * 100).toFixed(1) + '%</span>'
+
+        window.SeriesPage.init({ mode: 'detections' })
+
+        document.getElementById('reset').addEventListener('click', function () {
+          location.reload()
+        })
+
+        var stamp = '快照 ' + fmtTime(D.snapshot) + ' UTC'
+        window.SAMPLE.setStamp(stamp)
+        document.getElementById('footStamp').textContent =
+          '设计样张 · 数据快照 ' + D.snapshot.replace('T', ' ').slice(0, 16) + ' UTC'
+      })()
+    </script>
+  </body>
+</html>

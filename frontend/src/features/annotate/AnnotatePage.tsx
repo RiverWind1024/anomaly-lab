@@ -212,12 +212,7 @@ export function AnnotatePage() {
   return (
     <div className="page">
       <header className="titlebar">
-        <div className="titlebar__lead">
-          <h1>标注</h1>
-          <p className="finding">
-            在波形上刷选异常区间，选择异常类型后保存。标注存成 JSONL，供评估与调参使用。
-          </p>
-        </div>
+        <h1>标注</h1>
       </header>
 
       <div className="runs-view__bar">

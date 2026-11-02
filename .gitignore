@@ -21,3 +21,6 @@ notebooks/.ipynb_checkpoints/
 reports/
 *.pt
 *.npz
+
+# taste-skill 工具产物（视觉回归截图），不入库
+.taste-skill/

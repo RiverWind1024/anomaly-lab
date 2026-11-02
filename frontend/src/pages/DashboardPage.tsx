@@ -13,8 +13,6 @@ import {
   KpiStrip,
   RetentionPanel,
 } from '../features/overview/panels'
-import { fmtUtcTime } from '../lib/format'
-
 // 这三个格式化函数原本就导出于本页 —— 保留导出，别的地方与测试都在用
 export {
   fmtBytes,
@@ -63,19 +61,6 @@ export function DashboardPage() {
     [alerts.data?.events, activeSeries],
   )
 
-  // 当前序列的峰值 —— 发现句与图上的标注都用它
-  const peak = useMemo(() => {
-    const scores = preview.data?.scores ?? []
-    const timestamps = preview.data?.timestamps ?? []
-    let best: { score: number | null; ts: string | null } = { score: null, ts: null }
-    scores.forEach((score, i) => {
-      if (score != null && (best.score === null || score > best.score)) {
-        best = { score, ts: timestamps[i] ?? null }
-      }
-    })
-    return best
-  }, [preview.data])
-
   return (
     <div className="page">
       <StateBoundary
@@ -86,70 +71,46 @@ export function DashboardPage() {
         emptyTitle="平台还没有任何配置"
         emptyHint="先建一个数据源与指标，再创建检测任务"
       >
-        {(data) => {
-          const p0 = data.alerts.by_level.find((l) => l.level === 'P0')?.count ?? 0
-
-          return (
-            <>
-              <header className="titlebar">
-                <div className="titlebar__lead">
-                  <h1>概览</h1>
-                  <p className="finding">
-                    <span className="mono">{data.alerts.total}</span> 条告警 ·{' '}
-                    <span className="mono">{p0}</span> 条 P0
-                    {activeSeries ? (
-                      <>
-                        {' '}
-                        —— 选中 <b>{activeSeries.split(':').pop()}</b>
-                        {peak.score != null ? (
-                          <>
-                            {' '}
-                            在 <span className="mono">{fmtUtcTime(peak.ts)}</span> 出现{' '}
-                            <span className="mono">{peak.score.toFixed(2)}σ</span> 峰值
-                          </>
-                        ) : null}
-                        ，该序列 <span className="mono">{seriesEvents.length}</span> 条告警
-                      </>
-                    ) : null}
-                  </p>
-                </div>
-                <div className="titlebar__actions">
-                  <Link className="btn btn--primary" to="/alerts">
-                    查看 P0 告警
-                  </Link>
-                </div>
-              </header>
+        {(data) => (
+          <>
+            <header className="titlebar">
+              <h1>概览</h1>
+              <div className="titlebar__actions">
+                <Link className="btn btn--primary" to="/alerts">
+                  查看 P0 告警
+                </Link>
+              </div>
+            </header>
 
               <ScoreTrail
-                preview={preview.data}
+              preview={preview.data}
+              events={seriesEvents}
+              series={seriesList}
+              activeSeries={activeSeries}
+              onSeriesChange={setPicked}
+              isLoading={preview.isPending || preview.isFetching}
+              error={preview.error}
+            />
+
+            <KpiStrip overview={data} summary={summary.data} />
+
+            <div className="cols">
+              <AlertEventsPanel
                 events={seriesEvents}
-                series={seriesList}
-                activeSeries={activeSeries}
-                onSeriesChange={setPicked}
-                isLoading={preview.isPending || preview.isFetching}
-                error={preview.error}
+                total={data.alerts.total}
+                seriesId={activeSeries}
               />
+              <JobHealthPanel
+                jobs={data.jobs}
+                catalogJobs={catalog.data?.jobs ?? []}
+              />
+            </div>
 
-              <KpiStrip overview={data} summary={summary.data} />
+            <BacktestPanel summary={summary.data} />
 
-              <div className="cols">
-                <AlertEventsPanel
-                  events={seriesEvents}
-                  total={data.alerts.total}
-                  seriesId={activeSeries}
-                />
-                <JobHealthPanel
-                  jobs={data.jobs}
-                  catalogJobs={catalog.data?.jobs ?? []}
-                />
-              </div>
-
-              <BacktestPanel summary={summary.data} />
-
-              <RetentionPanel />
-            </>
-          )
-        }}
+            <RetentionPanel />
+          </>
+        )}
       </StateBoundary>
     </div>
   )

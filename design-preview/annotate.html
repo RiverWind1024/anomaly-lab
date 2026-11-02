@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>anomaly·lab — 标注设计样张</title>
+    <link rel="stylesheet" href="app.css" />
+    <script>
+      ;(function () {
+        try {
+          var saved = localStorage.getItem('anomaly-lab-sample-theme')
+          if (saved === 'dark' || saved === 'light') {
+            document.documentElement.setAttribute('data-theme', saved)
+          }
+        } catch (e) {}
+      })()
+    </script>
+  </head>
+  <body>
+    <a class="skip" href="#main">跳到主要内容</a>
+
+    <div class="shell">
+      <main class="main" id="main">
+        <header class="titlebar">
+          <div class="titlebar__lead">
+            <h1>标注</h1>
+            <p class="finding" id="finding"></p>
+          </div>
+        </header>
+
+        <section class="panel" aria-labelledby="pickTitle">
+          <div class="panel__head">
+            <div>
+              <h2 class="panel__title" id="pickTitle">选序列</h2>
+              <p class="panel__meta num" id="pickMeta"></p>
+            </div>
+            <span class="toolbar__note" id="annCount"></span>
+          </div>
+
+          <div class="filters">
+            <span class="filters__k">形态</span>
+            <div class="chips" id="clsChips" role="group" aria-label="按形态筛选"></div>
+            <span class="filters__k">序列</span>
+            <select class="select" id="seriesSelect" aria-label="选择序列"></select>
+          </div>
+
+          <div class="legend" aria-hidden="true" style="margin-top: 14px">
+            <span class="legend__item"><i class="swatch swatch--line"></i>信号</span>
+            <span class="legend__item"><i class="swatch swatch--mark"></i>真值异常点</span>
+            <span class="legend__item"><i class="swatch swatch--brush"></i>已刷选区间</span>
+          </div>
+
+          <div class="chart chart--brush" id="chart">
+            <div class="brushsel" id="brushSel" hidden></div>
+          </div>
+
+          <p class="toolbar__note" id="brushHint">
+            在图上按住拖动即可刷选区间；红点是回测集里的真值异常点。
+          </p>
+
+          <div class="toolbar" id="actionBar" style="margin-top: 14px" hidden>
+            <span class="toolbar__note" id="pendingText"></span>
+            <span style="display: inline-flex; gap: 8px; align-items: center">
+              <select class="select" id="typeSelect" aria-label="异常类型"></select>
+              <button class="btn btn--primary btn--sm" type="button" id="saveBtn">保存标注</button>
+              <button class="btn btn--ghost btn--sm" type="button" id="cancelBtn">取消</button>
+            </span>
+          </div>
+        </section>
+
+        <section class="panel" aria-labelledby="listTitle" style="margin-top: 20px">
+          <div class="panel__head">
+            <div>
+              <h2 class="panel__title" id="listTitle">已保存的标注</h2>
+              <p class="panel__meta num" id="listMeta"></p>
+            </div>
+          </div>
+          <div id="annList"></div>
+        </section>
+
+        <footer class="pagefoot">
+          <span id="footStamp"></span>
+          <span>真实接口：/api/annotate/{series_id} · /api/series · /api/series/{id}/values</span>
+        </footer>
+      </main>
+    </div>
+
+    <script src="data-detections.js"></script>
+    <script src="data-annotate.js"></script>
+    <script>
+      ;(function () {
+        window.SAMPLE.counts = { alerts: window.SAMPLE.annotate.alerts_total }
+        window.SAMPLE.page = {
+          key: 'annotate',
+        }
+      })()
+    </script>
+    <script src="chart.js"></script>
+    <script src="shell.js"></script>
+    <script>
+      ;(function () {
+        var D = window.SAMPLE.detections
+        var A = window.SAMPLE.annotate
+        var fmtTime = window.SampleChart.fmtTime
+
+        var LABEL = {
+          high_zero_ratio: '高零比', periodic: '周期', sparse_event: '稀疏事件',
+          stationary: '平稳', step: '阶跃', trending: '趋势',
+        }
+
+        var clsFilter = 'all'
+        var seriesId = null
+        var pending = null
+        var dragging = null
+
+        var chartEl = document.getElementById('chart')
+        var selEl = document.getElementById('brushSel')
+        var actionBar = document.getElementById('actionBar')
+        var selectEl = document.getElementById('seriesSelect')
+        var typeEl = document.getElementById('typeSelect')
+        var listEl = document.getElementById('annList')
+
+        var total = Object.keys(A.annotations).length
+        document.getElementById('finding').innerHTML =
+          '<span class="num">' + total + '</span> 条标注 —— ' +
+          (total === 0
+            ? '还没有人确认过任何一段异常。人工标注是这套检测器唯一的校准来源。'
+            : '已标注 ' + total + ' 段。')
+
+        // 异常类型（照搬真实页面的 6 种）
+        typeEl.innerHTML = A.types.map(function (t) {
+          return '<option value="' + t.value + '">' + t.label + '（' + t.value + '）</option>'
+        }).join('')
+
+        // 形态筛选
+        var classes = []
+        D.series.forEach(function (s) { if (classes.indexOf(s.metric_class) < 0) classes.push(s.metric_class) })
+        var chipsEl = document.getElementById('clsChips')
+        function renderChips() {
+          chipsEl.innerHTML =
+            '<button type="button" aria-pressed="' + (clsFilter === 'all') + '">全部<span class="n">' +
+              D.series.length + '</span></button>' +
+            classes.map(function (k) {
+              var n = D.series.filter(function (s) { return s.metric_class === k }).length
+              return '<button type="button" aria-pressed="' + (clsFilter === k) + '">' + LABEL[k] +
+                '<span class="n">' + n + '</span></button>'
+            }).join('')
+          ;[].forEach.call(chipsEl.querySelectorAll('button'), function (b, i) {
+            b.addEventListener('click', function () {
+              clsFilter = i === 0 ? 'all' : classes[i - 1]
+              renderChips()
+              renderSelect()
+            })
+          })
+        }
+
+        function candidates() {
+          return D.series.filter(function (s) {
+            return clsFilter === 'all' || s.metric_class === clsFilter
+          })
+        }
+
+        function renderSelect() {
+          var list = candidates()
+          if (!list.some(function (s) { return s.series_id === seriesId })) seriesId = list.length ? list[0].series_id : null
+          selectEl.innerHTML = list.map(function (s) {
+            return '<option value="' + s.series_id + '"' + (s.series_id === seriesId ? ' selected' : '') + '>' +
+              s.series_id + '（' + LABEL[s.metric_class] + ', n=' + s.n + '）</option>'
+          }).join('')
+          renderChart()
+        }
+
+        selectEl.addEventListener('change', function () {
+          seriesId = selectEl.value
+          pending = null
+          hidePending()
+          renderChart()
+        })
+
+        function renderChart() {
+          if (!seriesId) return
+          var d = D.details[seriesId]
+          var meta = D.series.filter(function (s) { return s.series_id === seriesId })[0]
+          var ts = timestampsOf(d)
+          var anns = A.annotations[seriesId] || []
+
+          document.getElementById('pickMeta').textContent =
+            LABEL[meta.metric_class] + ' · ' + d.values.length + ' 点 · ' +
+            d.labels.filter(function (v) { return v === 1 }).length + ' 个真值异常点'
+          document.getElementById('annCount').textContent = anns.length + ' 条标注'
+
+          window.SampleChart.seriesChart(chartEl, {
+            series_id: seriesId,
+            timestamps: ts,
+            values: d.values,
+            labels: d.labels,
+          })
+
+          // 已保存的标注区间（真实数据里目前为空）
+          listEl.innerHTML = anns.length
+            ? '<ul class="eventlist">' + anns.map(function (a) {
+                return '<li class="event"><span class="pill pill--p1">' + a.type + '</span>' +
+                  '<span class="event__main"><span class="event__series num">' +
+                  fmtTime(ts[a.start]) + ' – ' + fmtTime(ts[a.end]).slice(6) + '</span></span></li>'
+              }).join('') + '</ul>'
+            : '<div class="empty"><p class="empty__t">这条序列还没有标注</p>' +
+              '<p class="empty__d">在上面的图上刷选一段区间，选好类型再保存</p></div>'
+          document.getElementById('listMeta').textContent =
+            anns.length + ' 条' + (total ? ' · 全库共 ' + total + ' 条' : '')
+        }
+
+        function timestampsOf(d) {
+          if (d.timestamps) return d.timestamps
+          var out = []
+          var t = Date.parse(d.t0 + 'Z')
+          for (var i = 0; i < d.values.length; i++) {
+            out.push(new Date(t).toISOString().slice(0, 19))
+            t += d.step_min * 60000
+          }
+          return out
+        }
+
+        // ── 刷选 ──
+        chartEl.addEventListener('pointerdown', function (e) {
+          if (!chartEl.__pick) return
+          dragging = chartEl.__pick(e.clientX)
+          chartEl.setPointerCapture(e.pointerId)
+        })
+        chartEl.addEventListener('pointermove', function (e) {
+          if (dragging === null || !chartEl.__pick) return
+          var end = chartEl.__pick(e.clientX)
+          pending = { start: Math.min(dragging, end), end: Math.max(dragging, end) }
+          showPending()
+        })
+        chartEl.addEventListener('pointerup', function () {
+          dragging = null
+        })
+
+        function showPending() {
+          if (!pending) return
+          var a = chartEl.__geom(pending.start)
+          var b = chartEl.__geom(pending.end)
+          selEl.hidden = false
+          selEl.style.left = a + 'px'
+          selEl.style.width = Math.max(2, b - a) + 'px'
+          var d = D.details[seriesId]
+          var ts = timestampsOf(d)
+          document.getElementById('pendingText').innerHTML =
+            '已选区间：索引 <span class="num">' + pending.start + '</span> ~ ' +
+            '<span class="num">' + pending.end + '</span> · ' +
+            fmtTime(ts[pending.start]) + ' – ' + fmtTime(ts[pending.end]).slice(6) +
+            ' · <span class="num">' + (pending.end - pending.start + 1) + '</span> 点'
+          actionBar.hidden = false
+        }
+
+        function hidePending() {
+          pending = null
+          selEl.hidden = true
+          actionBar.hidden = true
+        }
+
+        document.getElementById('cancelBtn').addEventListener('click', hidePending)
+        document.getElementById('saveBtn').addEventListener('click', function () {
+          if (!pending) return
+          A.annotations[seriesId] = A.annotations[seriesId] || []
+          A.annotations[seriesId].push({
+            start: pending.start,
+            end: pending.end,
+            type: typeEl.value,
+          })
+          total = Object.keys(A.annotations).length
+          hidePending()
+          renderChart()
+        })
+
+        renderChips()
+        renderSelect()
+
+        var raf
+        window.addEventListener('resize', function () {
+          cancelAnimationFrame(raf)
+          raf = requestAnimationFrame(function () {
+            if (!seriesId) return
+            var d = D.details[seriesId]
+            window.SampleChart.seriesChart(chartEl, {
+              series_id: seriesId,
+              timestamps: timestampsOf(d),
+              values: d.values,
+              labels: d.labels,
+            })
+          })
+        })
+        window.addEventListener('themechange', function () {
+          if (!seriesId) return
+          var d = D.details[seriesId]
+          window.SampleChart.seriesChart(chartEl, {
+            series_id: seriesId,
+            timestamps: timestampsOf(d),
+            values: d.values,
+            labels: d.labels,
+          })
+        })
+
+        var stamp = '快照 ' + fmtTime(A.snapshot) + ' UTC'
+        window.SAMPLE.setStamp(stamp)
+        document.getElementById('footStamp').textContent =
+          '设计样张 · 数据快照 ' + A.snapshot.replace('T', ' ').slice(0, 16) + ' UTC'
+      })()
+    </script>
+  </body>
+</html>

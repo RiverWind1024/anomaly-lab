@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>anomaly·lab — 评估报告设计样张</title>
+    <link rel="stylesheet" href="app.css" />
+    <script>
+      ;(function () {
+        try {
+          var saved = localStorage.getItem('anomaly-lab-sample-theme')
+          if (saved === 'dark' || saved === 'light') {
+            document.documentElement.setAttribute('data-theme', saved)
+          }
+        } catch (e) {}
+      })()
+    </script>
+  </head>
+  <body>
+    <a class="skip" href="#main">跳到主要内容</a>
+
+    <div class="shell">
+      <main class="main" id="main">
+        <header class="titlebar">
+          <div class="titlebar__lead">
+            <h1>评估报告</h1>
+            <p class="finding" id="finding"></p>
+          </div>
+        </header>
+
+        <section class="kpis" aria-label="整体指标">
+          <div class="kpi">
+            <span class="kpi__k">F1</span>
+            <span class="kpi__v num" id="kF1">–</span>
+            <span class="kpi__s">点级</span>
+          </div>
+          <div class="kpi">
+            <span class="kpi__k">Precision</span>
+            <span class="kpi__v num" id="kP">–</span>
+            <span class="kpi__s">报出里对的比例</span>
+          </div>
+          <div class="kpi">
+            <span class="kpi__k">Recall</span>
+            <span class="kpi__v num" id="kR">–</span>
+            <span class="kpi__s">真值里找到的比例</span>
+          </div>
+          <div class="kpi">
+            <span class="kpi__k">Range-F1</span>
+            <span class="kpi__v num" id="kRF">–</span>
+            <span class="kpi__s">区间级</span>
+          </div>
+          <div class="kpi">
+            <span class="kpi__k">真值 / 预测</span>
+            <span class="kpi__v num" id="kCount">–</span>
+            <span class="kpi__s">异常点个数</span>
+          </div>
+        </section>
+
+        <section class="panel" aria-labelledby="rowsTitle" style="margin-top: 20px">
+          <div class="panel__head">
+            <div>
+              <h2 class="panel__title" id="rowsTitle">逐条记录</h2>
+              <p class="panel__meta num" id="rowsMeta"></p>
+            </div>
+            <a class="link" href="detections.html">去检测记录页逐条看</a>
+          </div>
+
+          <div class="filters">
+            <span class="filters__k">形态</span>
+            <div class="chips" id="clsChips" role="group" aria-label="按形态筛选"></div>
+            <span class="filters__k">算法</span>
+            <div class="chips" id="detChips" role="group" aria-label="按算法筛选"></div>
+            <span class="filters__k">来源</span>
+            <div class="chips" id="srcChips" role="group" aria-label="按来源筛选"></div>
+            <button class="btn btn--ghost btn--sm" type="button" id="reset">重置</button>
+          </div>
+
+          <div class="tablewrap">
+            <table class="dtable">
+              <thead>
+                <tr>
+                  <th>序列</th>
+                  <th>形态</th>
+                  <th>算法</th>
+                  <th class="r">阈值</th>
+                  <th class="r">Precision</th>
+                  <th class="r">Recall</th>
+                  <th class="r">F1</th>
+                  <th class="r">Range-F1</th>
+                  <th class="r">真值 / 预测</th>
+                  <th class="col-opt r">时间范围</th>
+                </tr>
+              </thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+          <div class="tfoot" id="foot"></div>
+        </section>
+
+        <div class="cols" style="margin-top: 20px">
+          <section class="panel" aria-labelledby="clsTitle">
+            <div class="panel__head">
+              <div>
+                <h2 class="panel__title" id="clsTitle">按指标形态</h2>
+                <p class="panel__meta num" id="clsMeta"></p>
+              </div>
+            </div>
+            <div class="bars" id="clsBars"></div>
+          </section>
+
+          <section class="panel" aria-labelledby="detTitle">
+            <div class="panel__head">
+              <div>
+                <h2 class="panel__title" id="detTitle">按检测算法</h2>
+                <p class="panel__meta num" id="detMeta"></p>
+              </div>
+            </div>
+            <div class="bars" id="detBars"></div>
+            <table class="dtable" id="detTable" style="margin-top: 14px"></table>
+            <div class="runlog">
+              <div class="runlog__head">
+                <span>结论</span>
+                <span class="num" id="detNote"></span>
+              </div>
+              <p class="runlog__next" id="detText"></p>
+            </div>
+          </section>
+        </div>
+
+        <footer class="pagefoot">
+          <span id="footStamp"></span>
+          <span>真实接口：/api/summary · /api/series</span>
+        </footer>
+      </main>
+    </div>
+
+    <script src="data-eval.js"></script>
+    <script>
+      ;(function () {
+        window.SAMPLE.counts = { alerts: window.SAMPLE.evaluation.alerts_total }
+        window.SAMPLE.page = {
+          key: 'evaluation',
+        }
+      })()
+    </script>
+    <script src="chart.js"></script>
+    <script src="shell.js"></script>
+    <script>
+      ;(function () {
+        var E = window.SAMPLE.evaluation
+        var fmtTime = window.SampleChart.fmtTime
+
+        var LABEL = {
+          high_zero_ratio: '高零比',
+          periodic: '周期',
+          sparse_event: '稀疏事件',
+          stationary: '平稳',
+          step: '阶跃',
+          trending: '趋势',
+        }
+
+        var overall = E.summary.overall
+        var sparse = E.summary.by_metric_class.sparse_event
+        var clsKeys = Object.keys(E.summary.by_metric_class)
+        var detKeys = Object.keys(E.summary.by_detector)
+
+        document.getElementById('finding').innerHTML =
+          '<span class="num">' + overall.n_series + '</span> 条记录 · F1 <span class="num">' +
+          overall.f1.toFixed(3) + '</span> —— ' +
+          '稀疏事件形态 <span class="num">' + sparse.n_series + '</span> 条序列 F1 为 ' +
+          '<span class="num">' + sparse.f1.toFixed(3) + '</span>，' +
+          '<span class="num">' + sparse.n_truth.toLocaleString('en-US') + '</span> 个异常点一个都没报'
+
+        document.getElementById('kF1').textContent = overall.f1.toFixed(3)
+        document.getElementById('kP').textContent = overall.precision.toFixed(3)
+        document.getElementById('kR').textContent = overall.recall.toFixed(3)
+        document.getElementById('kRF').textContent = overall.range_f1.toFixed(3)
+        document.getElementById('kCount').textContent =
+          overall.n_truth.toLocaleString('en-US') + ' / ' + overall.n_pred.toLocaleString('en-US')
+
+        // ── 筛选 ──
+        var clsFilter = 'all'
+        var detFilter = 'all'
+        var srcFilter = 'all'
+
+        function chip(label, count, active) {
+          return (
+            '<button type="button" aria-pressed="' + (active ? 'true' : 'false') + '">' +
+            label + '<span class="n">' + count + '</span></button>'
+          )
+        }
+
+        function sources() {
+          var out = []
+          E.rows.forEach(function (r) { if (out.indexOf(r.source) < 0) out.push(r.source) })
+          return out.sort()
+        }
+
+        function bind(box, pick) {
+          ;[].forEach.call(box.querySelectorAll('button'), function (b, i) {
+            b.addEventListener('click', function () {
+              pick(i)
+              renderChips()
+              renderRows()
+            })
+          })
+        }
+
+        function renderChips() {
+          document.getElementById('clsChips').innerHTML =
+            chip('全部', E.rows.length, clsFilter === 'all') +
+            clsKeys.map(function (k) {
+              return chip(LABEL[k], E.rows.filter(function (r) { return r.metric_class === k }).length, clsFilter === k)
+            }).join('')
+          document.getElementById('detChips').innerHTML =
+            chip('全部', E.rows.length, detFilter === 'all') +
+            detKeys.filter(function (k) {
+              return E.rows.some(function (r) { return r.detector === k })
+            }).map(function (k) {
+              return chip(k, E.rows.filter(function (r) { return r.detector === k }).length, detFilter === k)
+            }).join('')
+          document.getElementById('srcChips').innerHTML =
+            chip('全部', E.rows.length, srcFilter === 'all') +
+            sources().map(function (s) {
+              return chip(s, E.rows.filter(function (r) { return r.source === s }).length, srcFilter === s)
+            }).join('')
+
+          bind(document.getElementById('clsChips'), function (i) {
+            clsFilter = i === 0 ? 'all' : clsKeys[i - 1]
+          })
+          bind(document.getElementById('detChips'), function (i) {
+            detFilter = i === 0 ? 'all' : detKeys.filter(function (k) {
+              return E.rows.some(function (r) { return r.detector === k })
+            })[i - 1]
+          })
+          bind(document.getElementById('srcChips'), function (i) {
+            srcFilter = i === 0 ? 'all' : sources()[i - 1]
+          })
+        }
+
+        document.getElementById('reset').addEventListener('click', function () {
+          clsFilter = 'all'
+          detFilter = 'all'
+          srcFilter = 'all'
+          renderChips()
+          renderRows()
+        })
+
+        function filtered() {
+          return E.rows.filter(function (r) {
+            if (clsFilter !== 'all' && r.metric_class !== clsFilter) return false
+            if (detFilter !== 'all' && r.detector !== detFilter) return false
+            if (srcFilter !== 'all' && r.source !== srcFilter) return false
+            return true
+          })
+        }
+
+        function renderRows() {
+          var rows = filtered()
+          document.getElementById('rows').innerHTML = rows.map(function (r) {
+            return (
+              '<tr>' +
+                '<td class="num">' + r.series_id + '</td>' +
+                '<td class="dim">' + LABEL[r.metric_class] + '</td>' +
+                '<td class="num dim">' + r.detector + '</td>' +
+                '<td class="r num dim">' + r.threshold.toFixed(2) + '</td>' +
+                '<td class="r num">' + r.precision.toFixed(3) + '</td>' +
+                '<td class="r num">' + r.recall.toFixed(3) + '</td>' +
+                '<td class="r num' + (r.f1 === 0 ? ' p0' : '') + '">' + r.f1.toFixed(3) + '</td>' +
+                '<td class="r num dim">' + r.range_f1.toFixed(3) + '</td>' +
+                '<td class="r num dim">' + r.n_truth + ' / ' + r.n_pred + '</td>' +
+                '<td class="col-opt r num dim" title="' + fmtTime(r.start_ts) + ' – ' + fmtTime(r.end_ts) + '">' +
+                  r.start_ts.slice(5, 10) + ' – ' + r.end_ts.slice(5, 10) + '</td>' +
+              '</tr>'
+            )
+          }).join('')
+
+          var avg = rows.length
+            ? rows.reduce(function (a, r) { return a + r.f1 }, 0) / rows.length
+            : 0
+          document.getElementById('rowsMeta').textContent =
+            rows.length + ' 条记录' + (rows.length === E.rows.length ? '' : ' / 共 ' + E.rows.length + ' 条')
+          document.getElementById('foot').innerHTML =
+            '<span>当前筛选 <b>' + rows.length + '</b> 条 / 共 ' + E.rows.length + ' 条</span>' +
+            '<span>平均 F1 <b>' + avg.toFixed(3) + '</b></span>' +
+            '<span>全零记录 <b>' + rows.filter(function (r) { return r.f1 === 0 }).length + '</b> 条</span>' +
+            '<span>真值点 <b>' + rows.reduce(function (a, r) { return a + r.n_truth }, 0).toLocaleString('en-US') +
+              '</b></span>'
+        }
+
+        // ── 按形态 ──
+        var byClass = E.summary.by_metric_class
+        var maxF1 = Math.max.apply(null, clsKeys.map(function (k) { return byClass[k].f1 }))
+        document.getElementById('clsMeta').textContent =
+          clsKeys.length + ' 种形态，每种 ' + byClass[clsKeys[0]].n_series + ' 条序列'
+        document.getElementById('clsBars').innerHTML = clsKeys.map(function (k) {
+          var c = byClass[k]
+          var w = maxF1 ? (c.f1 / maxF1) * 100 : 0
+          return (
+            '<div class="bar">' +
+              '<span class="bar__k">' + LABEL[k] + '</span>' +
+              '<span class="bar__track"><span class="bar__fill' + (c.f1 === 0 ? ' bar__fill--zero' : '') +
+                '" style="width:' + w.toFixed(1) + '%"></span></span>' +
+              '<span class="bar__v">' + c.f1.toFixed(3) + '</span>' +
+            '</div>'
+          )
+        }).join('')
+
+        // ── 按算法 ──
+        var byDet = E.summary.by_detector
+        var maxDet = Math.max.apply(null, detKeys.map(function (k) { return byDet[k].f1 }))
+        document.getElementById('detMeta').textContent =
+          detKeys.map(function (k) { return k + ' · ' + byDet[k].n_series + ' 条' }).join(' / ')
+        document.getElementById('detBars').innerHTML = detKeys.map(function (k) {
+          var d = byDet[k]
+          var w = maxDet ? (d.f1 / maxDet) * 100 : 0
+          return (
+            '<div class="bar">' +
+              '<span class="bar__k">' + k + '</span>' +
+              '<span class="bar__track"><span class="bar__fill" style="width:' + w.toFixed(1) + '%"></span></span>' +
+              '<span class="bar__v">' + d.f1.toFixed(3) + '</span>' +
+            '</div>'
+          )
+        }).join('')
+        var best = detKeys.reduce(function (a, b) { return byDet[b].f1 > byDet[a].f1 ? b : a })
+        document.getElementById('detNote').textContent = best + ' 略优'
+        document.getElementById('detText').textContent =
+          '两个算法在平稳与周期形态上接近，差距主要来自高零比与稀疏事件：' +
+          'iqr 的高零比 Precision ' + byClass.high_zero_ratio.precision.toFixed(3) +
+          '，稀疏事件仍然是 ' + byClass.sparse_event.f1.toFixed(3) + '。'
+        document.getElementById('detTable').innerHTML =
+          '<thead><tr><th>算法</th><th class="r">真值</th><th class="r">预测</th>' +
+          '<th class="r">Precision</th><th class="r">Recall</th><th class="r">F1</th>' +
+          '<th class="r">Range-F1</th></tr></thead><tbody>' +
+          detKeys.map(function (k) {
+            var d = byDet[k]
+            return '<tr><td class="num">' + k + '</td>' +
+              '<td class="r num dim">' + d.n_truth.toLocaleString('en-US') + '</td>' +
+              '<td class="r num dim">' + d.n_pred.toLocaleString('en-US') + '</td>' +
+              '<td class="r num">' + d.precision.toFixed(3) + '</td>' +
+              '<td class="r num">' + d.recall.toFixed(3) + '</td>' +
+              '<td class="r num">' + d.f1.toFixed(3) + '</td>' +
+              '<td class="r num dim">' + d.range_f1.toFixed(3) + '</td></tr>'
+          }).join('') + '</tbody>'
+
+        renderChips()
+        renderRows()
+
+        var stamp = '快照 ' + fmtTime(E.snapshot) + ' UTC'
+        window.SAMPLE.setStamp(stamp)
+        document.getElementById('footStamp').textContent =
+          '设计样张 · 报告生成于 ' + E.generated_at.replace('T', ' ').slice(0, 16) + ' UTC'
+      })()
+    </script>
+  </body>
+</html>

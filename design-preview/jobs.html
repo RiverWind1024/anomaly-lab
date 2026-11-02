@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>anomaly·lab — 检测任务设计样张</title>
+    <link rel="stylesheet" href="app.css" />
+    <script>
+      ;(function () {
+        try {
+          var saved = localStorage.getItem('anomaly-lab-sample-theme')
+          if (saved === 'dark' || saved === 'light') {
+            document.documentElement.setAttribute('data-theme', saved)
+          }
+        } catch (e) {}
+      })()
+    </script>
+  </head>
+  <body>
+    <a class="skip" href="#main">跳到主要内容</a>
+
+    <div class="shell">
+      <main class="main" id="main">
+        <header class="titlebar">
+          <div class="titlebar__lead">
+            <h1>检测任务</h1>
+            <p class="finding" id="finding"></p>
+          </div>
+        </header>
+
+        <div class="toolbar">
+          <span class="toolbar__note" id="jobsNote"></span>
+          <button class="btn btn--primary btn--sm" type="button">新建任务</button>
+        </div>
+
+        <section class="panel" aria-labelledby="jobsTitle">
+          <div class="panel__head">
+            <div>
+              <h2 class="panel__title" id="jobsTitle">任务</h2>
+              <p class="panel__meta num" id="jobsMeta"></p>
+            </div>
+            <a class="link" href="alerts.html">看这些任务的告警</a>
+          </div>
+          <table class="dtable">
+            <thead>
+              <tr>
+                <th class="r">ID</th>
+                <th>名称</th>
+                <th>指标</th>
+                <th>算法</th>
+                <th>告警规则</th>
+                <th class="r">间隔</th>
+                <th>状态</th>
+                <th class="col-opt"></th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+          <div class="tfoot" id="jobsFoot"></div>
+        </section>
+
+        <section class="panel" aria-labelledby="runsTitle" style="margin-top: 20px">
+          <div class="panel__head">
+            <div>
+              <h2 class="panel__title" id="runsTitle">最近运行</h2>
+              <p class="panel__meta num" id="runsMeta"></p>
+            </div>
+            <a class="link" href="http://127.0.0.1:5173/jobs/2/runs">打开任务详情</a>
+          </div>
+          <div class="filters">
+            <span class="filters__k">任务</span>
+            <div class="chips" id="jobChips" role="group" aria-label="按任务筛选"></div>
+          </div>
+          <div class="tablewrap">
+            <table class="dtable">
+              <thead>
+                <tr>
+                  <th class="r">运行</th>
+                  <th>状态</th>
+                  <th>开始</th>
+                  <th class="r">耗时</th>
+                  <th class="r">序列</th>
+                  <th class="r">告警</th>
+                  <th class="col-opt">错误</th>
+                </tr>
+              </thead>
+              <tbody id="runRows"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <footer class="pagefoot">
+          <span id="footStamp"></span>
+          <span>真实接口：/api/platform/catalog · /jobs/{id}/runs · /api/platform/storage</span>
+        </footer>
+      </main>
+    </div>
+
+    <script src="data-jobs.js"></script>
+    <script>
+      ;(function () {
+        window.SAMPLE.counts = { alerts: window.SAMPLE.jobs.alerts_total }
+        window.SAMPLE.page = {
+          key: 'jobs',
+        }
+      })()
+    </script>
+    <script src="chart.js"></script>
+    <script src="shell.js"></script>
+    <script>
+      ;(function () {
+        var J = window.SAMPLE.jobs
+        var fmtTime = window.SampleChart.fmtTime
+        var rel = window.SampleChart.relTime
+
+        function kb(bytes) {
+          return bytes > 1048576
+            ? (bytes / 1048576).toFixed(1) + ' MB'
+            : Math.round(bytes / 1024) + ' KB'
+        }
+
+        function duration(a, b) {
+          var ms = Date.parse(b) - Date.parse(a)
+          if (ms < 1000) return '< 1s'
+          return (ms / 1000).toFixed(1) + 's'
+        }
+
+        // 真实页面 formatRules 的格式：2.5×→P1 / 3.75×→P0
+        function formatRules(rules) {
+          if (!rules || !rules.length) return '-'
+          return rules.map(function (r) {
+            return (r.multiplier == null ? r.op + r.value : r.multiplier + '×') + '→' + r.level
+          }).join(' / ')
+        }
+
+        var lastJob = J.overview_jobs.filter(function (j) { return j.last_run && j.last_run.n_series })[0]
+        document.getElementById('finding').innerHTML =
+          '共 <span class="num">' + J.counts.jobs + '</span> 个任务 · ' +
+          '<span class="num">' + J.counts.enabled_jobs + '</span> 个启用 —— ' +
+          '<b>' + lastJob.name + '</b> 每 <span class="num">' + lastJob.interval_seconds + '</span>s 跑一次，' +
+          '上次 <span class="num">' + lastJob.last_run.n_series + '</span> 条序列、' +
+          '<span class="num">' + lastJob.last_run.n_alerts + '</span> 个告警点'
+
+        document.getElementById('jobsNote').textContent =
+          '共 ' + J.counts.jobs + ' 个任务'
+        document.getElementById('jobsMeta').textContent =
+          '累计 ' + J.runs_summary.total + ' 次运行 · ' + J.runs_summary.success + ' 成功 · ' +
+          J.runs_summary.failed + ' 失败'
+
+        // ── 任务列表 ──
+        document.getElementById('rows').innerHTML = J.jobs.map(function (j) {
+          var metric = J.metrics.filter(function (x) { return x.id === j.metric_id })[0]
+          var o = J.overview_jobs.filter(function (x) { return x.id === j.id })[0] || {}
+          var last = o.last_run
+          return (
+            '<tr>' +
+              '<td class="r num dim">' + j.id + '</td>' +
+              '<td><a href="http://127.0.0.1:5173/jobs/' + j.id + '">' + j.name + '</a></td>' +
+              '<td class="num dim">' + (metric ? metric.name : j.metric_id) + '</td>' +
+              '<td>' + (j.detector === 'auto'
+                ? '<span class="pill pill--auto">自动推荐</span>'
+                : '<span class="num dim">' + j.detector + '</span>') + '</td>' +
+              '<td class="num dim rules" title="' + formatRules(j.alert_rules) + '">' +
+                formatRules(j.alert_rules) + '</td>' +
+              '<td class="r num dim">' + j.interval_seconds + 's</td>' +
+              '<td><span class="pill ' + (j.enabled ? 'pill--ok' : 'pill--p1') + '">' +
+                (j.enabled ? '启用' : '停用') + '</span></td>' +
+              '<td class="col-opt">' +
+                '<span class="btn btn--ghost btn--sm">立即运行</span> ' +
+                '<span class="btn btn--ghost btn--sm">' + (j.enabled ? '停用' : '启用') + '</span> ' +
+                '<span class="btn btn--ghost btn--sm">删除</span>' +
+              '</td>' +
+            '</tr>'
+          )
+        }).join('')
+
+        // 表下一行摘要：任务跑得怎么样、什么时候再跑
+        document.getElementById('jobsFoot').innerHTML = J.jobs.map(function (j) {
+          var o = J.overview_jobs.filter(function (x) { return x.id === j.id })[0] || {}
+          var last = o.last_run
+          return last
+            ? '<span><b>' + j.name + '</b> 上次 #<b>' + last.id + '</b> · ' +
+              '<b>' + last.n_series + '</b> 条序列 · <b>' + last.n_alerts + '</b> 个告警点 · 下次 ' +
+              rel(j.next_run_at) + '</span>'
+            : '<span><b>' + j.name + '</b> 还没运行过</span>'
+        }).join('') +
+          '<span>保留 <b>' + J.storage.policy.retention_days + '</b> 天 · 运行目录 <b>' +
+          J.storage.runs.kept + '</b> 个 · <b>' + kb(J.storage.runs.bytes) + '</b></span>'
+
+        // ── 最近运行 ──
+        var jobFilter = 'all'
+        var jobChips = document.getElementById('jobChips')
+
+        function allRuns() {
+          var out = []
+          Object.keys(J.runs).forEach(function (id) {
+            J.runs[id].forEach(function (r) {
+              out.push({
+                id: r.id,
+                status: r.status,
+                started_at: r.started_at,
+                finished_at: r.finished_at,
+                n_series: r.n_series,
+                n_alerts: r.n_alerts,
+                error: r.error,
+                job: J.jobs.filter(function (j) { return String(j.id) === id })[0].name,
+              })
+            })
+          })
+          return out.sort(function (a, b) { return a.id < b.id ? 1 : -1 })
+        }
+
+        function renderChips() {
+          var runs = allRuns()
+          jobChips.innerHTML =
+            '<button type="button" aria-pressed="' + (jobFilter === 'all') + '">全部<span class="n">' +
+              runs.length + '</span></button>' +
+            J.jobs.map(function (j) {
+              var n = runs.filter(function (r) { return r.job === j.name }).length
+              return '<button type="button" aria-pressed="' + (jobFilter === j.name) + '">' + j.name +
+                '<span class="n">' + n + '</span></button>'
+            }).join('')
+          ;[].forEach.call(jobChips.querySelectorAll('button'), function (b, i) {
+            b.addEventListener('click', function () {
+              jobFilter = i === 0 ? 'all' : J.jobs[i - 1].name
+              renderChips()
+              renderRuns()
+            })
+          })
+        }
+
+        function renderRuns() {
+          var runs = allRuns().filter(function (r) {
+            return jobFilter === 'all' || r.job === jobFilter
+          })
+          document.getElementById('runRows').innerHTML = runs.map(function (r) {
+            var ok = r.status === 'success'
+            return (
+              '<tr>' +
+                '<td class="r num">#' + r.id + '</td>' +
+                '<td><span class="pill ' + (ok ? 'pill--ok' : 'pill--p0') + '">' + (ok ? '成功' : '失败') + '</span></td>' +
+                '<td class="num dim">' + fmtTime(r.started_at) + '</td>' +
+                '<td class="r num dim">' + duration(r.started_at, r.finished_at) + '</td>' +
+                '<td class="r num">' + r.n_series + '</td>' +
+                '<td class="r num">' + r.n_alerts + '</td>' +
+                '<td class="col-opt dim num">' + (r.error || '—') + '</td>' +
+              '</tr>'
+            )
+          }).join('')
+          document.getElementById('runsMeta').textContent =
+            runs.length + ' 次运行' + (jobFilter === 'all' ? '' : ' · ' + jobFilter) +
+            ' · 失败 ' + runs.filter(function (r) { return r.status !== 'success' }).length + ' 次'
+        }
+
+        renderChips()
+        renderRuns()
+
+        var stamp = '快照 ' + fmtTime(J.snapshot) + ' UTC'
+        window.SAMPLE.setStamp(stamp)
+        document.getElementById('footStamp').textContent =
+          '设计样张 · 数据快照 ' + J.snapshot.replace('T', ' ').slice(0, 16) + ' UTC'
+      })()
+    </script>
+  </body>
+</html>

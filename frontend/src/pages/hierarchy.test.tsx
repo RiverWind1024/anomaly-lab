@@ -6,12 +6,16 @@
  */
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SourceDetailPage } from './SourceDetailPage'
 import { MetricDetailPage } from './MetricDetailPage'
+import {
+  PREVIEW_STORAGE_KEY,
+  writePreviewPayload,
+  type PreviewPayload,
+} from '../features/metrics/previewBridge'
 
 const CATALOG = {
   sources: [
@@ -123,6 +127,22 @@ const QUERY_RESULT = {
 
 let calls: string[] = []
 
+/**
+ * 模拟预览页把配置带回来。
+ *
+ * ⚠️ 预览页开在新标签页里，靠 localStorage + storage 事件回传 ——
+ *    这里直接派发事件，测的是「收到之后表单怎么被预填」。
+ */
+function sendPreviewMessage(payload: PreviewPayload) {
+  writePreviewPayload(payload)
+  window.dispatchEvent(
+    new StorageEvent('storage', {
+      key: PREVIEW_STORAGE_KEY,
+      newValue: window.localStorage.getItem(PREVIEW_STORAGE_KEY),
+    }),
+  )
+}
+
 function renderPage(path: string, routePath: string, element: React.ReactElement) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: 0 } },
@@ -192,30 +212,51 @@ describe('SourceDetailPage', () => {
     expect(await screen.findByText('数据源不存在或已被删除')).toBeTruthy()
   })
 
-  it('挂着数据浏览器 —— 先看结构、再定指标', async () => {
+  it('不再挂数据浏览器 —— 浏览数据在指标的编辑流程里', async () => {
     renderPage('/sources/1', '/sources/:sourceId', <SourceDetailPage />)
-    expect(await screen.findByText('浏览数据')).toBeTruthy()
-    expect(screen.getByPlaceholderText(/SELECT/)).toBeTruthy()
+    await screen.findByText('demo-metric')
+    // ⚠️ 浏览数据是「写 SQL 时看结果」的工具 ——
+    //    放在数据源页上只是个孤立的功能块
+    expect(screen.queryByPlaceholderText(/SELECT/)).toBeNull()
+    expect(screen.queryByText('浏览数据')).toBeNull()
   })
 
-  it('浏览结果能一键带进指标表单', async () => {
-    const user = userEvent.setup()
+  it('预览页带回的配置会预填指标表单', async () => {
     renderPage('/sources/1', '/sources/:sourceId', <SourceDetailPage />)
-    await user.click(await screen.findByRole('button', { name: /执\s*行/ }))
-    await user.click(await screen.findByRole('button', { name: '用这个结果建指标' }))
+    await screen.findByText('demo-metric')
+    act(() => {
+      sendPreviewMessage({
+        sourceId: 1,
+        sql: 'SELECT observed_at, metric_value FROM t WHERE $timefilter',
+        columns: QUERY_RESULT.columns,
+        time_column: 'observed_at',
+        value_column: 'metric_value',
+        group_column: undefined,
+        time_format: 'iso_utc',
+      })
+    })
 
-    // 列名从浏览结果里带过来：TIMESTAMP → 时间列，数值列 → 值列
+    // 列名从预览结果里带过来
     await waitFor(() => {
       expect((screen.getByLabelText('时间列') as HTMLInputElement).value).toBe('observed_at')
     })
     expect((screen.getByLabelText('值列') as HTMLInputElement).value).toBe('metric_value')
   })
 
-  it('浏览的 SQL 不含 $timefilter 时不预填查询语句', async () => {
-    const user = userEvent.setup()
+  it('带回的 SQL 不含 $timefilter 时不预填查询语句', async () => {
     renderPage('/sources/1', '/sources/:sourceId', <SourceDetailPage />)
-    await user.click(await screen.findByRole('button', { name: /执\s*行/ }))
-    await user.click(await screen.findByRole('button', { name: '用这个结果建指标' }))
+    await screen.findByText('demo-metric')
+    act(() => {
+      sendPreviewMessage({
+        sourceId: 1,
+        sql: 'SELECT observed_at, metric_value FROM t LIMIT 100',
+        columns: QUERY_RESULT.columns,
+        time_column: 'observed_at',
+        value_column: 'metric_value',
+        group_column: undefined,
+        time_format: 'iso_utc',
+      })
+    })
 
     // ⚠️ 指标要求恰好一个 $timefilter —— 预填非法 SQL 会让用户白填一遍
     await waitFor(() => {
@@ -227,95 +268,6 @@ describe('SourceDetailPage', () => {
       'LIMIT 100',
     )
   })
-
-  it(
-    '列指派能带进指标表单（分组列）',
-    async () => {
-      // ⚠️ 这一页的表格重绘很慢 —— 逐事件等待 + 指针检查会超时
-      const user = userEvent.setup({ delay: null, pointerEventsCheck: 0 })
-      renderPage('/sources/1', '/sources/:sourceId', <SourceDetailPage />)
-      await user.click(await screen.findByRole('button', { name: /执\s*行/ }))
-
-      // ⚠️ 页面里还有指标表 —— 只在「浏览数据」这张卡里找表头
-      const card = screen.getByText('浏览数据').closest('.ant-card') as HTMLElement
-      const headerRow = within(card).getAllByRole('row')[0]
-      const select = within(headerRow).getAllByTitle('observed_at 列的角色')[0]
-      await user.click(within(select).getByRole('combobox'))
-      await user.click(await screen.findByTitle('分组列'))
-
-      await user.click(await screen.findByRole('button', { name: '用这个结果建指标' }))
-      // ⚠️ 下拉框的隐藏 a11y 列表也有同样的 aria-label —— 只在弹窗里找
-      const dialog = within(screen.getByRole('dialog'))
-      await waitFor(() => {
-        expect((dialog.getByLabelText(/分组列/) as HTMLInputElement).value).toBe('observed_at')
-      })
-      // 被显式指派走的列不再参与自动推断 —— 时间列让位
-      expect((dialog.getByLabelText('时间列') as HTMLInputElement).value).toBe('')
-    },
-    15000,
-  )
-
-  it(
-    'INTEGER 的时间列 → 指标表单预填 epoch，并让用户选精度',
-    async () => {
-      /* ⚠️ INTEGER 列按 iso 解释会静默落到 1970 年 ——
-         不报错，但时间是错的，指标整条都错。 */
-      vi.stubGlobal(
-        'fetch',
-        vi.fn(async (input: RequestInfo | URL) => {
-          const url = String(input)
-          calls.push(url)
-          if (url.includes('/api/platform/catalog')) {
-            return new Response(JSON.stringify(CATALOG), {
-              status: 200,
-              headers: { 'Content-Type': 'application/json' },
-            })
-          }
-          if (url.includes('/api/platform/sources/1/query')) {
-            return new Response(
-              JSON.stringify({
-                columns: [
-                  { name: 'ts_epoch', type: 'INTEGER' },
-                  { name: 'metric_value', type: 'REAL' },
-                ],
-                rows: [[1793318400, 3.5]],
-                total: 1,
-                truncated: false,
-                elapsed_ms: 7,
-              }),
-              { status: 200, headers: { 'Content-Type': 'application/json' } },
-            )
-          }
-          return new Response(JSON.stringify({ detail: '没有数据' }), {
-            status: 404,
-            headers: { 'Content-Type': 'application/json' },
-          })
-        }),
-      )
-      const user = userEvent.setup({ delay: null, pointerEventsCheck: 0 })
-      renderPage('/sources/1', '/sources/:sourceId', <SourceDetailPage />)
-      await user.click(await screen.findByRole('button', { name: /执\s*行/ }))
-
-      // ⚠️ INTEGER 列默认被当成「值列」—— 要手动指派成时间列
-      const card = screen.getByText('浏览数据').closest('.ant-card') as HTMLElement
-      const headerRow = within(card).getAllByRole('row')[0]
-      const roleSelect = within(headerRow).getAllByTitle('ts_epoch 列的角色')[0]
-      await user.click(within(roleSelect).getByRole('combobox'))
-      await user.click(await screen.findByTitle('时间列'))
-
-      await user.click(await screen.findByRole('button', { name: '用这个结果建指标' }))
-
-      const dialog = within(screen.getByRole('dialog'))
-      await waitFor(() => {
-        expect((dialog.getByLabelText('时间列') as HTMLInputElement).value).toBe('ts_epoch')
-      })
-      // ⚠️ 时间格式必须是 epoch —— iso 会静默落到 1970 年
-      expect(dialog.getAllByTitle('epoch_s').length).toBeGreaterThan(0)
-      // 浏览面板里给出提示 —— 指派 INTEGER 列做时间列时要用 epoch 精度
-      expect(screen.getByText(/是 INTEGER/)).toBeTruthy()
-    },
-    15000,
-  )
 })
 
 describe('MetricDetailPage', () => {

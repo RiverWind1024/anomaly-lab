@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>anomaly·lab — 概览设计样张</title>
+    <link rel="stylesheet" href="app.css" />
+    <script>
+      // 首屏前定主题，避免闪烁
+      ;(function () {
+        try {
+          var saved = localStorage.getItem('anomaly-lab-sample-theme')
+          if (saved === 'dark' || saved === 'light') {
+            document.documentElement.setAttribute('data-theme', saved)
+          }
+        } catch (e) {}
+      })()
+    </script>
+  </head>
+  <body>
+    <a class="skip" href="#main">跳到主要内容</a>
+
+    <div class="shell">
+      <main class="main" id="main">
+        <header class="titlebar">
+          <div class="titlebar__lead">
+            <h1>概览</h1>
+            <p class="finding" id="finding"></p>
+          </div>
+          <div class="titlebar__actions">
+            <a class="btn btn--primary" href="alerts.html">查看 P0 告警</a>
+          </div>
+        </header>
+
+        <!-- 主块：分数轨迹 + 事件条带 -->
+        <section class="panel trail" aria-labelledby="trailTitle">
+          <div class="panel__head">
+            <div>
+              <h2 class="panel__title" id="trailTitle">异常分数轨迹</h2>
+              <p class="panel__meta num" id="trailMeta"></p>
+            </div>
+            <div class="range" role="tablist" aria-label="时间窗口">
+              <button type="button" role="tab" aria-selected="true" data-window="all">本次运行</button>
+              <button type="button" role="tab" aria-selected="false" data-window="24">24h</button>
+              <button type="button" role="tab" aria-selected="false" data-window="12">12h</button>
+              <button type="button" role="tab" aria-selected="false" data-window="6">6h</button>
+            </div>
+          </div>
+
+          <div class="seriesbar">
+            <span class="seriesbar__k">序列</span>
+            <div class="sery" id="seriesTabs" role="tablist" aria-label="选择序列"></div>
+            <div class="legend" aria-hidden="true">
+              <span class="legend__item"><i class="swatch swatch--line"></i>分数</span>
+              <span class="legend__item"><i class="swatch swatch--p1"></i>P1 2.5</span>
+              <span class="legend__item"><i class="swatch swatch--p0"></i>P0 3.75</span>
+            </div>
+          </div>
+
+          <div class="chart" id="chart"></div>
+
+          <div class="panel__foot">
+            <span class="num" id="trailFoot"></span>
+            <span class="num" id="trailUpdated"></span>
+          </div>
+        </section>
+
+        <!-- KPI 条 -->
+        <section class="kpis" aria-label="平台规模">
+          <div class="kpi">
+            <span class="kpi__k">检测任务</span>
+            <span class="kpi__v num" id="kpiJobs">–</span>
+            <span class="kpi__s" id="kpiJobsSub"></span>
+          </div>
+          <div class="kpi">
+            <span class="kpi__k">累计运行</span>
+            <span class="kpi__v num" id="kpiRuns">–</span>
+            <span class="kpi__s" id="kpiRunsSub"></span>
+          </div>
+          <div class="kpi">
+            <span class="kpi__k">数据源 / 指标</span>
+            <span class="kpi__v num" id="kpiScope">–</span>
+            <span class="kpi__s" id="kpiScopeSub"></span>
+          </div>
+          <div class="kpi">
+            <span class="kpi__k">人工反馈</span>
+            <span class="kpi__v num" id="kpiFeedback">–</span>
+            <span class="kpi__s" id="kpiFeedbackSub"></span>
+          </div>
+          <div class="kpi">
+            <span class="kpi__k">回测记录</span>
+            <span class="kpi__v num" id="kpiBacktest">–</span>
+            <span class="kpi__s" id="kpiBacktestSub"></span>
+          </div>
+        </section>
+
+        <!-- 两栏：事件 + 任务健康 -->
+        <div class="cols">
+          <section class="panel events" aria-labelledby="eventsTitle">
+            <div class="panel__head">
+              <div>
+                <h2 class="panel__title" id="eventsTitle">告警事件</h2>
+                <p class="panel__meta num" id="eventsScope"></p>
+              </div>
+              <a class="link" href="alerts.html" id="eventsAllLink">全部 13 条</a>
+            </div>
+            <ul class="eventlist" id="eventList"></ul>
+            <a class="events__all" href="alerts.html" id="eventsAllMobile">查看全部 13 条</a>
+          </section>
+
+          <section class="panel jobs" aria-labelledby="jobsTitle">
+            <div class="panel__head">
+              <h2 class="panel__title" id="jobsTitle">任务健康</h2>
+              <a class="link" href="jobs.html">管理任务</a>
+            </div>
+            <div class="jobtable" role="table" aria-label="任务健康">
+              <div class="jobtable__head" role="row">
+                <span role="columnheader">任务</span>
+                <span role="columnheader">最近一次</span>
+                <span role="columnheader" class="r">序列</span>
+                <span role="columnheader" class="r">告警</span>
+                <span role="columnheader" class="r">间隔</span>
+                <span role="columnheader" class="r">下次</span>
+              </div>
+              <div id="jobRows"></div>
+            </div>
+
+            <div class="runlog">
+              <div class="runlog__head">
+                <span>最近一次运行</span>
+                <span class="num" id="runId"></span>
+              </div>
+              <dl class="runlog__grid">
+                <dt>状态</dt>
+                <dd><span class="pill pill--ok">成功</span></dd>
+                <dt>序列</dt>
+                <dd class="num" id="runSeries"></dd>
+                <dt>告警</dt>
+                <dd class="num" id="runAlerts"></dd>
+                <dt>耗时</dt>
+                <dd class="num" id="runDuration"></dd>
+              </dl>
+              <p class="runlog__next num" id="runNext"></p>
+            </div>
+          </section>
+        </div>
+
+        <!-- 回测 -->
+        <section class="panel backtest" aria-labelledby="btTitle">
+          <div class="backtest__lead">
+            <span class="kpi__k">回测 F1 · 240 条记录</span>
+            <span class="backtest__f1 num" id="btF1">–</span>
+            <span class="backtest__note">点级 F1，阈值逐条搜索</span>
+          </div>
+          <dl class="backtest__grid">
+            <div><dt>Precision</dt><dd class="num" id="btP"></dd></div>
+            <div><dt>Recall</dt><dd class="num" id="btR"></dd></div>
+            <div><dt>Range-F1</dt><dd class="num" id="btRF"></dd></div>
+            <div><dt>真值 / 预测</dt><dd class="num" id="btCount"></dd></div>
+          </dl>
+          <div class="backtest__finding">
+            <span class="dot dot--p0" aria-hidden="true"></span>
+            <p id="btFinding"></p>
+            <a class="link" href="evaluation.html">评估报告</a>
+          </div>
+        </section>
+
+        <footer class="pagefoot">
+          <span id="footStamp"></span>
+          <span>真实接口：/api/platform/overview · /alerts · /jobs/2/preview · /api/summary</span>
+        </footer>
+      </main>
+    </div>
+
+    <script src="data-overview.js"></script>
+    <script>
+      ;(function () {
+        var O = window.SAMPLE.overview
+        window.SAMPLE.counts = { alerts: O.finding.total }
+        window.SAMPLE.page = {
+          key: 'overview',
+        }
+      })()
+    </script>
+    <script src="chart.js"></script>
+    <script src="shell.js"></script>
+    <script>
+      ;(function () {
+        var D = window.SAMPLE.overview
+        var fmtTime = window.SampleChart.fmtTime
+        var rel = window.SampleChart.relTime
+
+        var findingEl = document.getElementById('finding')
+        var trailMeta = document.getElementById('trailMeta')
+        var trailFoot = document.getElementById('trailFoot')
+        var eventsScope = document.getElementById('eventsScope')
+        var list = document.getElementById('eventList')
+        var seriesTabs = document.getElementById('seriesTabs')
+        var chartEl = document.getElementById('chart')
+
+        var current = D.default_series
+        var winKey = 'all'
+
+        function short(id) {
+          return id.split(':').pop()
+        }
+
+        function currentTrail() {
+          return D.trails[current]
+        }
+
+        function currentEvents() {
+          return D.events.filter(function (e) { return e.series === current })
+        }
+
+        function draw() {
+          window.SampleChart.render(chartEl, currentTrail(), winKey, currentEvents())
+        }
+
+        // 左上角不再写死一份事实：发现句随选择变化
+        function renderChrome() {
+          var t = currentTrail()
+          var f = D.finding.by_series[current]
+          findingEl.innerHTML =
+            '<span class="num">' + D.finding.total + '</span> 条告警 · ' +
+            '<span class="num">' + D.finding.p0 + '</span> 条 P0 —— ' +
+            '选中 <b>' + short(current) + '</b> 在 ' +
+            '<span class="num">' + fmtTime(f.peak_ts) + '</span> 出现 ' +
+            '<span class="num">' + f.peak_score.toFixed(2) + 'σ</span> 峰值，该序列 ' +
+            '<span class="num">' + f.alerts + '</span> 条告警'
+          trailMeta.textContent =
+            t.series + ' · run ' + t.run_id + ' · ' + t.detector + ' / ' + t.score_type
+          trailFoot.textContent =
+            t.n_alerts + ' 个告警点 · ' + t.n_p0 + ' 个 P0 点 · 经合并为 ' + t.events + ' 条区间事件'
+          eventsScope.textContent = short(current) + ' · ' + f.alerts + ' 条'
+        }
+
+        function renderEvents() {
+          list.innerHTML = ''
+          currentEvents().slice(0, 5).forEach(function (e) {
+            var li = document.createElement('li')
+            li.className = 'event'
+            li.innerHTML =
+              '<span class="pill pill--' + (e.level_index >= 2 ? 'p0' : 'p1') + '">' + e.level + '</span>' +
+              '<span class="event__main">' +
+                '<span class="event__series num">' + fmtTime(e.start) +
+                  (e.end !== e.start ? ' – ' + fmtTime(e.end).slice(6) : '') + '</span>' +
+                '<span class="event__time num">' + e.detector + '</span>' +
+              '</span>' +
+              '<span class="event__score">' +
+                '<span class="num">' + e.score.toFixed(2) + 'σ</span>' +
+                '<span class="event__pts num">' + e.points + ' 点</span>' +
+              '</span>'
+            list.appendChild(li)
+          })
+        }
+
+        function renderTabs() {
+          seriesTabs.innerHTML = ''
+          Object.keys(D.trails).forEach(function (id) {
+            var b = document.createElement('button')
+            b.type = 'button'
+            b.setAttribute('role', 'tab')
+            b.setAttribute('aria-selected', id === current ? 'true' : 'false')
+            b.dataset.series = id
+            b.title = id + ' · ' + D.finding.by_series[id].alerts + ' 条告警'
+            b.innerHTML =
+              '<span class="num">' + short(id) + '</span>' +
+              '<span class="sery__n num">' + D.finding.by_series[id].alerts + '</span>'
+            b.addEventListener('click', function () {
+              if (id === current) return
+              current = id
+              renderTabs()
+              renderChrome()
+              renderEvents()
+              draw()
+            })
+            seriesTabs.appendChild(b)
+          })
+        }
+
+        // ── KPI：全部来自快照 ──
+        function renderKpis() {
+          var bt = D.backtest.overall
+          document.getElementById('kpiJobs').textContent = D.counts.jobs
+          document.getElementById('kpiJobsSub').textContent = D.counts.enabled_jobs + ' 启用'
+          document.getElementById('kpiRuns').textContent = D.runs.total
+          document.getElementById('kpiRunsSub').textContent = D.runs.success + ' 成功'
+          document.getElementById('kpiScope').textContent =
+            D.counts.sources + ' / ' + D.counts.metrics
+          document.getElementById('kpiScopeSub').textContent = 'SQLite'
+          document.getElementById('kpiFeedback').textContent = D.feedback.total
+          document.getElementById('kpiFeedbackSub').textContent = '尚无标注'
+          document.getElementById('kpiBacktest').textContent = bt.n_series
+          document.getElementById('kpiBacktestSub').textContent = '120 条序列 × 2 算法'
+          document.getElementById('btF1').textContent = bt.f1.toFixed(3)
+          document.getElementById('btP').textContent = bt.precision.toFixed(3)
+          document.getElementById('btR').textContent = bt.recall.toFixed(3)
+          document.getElementById('btRF').textContent = bt.range_f1.toFixed(3)
+          document.getElementById('btCount').textContent =
+            bt.n_truth.toLocaleString('en-US') + ' / ' + bt.n_pred.toLocaleString('en-US')
+          var sparse = D.backtest.by_class.sparse_event
+          document.getElementById('btFinding').innerHTML =
+            '<b>稀疏事件形态完全漏检</b>：' +
+            '<span class="num">' + sparse.n_series + '</span> 条序列 F1 为 ' +
+            '<span class="num">' + sparse.f1.toFixed(3) + '</span>，异常点 ' +
+            '<span class="num">' + sparse.n_truth.toLocaleString('en-US') + '</span> 个，模型一个都没报。'
+        }
+
+        // ── 任务表 ──
+        var rows = document.getElementById('jobRows')
+        D.jobs.forEach(function (j) {
+          var last = j.last_run
+          var ok = last && last.status === 'success'
+          var row = document.createElement('div')
+          row.className = 'jobrow'
+          row.setAttribute('role', 'row')
+          row.innerHTML =
+            '<span class="jobrow__name" role="cell">' +
+              '<b>' + j.name + '</b>' +
+              '<span class="num">' + j.detector + ' · 每 ' + j.interval_seconds + 's</span>' +
+            '</span>' +
+            '<span role="cell"><span class="pill ' + (ok ? 'pill--ok' : 'pill--p0') + '">' +
+              (last ? (ok ? '成功' : '失败') : '未运行') + '</span></span>' +
+            '<span class="r num" role="cell"><span class="k">序列</span>' +
+              (last ? last.n_series : '—') + '</span>' +
+            '<span class="r num" role="cell"><span class="k">告警</span>' +
+              (last ? last.n_alerts : '—') + '</span>' +
+            '<span class="r num" role="cell"><span class="k">间隔</span>' + j.interval_seconds + 's</span>' +
+            '<span class="r num muted" role="cell"><span class="k">下次</span>' + rel(j.next_run_at) + '</span>'
+          rows.appendChild(row)
+        })
+
+        // ── 最近一次运行 ──
+        var lastJob = D.jobs.filter(function (j) { return j.last_run && j.last_run.n_series })[0] || D.jobs[0]
+        var run = lastJob.last_run
+        document.getElementById('runId').textContent = '#' + run.id
+        document.getElementById('runSeries').textContent = run.n_series
+        document.getElementById('runAlerts').textContent = run.n_alerts
+        document.getElementById('runDuration').textContent =
+          run.started_at === run.finished_at ? '< 1s' : '—'
+        document.getElementById('runNext').textContent =
+          '下次 ' + fmtTime(lastJob.next_run_at).slice(6) + ' UTC'
+
+        // ── 快照时间 ──
+        var stampText = '快照 ' + fmtTime(D.snapshot) + ' UTC'
+        document.getElementById('railStamp') &&
+          (document.getElementById('railStamp').textContent = stampText)
+        document.getElementById('trailUpdated').textContent = '更新于 ' + fmtTime(D.snapshot).slice(6) + ' UTC'
+        document.getElementById('footStamp').textContent = '设计样张 · 数据快照 ' + D.snapshot.replace('T', ' ').slice(0, 16) + ' UTC'
+        document.getElementById('eventsAllLink').textContent = '全部 ' + D.finding.total + ' 条'
+        document.getElementById('eventsAllMobile').textContent = '查看全部 ' + D.finding.total + ' 条'
+
+        renderTabs()
+        renderKpis()
+        renderChrome()
+        renderEvents()
+        draw()
+
+        var tabs = document.querySelectorAll('.range button')
+        tabs.forEach(function (b) {
+          b.addEventListener('click', function () {
+            tabs.forEach(function (x) { x.setAttribute('aria-selected', 'false') })
+            b.setAttribute('aria-selected', 'true')
+            winKey = b.dataset.window
+            draw()
+          })
+        })
+
+        var raf
+        window.addEventListener('resize', function () {
+          cancelAnimationFrame(raf)
+          raf = requestAnimationFrame(draw)
+        })
+
+        // 主题切换后重画图表（颜色来自 token）
+        window.addEventListener('themechange', draw)
+      })()
+    </script>
+  </body>
+</html>

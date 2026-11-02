@@ -92,3 +92,25 @@ export function roleOf(
   if (roles.group_column === columnName) return 'group'
   return 'none'
 }
+
+/**
+ * 时间格式要不要按 epoch 修正。
+ *
+ * ⚠️ INTEGER 的时间列是 **epoch 秒/毫秒**存的 —— 按 iso 解释会静默落到
+ *    1970 年，不报错但结果全错。所以时间列是 INTEGER 时，格式必须是 epoch。
+ *
+ * @param columns 浏览结果的列
+ * @param timeColumn 被指派为时间列的列名
+ * @param timeFormat 当前选的时间格式
+ */
+export function normalizeTimeFormat(
+  columns: SourceQueryColumn[],
+  timeColumn: string | undefined,
+  timeFormat: string,
+): string {
+  if (!timeColumn) return timeFormat
+  const type = columns.find((col) => col.name === timeColumn)?.type
+  if (type !== 'INTEGER') return timeFormat
+  // ⚠️ 已经选了 epoch 就别动它（epoch_s 还是 epoch_ms 得看源）
+  return timeFormat.startsWith('epoch') ? timeFormat : 'epoch_s'
+}

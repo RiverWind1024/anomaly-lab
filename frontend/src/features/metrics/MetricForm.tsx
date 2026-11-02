@@ -1,8 +1,9 @@
 import { useEffect, useMemo } from 'react'
-import { Form, Modal } from 'antd'
+import { Button, Form, Modal } from 'antd'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { createMetric, updateMetric } from '../../api/platform'
 import { catalogKey } from '../jobs/queries'
+import { buildPreviewUrl } from './previewUrl'
 import {
   DEFAULT_METRIC_QUERY,
   MISSING_POLICY_OPTIONS,
@@ -48,6 +49,30 @@ export function MetricForm({
   const [form] = Form.useForm<MetricFormValues>()
   const qc = useQueryClient()
   const isEditing = Boolean(editing)
+
+  /**
+   * 表单的当前值 —— 预览页的地址靠它生成。
+   *
+   * ⚠️ 用 useWatch 而不是 getFieldsValue —— 后者只在提交时准，
+   *    边打字边变的地址需要的是**实时**值。
+   */
+  const watched = Form.useWatch([], form)
+
+  /** 预览页地址 —— 带上当前正在编辑的 SQL 与列配置。 */
+  const previewUrl = useMemo(
+    () =>
+      buildPreviewUrl({
+        metricId: editing?.id,
+        sourceId: watched?.source_id ?? editing?.source_id ?? defaultSourceId,
+        sql: watched?.query ?? editing?.query,
+        time_column: watched?.time_column ?? editing?.time_column,
+        value_column: watched?.value_column ?? editing?.value_column,
+        group_column: watched?.group_column ?? editing?.group_column ?? undefined,
+        time_format: watched?.time_format ?? editing?.time_format,
+        source_timezone: watched?.source_timezone ?? editing?.source_timezone,
+      }),
+    [editing, watched, defaultSourceId],
+  )
 
   /** 表单初值 —— 编辑态与外部预填合并。 */
   const initialFormValues = useMemo<Partial<MetricFormValues>>(
@@ -119,6 +144,20 @@ export function MetricForm({
       confirmLoading={save.isPending}
       destroyOnClose
       width={760}
+      footer={[
+        // ⚠️ 新标签页打开 —— 预览是「看一眼」，不该把填到一半的表单弄丢
+        // ⚠️ **不能加 rel="noreferrer"** —— 那会切断 window.opener，
+        //    预览页就回传不了配置了
+        <Button key="preview" href={previewUrl} target="_blank" rel="opener">
+          预览数据
+        </Button>,
+        <Button key="cancel" onClick={onCancel}>
+          取消
+        </Button>,
+        <Button key="ok" type="primary" onClick={handleOk} loading={save.isPending}>
+          {isEditing ? '保存' : '新增'}
+        </Button>,
+      ]}
     >
       {save.error instanceof Error && <p className="form-error">{save.error.message}</p>}
       <Form

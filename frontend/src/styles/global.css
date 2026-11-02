@@ -663,6 +663,12 @@ html.theme-switching *::after {
   margin-bottom: var(--space-2);
 }
 
+/* 筛选栏右端的记录计数 */
+.filter-bar__count {
+  margin-left: auto;
+  font-size: 12px;
+}
+
 .evaluation__meta,
 .detections__meta {
   margin-bottom: var(--space-3);

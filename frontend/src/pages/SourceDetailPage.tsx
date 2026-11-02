@@ -1,12 +1,14 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { Button, Descriptions, Space, Table, Tag } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { StateBoundary } from '../components/StateBoundary'
 import { MetricForm, type MetricFormValues } from '../features/metrics/MetricForm'
 import { DeleteButton } from '../features/delete/DeleteButton'
-import { DataBrowser } from '../features/sources/DataBrowser'
-import type { ColumnRoles } from '../features/sources/roles'
+import {
+  PREVIEW_STORAGE_KEY,
+  readPreviewPayload,
+} from '../features/metrics/previewBridge'
 import { useCatalog } from '../features/jobs/queries'
 import { useDeleteMetric } from '../features/delete/queries'
 import type { CatalogMetric, SourceQueryColumn } from '../api/types'
@@ -16,6 +18,9 @@ import type { CatalogMetric, SourceQueryColumn } from '../api/types'
  *
  * 层级是 数据源 → 指标 → 序列：
  * 这里列的是「这个数据源下配了哪些指标」，点指标进指标详情。
+ *
+ * ⚠️ 这里**没有**「浏览数据」—— 数据浏览属于指标的编辑流程
+ *    （新增/编辑指标时点「预览数据」开新页），放在这里是位置不对。
  */
 export function SourceDetailPage() {
   const params = useParams<{ sourceId: string }>()
@@ -23,7 +28,7 @@ export function SourceDetailPage() {
   const catalog = useCatalog()
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<CatalogMetric | null>(null)
-  /** 浏览器里查出来的结果 —— 用来给指标表单预填。 */
+  /** 预览页带回来的取数配置 —— 用来给指标表单预填。 */
   const [browserResult, setBrowserResult] = useState<{
     sql: string
     columns: SourceQueryColumn[]
@@ -33,6 +38,34 @@ export function SourceDetailPage() {
     time_format?: string
   } | null>(null)
   const deleteMetric = useDeleteMetric()
+
+  /**
+   * 接住预览页带回来的配置。
+   *
+   * ⚠️ 预览页开在新标签页里，用 localStorage 回传 ——
+   *    storage 事件只在**别的**标签页触发，正好是这里要的。
+   */
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== PREVIEW_STORAGE_KEY) return
+      const payload = readPreviewPayload(event.newValue)
+      // ⚠️ 消费掉 —— 别让同一份配置反复填表单
+      window.localStorage.removeItem(PREVIEW_STORAGE_KEY)
+      if (!payload) return
+      setBrowserResult({
+        sql: payload.sql,
+        columns: payload.columns,
+        time_column: payload.time_column,
+        value_column: payload.value_column,
+        group_column: payload.group_column,
+        time_format: payload.time_format,
+      })
+      setEditing(null)
+      setFormOpen(true)
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
 
   const source = catalog.data?.sources.find((item) => item.id === sourceId)
   const metrics = (catalog.data?.metrics ?? []).filter((item) => item.source_id === sourceId)
@@ -95,40 +128,6 @@ export function SourceDetailPage() {
       ),
     },
   ]
-
-  /**
-   * 「用这个结果建指标」—— 把浏览到的列指派带进指标表单。
-   *
-   * ⚠️ 角色由**浏览器的列指派下拉**决定（自动推断只是它的默认值）——
-   *    猜不到就留空，让用户自己填（留个错的默认值更糟）。
-   */
-  const handleUseAsMetric = (payload: {
-    sql: string
-    columns: SourceQueryColumn[]
-    roles: ColumnRoles
-    time_format: string
-  }) => {
-    const timeColumn = payload.roles.time_column
-    const timeType = payload.columns.find((col) => col.name === timeColumn)?.type
-    // ⚠️ INTEGER 的时间列是 epoch 存的 —— 按纳秒解释会静默落到 1970 年，
-    //    不报错但结果是错的。所以这里不能一律填 iso_utc。
-    const epochTime = timeType === 'INTEGER'
-    const format = epochTime
-      ? payload.time_format.startsWith('epoch')
-        ? payload.time_format
-        : 'epoch_s'
-      : payload.time_format
-    setBrowserResult({
-      sql: payload.sql,
-      columns: payload.columns,
-      time_column: timeColumn,
-      value_column: payload.roles.value_column,
-      group_column: payload.roles.group_column,
-      time_format: format,
-    })
-    setEditing(null)
-    setFormOpen(true)
-  }
 
   /**
    * 指标表单的预填值。
@@ -215,12 +214,6 @@ export function SourceDetailPage() {
           />
         )}
       </StateBoundary>
-
-      <DataBrowser
-        sourceId={sourceId}
-        kind={source?.kind ?? 'sqlite'}
-        onUseAsMetric={handleUseAsMetric}
-      />
 
       <MetricForm
         open={formOpen}

@@ -303,12 +303,16 @@ describe('DashboardPage', () => {
     expect(screen.queryByText('累计运行')).toBeNull()
   })
 
-  it('发现句先说告警：总数与 P0 数', async () => {
+  it('KPI 条里给出告警总数与 P0 数', async () => {
     renderPage()
-    await waitFor(() => expect(screen.getByText(/条告警/)).toBeTruthy())
-    // 总数与 P0 数都出现在发现句里
-    expect(screen.getAllByText('17').length).toBeGreaterThan(0)
-    expect(screen.getAllByText(/4/).length).toBeGreaterThan(0)
+    // 总数与 P0 数 —— 页面顶部不再有说明行，这两个数在 KPI 条里
+    await waitFor(() => {
+      const strip = document.querySelector('.kpis')
+      expect(strip?.textContent ?? '').toContain('告警')
+    })
+    const strip = document.querySelector('.kpis')?.textContent ?? ''
+    expect(strip).toContain('17')
+    expect(strip).toContain('4 条 P0')
   })
 
   it('⚠️ 展示数据保留：占用、策略、上次清理', async () => {  // taste-skill-ignore
