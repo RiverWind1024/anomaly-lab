@@ -688,3 +688,34 @@ def test_redact_config_masks_non_dict_headers_and_body():
         }
     )
     assert "SUPERSECRET" not in str(out)
+
+
+def test_nested_credential_in_top_level_config_key_is_redacted(tmp_path):
+    """⚠️ 凭据可以藏在**任意**顶层键的嵌套结构里 —— 只脱 headers/body/url 等于没脱。"""
+    store = PlatformStore(tmp_path / "platform.db")
+    store.add_source(
+        "remote", "", kind="http",
+        config={
+            "url": "https://x/q?q={sql}",
+            "auth": {"password": "s3cr3t", "user": "bob"},
+        },
+    )
+    source = store.get_source(1)
+    assert "s3cr3t" not in str(source.config)
+    assert source.config["auth"]["password"] == "••••"
+    assert source.config["auth"]["user"] == "bob"
+
+
+def test_nested_credential_round_trips_through_update(tmp_path):
+    """脱敏后原样回传 → 真值还原（嵌套结构也要还原）。"""
+    store = PlatformStore(tmp_path / "platform.db")
+    store.add_source(
+        "remote", "", kind="http",
+        config={
+            "url": "https://x/q?q={sql}",
+            "auth": {"password": "s3cr3t"},
+        },
+    )
+    redacted = store.get_source(1).config
+    store.update_source(1, config=redacted)
+    assert store.get_source_raw(1).config["auth"]["password"] == "s3cr3t"

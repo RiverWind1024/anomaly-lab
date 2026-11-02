@@ -283,9 +283,14 @@ def _redact_config(config: dict) -> dict:
 
     ⚠️ 脱敏在 store 层做 —— 前端拿不到原值，
        「保留原值」这类合并规则只能后端实现。
+    ⚠️ **整个 config 递归脱敏**，不是只处理 headers / body / url ——
+       凭据可以藏在任意顶层键的嵌套结构里
+       （`{"auth": {"password": ...}}`），只脱三个已知键等于没脱。
     """
-    out = dict(config)
-    headers = out.get("headers")
+    out = _redact_value(config)
+    # ⚠️ headers 要用**原始**的值 —— 通用递归已经按「键名含凭据」把它脱成
+    #    `••••` 了，再走 `_redact_header_value` 就丢了 `Bearer ` 这类前缀。
+    headers = config.get("headers")
     if isinstance(headers, dict):
         out["headers"] = {
             key: _redact_header_value(value) for key, value in headers.items()
@@ -293,14 +298,14 @@ def _redact_config(config: dict) -> dict:
     elif headers is not None:
         # ⚠️ 非对象（历史脏数据）—— 整段脱敏，别让明文漏出去
         out["headers"] = REDACTED
-    body = out.get("body")
-    if isinstance(body, dict):
-        out["body"] = _redact_value(body)
-    elif body is not None:
-        out["body"] = REDACTED
     url = out.get("url")
     if isinstance(url, str):
         out["url"] = _redact_url(url)
+    body = config.get("body")
+    if body is not None and not isinstance(body, dict):
+        # ⚠️ 非对象（历史脏数据）—— 整段脱敏。
+        #    通用递归对字符串是原样返回的，`"password=xxx"` 这种会明文漏出去。
+        out["body"] = REDACTED
     return out
 
 
@@ -352,17 +357,19 @@ def _merge_config(old: dict, new: dict) -> dict:
        （前端拿不到原值，只能把脱敏值原样传回来）。
     """
     redacted_old = _redact_config(old)
-    merged = dict(new)
-    for key in ("headers", "body"):
-        new_map = new.get(key)
-        old_map = old.get(key)
-        if not isinstance(new_map, dict) or not isinstance(old_map, dict):
-            continue
-        merged[key] = _merge_secret_map(old_map, redacted_old.get(key, {}), new_map)
+    # ⚠️ url **单独处理**（参数级还原）—— 不能走 `_merge_secret_map`：
+    #    url 里的哨兵值是「被脱敏的某个参数」，不是「用户把字段改名了」。
+    #    走通用合并会被当成「脱敏值不能作为新凭据」而误拒。
+    rest_old = {key: value for key, value in old.items() if key != "url"}
+    rest_redacted = {key: value for key, value in redacted_old.items() if key != "url"}
+    rest_new = {key: value for key, value in new.items() if key != "url"}
+    merged = _merge_secret_map(rest_old, rest_redacted, rest_new)
     url = new.get("url")
     old_url = old.get("url")
     if isinstance(url, str) and isinstance(old_url, str):
         merged["url"] = _merge_url(old_url, url)
+    elif url is not None:
+        merged["url"] = url
     return merged
 
 
