@@ -151,6 +151,26 @@ def _build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("platform-demo", help="生成平台 demo（SQLite 源 + 指标 + 任务）")
     p.add_argument("--data", type=Path, default=None, help="数据根目录，默认 data")
 
+    p = sub.add_parser(
+        "mock-tsdb", help="启动假远端时序数据库（InfluxDB 3 形状，持续造数）"
+    )
+    p.add_argument("--host", default="127.0.0.1")
+    p.add_argument("--port", type=int, default=8181)
+    p.add_argument(
+        "--db-path", type=Path, default=Path("data/mock_tsdb/tsdb.db"), help="SQLite 文件路径"
+    )
+    p.add_argument("--retention-hours", type=int, default=6, help="保留窗口（小时）")
+    p.add_argument("--history-points", type=int, default=360, help="启动时回填多少个历史点")
+    p.add_argument("--write-interval", type=int, default=10, help="后台写入间隔（秒）")
+    p.add_argument("--no-writer", action="store_true", help="不启动后台写入线程")
+
+    p = sub.add_parser("mock-demo", help="把平台侧配成指向假远端（源 + 指标 + 任务）")
+    p.add_argument("--data", type=Path, default=None, help="数据根目录，默认 data")
+    p.add_argument(
+        "--base-url", default="http://127.0.0.1:8181", help="假远端地址"
+    )
+    p.add_argument("--db", default="mock", help="请求里的 db 字段")
+
     sub.add_parser("compliance-check", help="合规自检")
 
     return parser
@@ -540,6 +560,43 @@ def _cmd_platform_demo(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_mock_tsdb(args: argparse.Namespace) -> int:
+    from anomaly_lab.mock_tsdb.__main__ import main as mock_main
+
+    return mock_main(
+        [
+            "--host",
+            args.host,
+            "--port",
+            str(args.port),
+            "--db-path",
+            str(args.db_path),
+            "--retention-hours",
+            str(args.retention_hours),
+            "--history-points",
+            str(args.history_points),
+            "--write-interval",
+            str(args.write_interval),
+        ]
+        + (["--no-writer"] if args.no_writer else [])
+    )
+
+
+def _cmd_mock_demo(args: argparse.Namespace) -> int:
+    from anomaly_lab.platform.mock_remote import seed_mock_remote
+
+    data_root = Path(args.data) if args.data else CONFIG.data_dir
+    info = seed_mock_remote(data_root, base_url=args.base_url, db=args.db)
+    print(
+        "假远端演示已就绪："
+        f"source={info['source_id']} metric={info['metric_id']} job={info['job_id']} "
+        f"({info['base_url']})"
+    )
+    print("执行：make mock-tsdb &   # 起假远端")
+    print("      make serve         # 打开 http://127.0.0.1:8000/sources")
+    return 0
+
+
 def _cmd_compliance(args: argparse.Namespace) -> int:
     hits = scan_repo(Path.cwd())
     if hits:
@@ -572,6 +629,10 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_serve(args)
     if args.command == "platform-demo":
         return _cmd_platform_demo(args)
+    if args.command == "mock-tsdb":
+        return _cmd_mock_tsdb(args)
+    if args.command == "mock-demo":
+        return _cmd_mock_demo(args)
     if args.command == "compliance-check":
         return _cmd_compliance(args)
     if args.command in _UNIMPLEMENTED:

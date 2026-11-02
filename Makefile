@@ -4,7 +4,7 @@ PIP_INDEX ?= https://pypi.tuna.tsinghua.edu.cn/simple
 NPM ?= npm
 
 .PHONY: setup test lint generate classify detect evaluate compare report validate-auto serve smoke platform-demo platform-smoke compliance-check clean \
-	frontend-install frontend-test frontend-build dev
+	frontend-install frontend-test frontend-build dev mock-tsdb mock-demo
 
 setup:
 	uv python install 3.12
@@ -71,6 +71,17 @@ serve: frontend-build
 
 platform-demo:
 	$(PY) -m anomaly_lab.cli platform-demo --data data
+
+# ---------- 假远端（演示用） ----------
+
+# 假远端时序数据库：照 InfluxDB 3 的 API 形状，持续造数。
+# 跑它是为了让「HTTP 透传」有一条真的远端可连（换 url + token 也能接真库）。
+mock-tsdb:
+	$(PY) -m anomaly_lab.cli mock-tsdb
+
+# 把平台侧配成指向假远端（HTTP 数据源 + 指标 + 检测任务）。
+mock-demo:
+	$(PY) -m anomaly_lab.cli mock-demo --data data
 
 smoke:
 	./scripts/smoke.sh
