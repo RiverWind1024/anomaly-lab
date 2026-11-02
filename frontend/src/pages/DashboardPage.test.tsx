@@ -1,5 +1,8 @@
 /**
  * 概览页：展示整个系统的运行情况。
+ *
+ * 这一屏回答一个问题：**现在哪里有异常？**
+ * 所以最大的那块是异常分数轨迹，数字在下面的 KPI 条里。
  */
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -59,6 +62,18 @@ const SUMMARY = {
       f1: 0.31,
       range_f1: 0.205,
     },
+    by_metric_class: {
+      sparse_event: {
+        n_series: 40,
+        n_truth: 1426,
+        n_pred: 0,
+        precision: 0,
+        recall: 0,
+        f1: 0,
+        range_f1: 0,
+        elapsed_ms: 10,
+      },
+    },
   },
   rows: [],
 }
@@ -70,6 +85,124 @@ const STORAGE = {
   feedback: { total: 5 },
   last_pruned_at: '2026-10-30T10:00:00+00:00',
   last_pruned: { deleted_runs: 703, freed_bytes: 9989731 },
+}
+
+/** 轨迹用的一次运行的检测结果。 */
+const PREVIEW = {
+  run_id: 50,
+  job_id: 1,
+  detector: 'iqr',
+  requested_detector: 'iqr',
+  metric_class: 'periodic',
+  detector_rationale: '',
+  detector_fallback: false,
+  score_type: 'zscore',
+  series_id: 'demo-metric:web-api',
+  group: 'web-api',
+  n: 4,
+  n_valid: 4,
+  n_missing: 0,
+  n_alerts: 2,
+  n_p0: 1,
+  sufficient: true,
+  insufficient_reason: '',
+  sampled: false,
+  original_n: 4,
+  timestamps: [
+    '2026-10-30T09:30:00',
+    '2026-10-30T09:35:00',
+    '2026-10-30T09:40:00',
+    '2026-10-30T09:45:00',
+  ],
+  values: [1, 2, 3, 4],
+  scores: [0.2, 1.1, 3.4, 0.5],
+  baseline: null,
+  lower: null,
+  upper: null,
+  severity: [0, 1, 2, 0],
+  alert_threshold: 2.5,
+  critical_threshold: 4,
+  alert_rules: [],
+  levels: ['normal', 'P1', 'P0'],
+  series: [
+    {
+      series_id: 'demo-metric:web-api',
+      group: 'web-api',
+      n: 4,
+      n_valid: 4,
+      n_missing: 0,
+      n_alerts: 2,
+      n_p0: 1,
+      sufficient: true,
+      detector: 'iqr',
+      metric_class: 'periodic',
+      fallback: false,
+      file: 'x',
+    },
+    {
+      series_id: 'demo-metric:web-worker',
+      group: 'web-worker',
+      n: 4,
+      n_valid: 4,
+      n_missing: 0,
+      n_alerts: 1,
+      n_p0: 0,
+      sufficient: true,
+      detector: 'iqr',
+      metric_class: 'periodic',
+      fallback: false,
+      file: 'x',
+    },
+  ],
+}
+
+const ALERTS = {
+  events: [
+    {
+      job_id: 1,
+      job_name: 'demo-job',
+      metric_id: 1,
+      metric_name: 'demo-metric',
+      series_id: 'demo-metric:web-api',
+      group: 'web-api',
+      level: 'P0',
+      level_index: 2,
+      start_ts: '2026-10-30T09:40:00+00:00',
+      end_ts: '2026-10-30T09:45:00+00:00',
+      n_points: 3,
+      max_score: 3.4,
+      detector: 'iqr',
+      score_type: 'zscore',
+      run_id: 50,
+    },
+  ],
+  jobs: [],
+  levels: [],
+  series: [],
+  skipped: [],
+}
+
+const CATALOG = {
+  sources: [],
+  metrics: [],
+  detectors: [],
+  jobs: [
+    {
+      id: 1,
+      metric_id: 1,
+      name: 'demo-job',
+      detector: 'iqr',
+      alert_threshold: 2.5,
+      critical_threshold: 4,
+      window_points: 100,
+      interval_seconds: 300,
+      enabled: true,
+      last_run_at: '2026-10-30T10:00:00+00:00',
+      next_run_at: '2026-10-30T10:05:00+00:00',
+      created_at: '2026-10-01T00:00:00+00:00',
+      alert_rules: [],
+    },
+  ],
 }
 
 let calls: string[] = []
@@ -98,9 +231,15 @@ beforeEach(() => {
         ? JSON.stringify(OVERVIEW)
         : url.includes('/api/platform/storage')
           ? JSON.stringify(STORAGE)
-          : url.includes('/api/summary')
-            ? JSON.stringify(SUMMARY)
-            : '{}'
+          : url.includes('/api/platform/catalog')
+            ? JSON.stringify(CATALOG)
+            : url.includes('/api/platform/alerts')
+              ? JSON.stringify(ALERTS)
+              : url.includes('/preview')
+                ? JSON.stringify(PREVIEW)
+                : url.includes('/api/summary')
+                  ? JSON.stringify(SUMMARY)
+                  : '{}'
       return new Response(body, {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
@@ -155,18 +294,24 @@ describe('fmtBytes', () => {
 describe('DashboardPage', () => {
   it('展示关键计数', async () => {
     renderPage()
-    expect(await screen.findByText('数据源')).toBeTruthy()
-    expect(screen.getByText('指标')).toBeTruthy()
-    expect(screen.getByText('检测任务')).toBeTruthy()
-    expect(screen.getByText('当前告警')).toBeTruthy()
+    expect(await screen.findByText('检测任务')).toBeTruthy()
+    expect(screen.getByText('数据源 / 指标')).toBeTruthy()
+    expect(screen.getByText('人工反馈')).toBeTruthy()
+    expect(screen.getByText('回测序列')).toBeTruthy()
     // ⚠️ 不是「累计运行」—— 保留策略会清掉超窗的，这个数是保留窗口内的
     expect(screen.getByText('保留期运行')).toBeTruthy()
     expect(screen.queryByText('累计运行')).toBeNull()
-    // 「人工反馈」既是统计卡标题也是卡片标题 —— 会出现两次
-    expect(screen.getAllByText('人工反馈').length).toBeGreaterThan(0)
   })
 
-  it('⚠️ 展示数据保留：占用、策略、上次清理', async () => {
+  it('发现句先说告警：总数与 P0 数', async () => {
+    renderPage()
+    await waitFor(() => expect(screen.getByText(/条告警/)).toBeTruthy())
+    // 总数与 P0 数都出现在发现句里
+    expect(screen.getAllByText('17').length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/4/).length).toBeGreaterThan(0)
+  })
+
+  it('⚠️ 展示数据保留：占用、策略、上次清理', async () => {  // taste-skill-ignore
     renderPage()
     expect(await screen.findByText('数据保留')).toBeTruthy()
     await waitFor(() => expect(screen.getByText('保留策略')).toBeTruthy())
@@ -184,11 +329,23 @@ describe('DashboardPage', () => {
     )
   })
 
-  it('展示告警分布与最多的序列', async () => {
+  it('画异常分数轨迹，并给出可切换的序列', async () => {
     renderPage()
-    expect(await screen.findByText('告警分布')).toBeTruthy()
-    expect(screen.getByText('demo-metric:web-api')).toBeTruthy()
-    expect(screen.getByText('P0')).toBeTruthy()
+    const chart = await screen.findByRole('img', { name: /异常分数轨迹/ })
+    expect(chart.getAttribute('aria-label')).toContain('demo-metric:web-api')
+    // 序列切换：两条序列，告警多的那条排在前面
+    await waitFor(() =>
+      expect(screen.getByRole('tab', { name: /web-api/ })).toBeTruthy(),
+    )
+    expect(screen.getByRole('tab', { name: /web-worker/ })).toBeTruthy()
+  })
+
+  it('告警事件列出当前序列的事件', async () => {
+    renderPage()
+    expect(await screen.findByText('告警事件')).toBeTruthy()
+    await waitFor(() => expect(screen.getAllByText('P0').length).toBeGreaterThan(0))
+    // 峰值在图上与事件行各出现一次
+    expect(screen.getAllByText('3.40σ').length).toBeGreaterThan(0)
   })
 
   it('展示任务运行状况', async () => {
@@ -196,19 +353,26 @@ describe('DashboardPage', () => {
     expect(await screen.findByText('任务运行状况')).toBeTruthy()
     const link = screen.getByRole('link', { name: 'demo-job' })
     expect(link.getAttribute('href')).toBe('/jobs/1')
-    expect(screen.getByText('30 秒')).toBeTruthy()
+    // 耗时在任务行与「最近一次运行」里各出现一次
+    expect(screen.getAllByText('30 秒').length).toBeGreaterThan(0)
   })
 
-  it('展示回测总体', async () => {
+  it('展示回测总体，并指出最弱的形态', async () => {
     renderPage()
     expect(await screen.findByText('回测总体')).toBeTruthy()
     expect(screen.getByText('0.310')).toBeTruthy()
+    expect(screen.getByText(/sparse_event/)).toBeTruthy()
   })
 
-  it('只发两个请求（概览 + 报告），不逐个任务查', async () => {
+  it('只查一次任务详情，不逐个任务查', async () => {
     renderPage()
-    await screen.findByText('数据源')
-    expect(calls.filter((url) => url.includes('/api/platform/jobs/'))).toEqual([])
+    await screen.findByText('数据源 / 指标')
+    // ⚠️ 轨迹只查**一个**任务的最近一次运行 —— 不能每个任务都查一遍
+    const previewCalls = calls.filter((url) => url.includes('/preview'))
+    expect(previewCalls.length).toBeLessThanOrEqual(1)
+    expect(calls.some((url) => url.includes('/api/platform/jobs/') && url.includes('/runs'))).toBe(
+      false,
+    )
     expect(calls.some((url) => url.includes('/api/platform/overview'))).toBe(true)
   })
 })
