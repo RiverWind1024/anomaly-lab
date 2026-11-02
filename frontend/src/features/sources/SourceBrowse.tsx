@@ -23,6 +23,8 @@ export function buildBrowseSql(metric: CatalogMetric, limit = 8): string | null 
     if (/\$timefilter/i.test(sql)) return null
   }
 
+  // 挖掉时间条件后可能留下多余空格 —— 收拾干净，SQL 要能直接读
+  sql = sql.replace(/\s+/g, ' ').trim()
   sql = sql.replace(/\bLIMIT\s+\d+\s*$/i, '').trim()
   return `${sql} LIMIT ${limit}`
 }
