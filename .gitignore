@@ -13,6 +13,7 @@ data/annotations/
 data/smoke/
 data/platform/
 data/platform_smoke/
+data/mock_tsdb/
 data/platform.db
 data/evaluation_exclusions.json
 .cache/
