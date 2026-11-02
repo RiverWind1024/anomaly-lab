@@ -65,6 +65,16 @@ make platform-demo   # 生成 demo 的 SQLite 源库 + 指标 + 任务
 make serve           # 打开 http://127.0.0.1:8000/jobs 配置与预览
 ```
 
+带「远端」的完整演示 —— 假远端时序数据库（照 InfluxDB 3 的 API 形状，持续造数）：
+
+```bash
+make mock-tsdb       # 假远端 → http://127.0.0.1:8181/api/v3/query_sql
+make mock-demo       # 平台侧建好 HTTP 数据源 + 指标 + 检测任务
+make serve           # 在「数据源 → mock-tsdb」里浏览数据、跑检测
+# 或者一条命令全起（前端 + 后端 + 假远端）：
+MOCK_TSDB=1 make dev
+```
+
 端到端冒烟：
 
 ```bash

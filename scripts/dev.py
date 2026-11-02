@@ -40,6 +40,15 @@ VITE_PORT = int(os.environ.get("VITE_PORT", "5173"))
 #: vite 起来后要等多久（秒）
 VITE_READY_TIMEOUT = 30
 
+#: 假远端（mock-tsdb）的端口 —— 只在 `MOCK_TSDB=1` 时启用。
+MOCK_PORT = int(os.environ.get("MOCK_PORT", "8181"))
+
+#: 要不要一起起假远端。
+#:
+#: ⚠️ **默认关** —— 8181 是 InfluxDB 3 的默认端口，
+#:    万一用户本机跑着真库，不该被我们占掉。
+MOCK_ENABLED = os.environ.get("MOCK_TSDB", "").strip() not in {"", "0", "false"}
+
 
 def port_busy(port: int) -> bool:
     """端口能不能绑定。
@@ -110,8 +119,10 @@ def find_pid(port: int) -> int | None:
 
 def preflight() -> bool:
     """端口预检 —— 被占时给出人话提示。"""
-    busy = [(port, name) for port, name in ((BACKEND_PORT, "后端"), (VITE_PORT, "前端"))
-            if port_busy(port)]
+    wanted = [(BACKEND_PORT, "后端", "PORT"), (VITE_PORT, "前端", "VITE_PORT")]
+    if MOCK_ENABLED:
+        wanted.append((MOCK_PORT, "假远端", "MOCK_PORT"))
+    busy = [(port, name) for port, name, _ in wanted if port_busy(port)]
     if not busy:
         return True
     print("✗ 端口被占用：\n", file=sys.stderr)
@@ -122,7 +133,7 @@ def preflight() -> bool:
     print("\n  换端口启动：", file=sys.stderr)
     for port, name in busy:
         # 只提示**实际冲突**的那个变量 —— 改无关的端口是噪声
-        variable = "PORT" if name == "后端" else "VITE_PORT"
+        variable = next(v for p, n, v in wanted if p == port)
         print(f"      {variable}={port + 1} make dev", file=sys.stderr)
     print("\n  或杀掉占用进程后重试：", file=sys.stderr)
     for port, _name in busy:
@@ -141,6 +152,8 @@ def main() -> int:
 
     print(f"▶ 前端 vite  → http://127.0.0.1:{VITE_PORT}/", file=sys.stderr)
     print(f"▶ 后端 API   → http://127.0.0.1:{BACKEND_PORT}/", file=sys.stderr)
+    if MOCK_ENABLED:
+        print(f"▶ 假远端     → http://127.0.0.1:{MOCK_PORT}/api/v3/query_sql", file=sys.stderr)
     print("  Ctrl-C 一起停\n", file=sys.stderr)
 
     # start_new_session=True → 两个进程各自成组，收摊时能整组杀
@@ -167,8 +180,29 @@ def main() -> int:
         start_new_session=True,
     )
 
+    # 假远端：独立进程 —— 它扮演的是「远端」，跑在平台进程里就不真了。
+    mock = None
+    if MOCK_ENABLED:
+        mock = subprocess.Popen(
+            [
+                backend_python,
+                "-m",
+                "anomaly_lab.cli",
+                "mock-tsdb",
+                "--port",
+                str(MOCK_PORT),
+                "--db-path",
+                str(ROOT / "data" / "mock_tsdb" / "tsdb.db"),
+            ],
+            cwd=ROOT,
+            env=env,
+            start_new_session=True,
+        )
+
     def shutdown(_signum=None, _frame=None) -> None:
-        for proc in (vite, backend):
+        for proc in (vite, backend, mock):
+            if proc is None:
+                continue
             if proc.poll() is None:
                 try:
                     os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
@@ -188,7 +222,10 @@ def main() -> int:
 
     # 谁先退出就收摊
     while True:
-        for name, proc in (("前端 vite", vite), ("后端", backend)):
+        children = [("前端 vite", vite), ("后端", backend)]
+        if mock is not None:
+            children.append(("假远端", mock))
+        for name, proc in children:
             code = proc.poll()
             if code is not None:
                 print(f"\n✗ {name} 已退出（code {code}），一并停止另一个", file=sys.stderr)

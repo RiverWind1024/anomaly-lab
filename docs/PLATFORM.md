@@ -38,6 +38,12 @@ make serve                  # 构建前端并起服务：http://127.0.0.1:8000/
 make dev                    # vite :5173（代理 /api → :8000） + uvicorn :8000
 ```
 
+带假远端（见下文「假远端时序数据库」）一起跑：
+
+```bash
+MOCK_TSDB=1 make dev        # 上面两个 + 假远端 :8181
+```
+
 或者纯脚本冒烟（不启 Web）：
 
 ```bash
@@ -293,6 +299,73 @@ POST /api/platform/sources/{id}/query
 结果表格里每个列旁一个下拉（`时间列` / `值列` / `分组列`），点一下即填入对应字段，
 再一键生成指标（`TIMESTAMP` 列自动推断 `time_format = iso_utc`；
 `INTEGER` 列则要选 `epoch_s` / `epoch_ms` —— 按纳秒解释会静默落到 1970 年）。
+
+## 假远端时序数据库
+
+HTTP 透传需要**一个真的远端**才能演示与验证。项目自带一个：
+照 **InfluxDB 3** 的 API 形状实现 `POST /api/v3/query_sql`，
+后台线程持续造数。
+
+```bash
+make mock-tsdb              # 假远端 → http://127.0.0.1:8181/api/v3/query_sql
+make mock-demo              # 平台侧建好 HTTP 数据源 + 指标 + 检测任务
+make serve                  # 打开 http://127.0.0.1:8000/sources
+```
+
+或者一条命令全起（前端 + 后端 + 假远端）：
+
+```bash
+MOCK_TSDB=1 make dev
+```
+
+### 为什么照抄 InfluxDB 3
+
+抄的是**接口形状**（端点路径、请求体 `{db, q, format}`、`format` 的取值），
+不是它的查询引擎 —— 内部用 SQLite 存数据并执行 SQL。
+照抄之后，**换 url + token 就能接真 InfluxDB 3**。
+
+⚠️ 已知简化（**这是假远端的简化，不是平台的简化**）：
+
+| 简化 | 说明 |
+|---|---|
+| 不实现鉴权 | `Authorization` 头**接受并忽略**。真库怎么鉴权是连接器 `config.headers` 的事，平台侧已经做完了 |
+| JSON 不是两段式 | InfluxDB 3 的 `format=json` 返回 `results[].series[]`，平台的 `rows_path` 够不着。**接 InfluxDB 3 请用 `format=csv`**（也是官方推荐），假远端的 CSV 与真库一致 |
+| `db` 不校验 | 只有一个库，字段存在即可（照抄的是「有这个参数」这个形状） |
+| 不支持 `pretty` / `parquet` | 明确报 400，不静默降级。parquet 需要 pyarrow，本项目零新依赖 |
+
+### 造出来的数据
+
+表结构 `metrics(ts TEXT, series TEXT, value REAL)`，4 条序列，
+刻意做成不同的形态，让平台的检测器有东西可测：
+
+| 序列 | 形态 | 演示什么 |
+|---|---|---|
+| `web-traffic` | 日周期（每天一个波峰）+ 噪声 | 正常基线，不该报警 |
+| `api-latency` | 平稳 + 抖动，偶尔**值为 NULL** | 噪声大但不异常；`missing_policy` 的用武之地 |
+| `db-pool` | 日周期 + **尖峰**（每 30 点一次） | 该报尖峰型异常 |
+| `cache-hit` | 日周期 + **漂移**（后段基线线性上移） | 该报漂移型异常 |
+
+⚠️ **断流**与**值缺失**是两件事，假远端两种都造：
+
+- **断流**：那段时间**根本没有行** → 序列点数变少；
+- **值缺失**：有行但值是 NULL → 平台的 `missing_policy` 真正生效的路径。
+
+### 几个关键约束
+
+- **时间字面量统一 `+00:00`**（T 分隔 + 偏移）。SQLite 对 TEXT 列做**字典序**比较，
+  格式不统一 → 边界行的比较结果会错（真 InfluxDB 3 用 timestamp 类型比较，没有这个问题）。
+- **数据自己开 WAL**。平台以 `mode=ro` 打开它 —— WAL 让写者不阻塞读者，
+  只读连接能读到已提交的最新数据。
+- **时间锚点持久化**在库里。否则每次重启 index 0 都对应「现在」，
+  同一个 index 有了不同时间戳，历史数据会重影。
+- **`{sql}` 放 body 不放 url** —— body 里是原样替换，SQL 不会被百分号编码污染。
+- **body 与 config 的 `format` 必须一致** —— 否则平台当场报 400。
+
+### 数据不会无限增长
+
+假远端只保留**最近 6 小时**的数据（滚动删除），并把数据放在**独立目录**
+`data/mock_tsdb/` —— 不碰平台的 `data/platform/source.db`，
+平台的保留策略（runs 表 / npz 目录 / feedback）也管不到它。
 
 ## 告警规则：缩放因子 × 等级
 

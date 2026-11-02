@@ -63,6 +63,7 @@ flowchart TD
 | `web/` | 只出 JSON API + 托管前端构建产物（SPA fallback）；不含任何页面模板 |
 | `frontend/` | 独立前端工程：React 18 + TS + Vite + AntD v5 + TanStack Query + ECharts |
 | `platform/` | 平台切片：元数据存储、连接器取数、任务执行、定时调度 |
+| `mock_tsdb/` | **假远端**（演示用）：照 InfluxDB 3 的 API 形状，持续造数。独立进程，不参与平台逻辑 |
 
 ## 平台切片的数据流
 
@@ -82,6 +83,9 @@ flowchart LR
 - **连接器只负责「SQL → DataFrame」，后处理方言无关、全部共用**：时间解析、排序、
   group by 拆分、缺失值策略都在 `platform/sources/base.py` 里，只依赖 pandas，不依赖方言。
   换一种数据源 = 新增一个连接器类，不用复制后处理。
+- **HTTP 透传是真的走网络**：`platform/sources/http_sql.py` 用标准库 `urllib.request`
+  发请求，远端自己执行 SQL、只返回结果集。演示与验证靠 `mock_tsdb/`（独立进程，
+  照 InfluxDB 3 的 API 形状）—— 跑在平台进程里的话连接、超时、502 都不成立。
 
 ## 关键契约
 
