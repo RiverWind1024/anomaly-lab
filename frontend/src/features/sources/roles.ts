@@ -39,11 +39,25 @@ export function looksLikeTimeColumn(name: string): boolean {
   return TIME_LIKE_NAME.test(name.trim())
 }
 
-/** 单列的自动推断角色。 */
+/**
+ * 单列的自动推断角色。
+ *
+ * ⚠️ **名字像时间列的优先判** —— 不管它是 TEXT 还是 INTEGER。
+ *
+ * ⚠️ 为什么不能只看 dtype：**epoch 存的时间列是 INTEGER**（很常见），
+ *    而 INTEGER 默认会被判成「值列」。于是
+ *    `SELECT ts, value FROM t` 里的 `ts` 抢走了值列的角色、
+ *    真正的 `value` 反而「不使用」—— **完全反了**，
+ *    而且界面上看不出哪里不对（两个下拉都显示得出，只是不该是这样）。
+ *
+ * ⚠️ 名字匹配是**精确匹配**（`^ts$` 匹配不到 `ts_id` / `ts_epoch`）——
+ *    所以误伤面很小：真叫 `ts` 却存着普通数字的列，本来就极罕见。
+ */
 export function inferRole(column: SourceQueryColumn): ColumnRole | undefined {
+  // ⚠️ 名字优先 —— epoch 时间列是 INTEGER，靠 dtype 分不出来
+  if (looksLikeTimeColumn(column.name)) return 'time'
   if (column.type === 'TIMESTAMP') return 'time'
   if (column.type === 'REAL' || column.type === 'INTEGER') return 'value'
-  if (column.type === 'TEXT' && looksLikeTimeColumn(column.name)) return 'time'
   return undefined
 }
 

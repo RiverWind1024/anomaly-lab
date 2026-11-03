@@ -124,6 +124,41 @@ describe('DataBrowser', () => {
     expect(payload.roles.value_column).toBe('value')
   })
 
+  it('⚠️ 指派「时间列」后请求里带上 time_column —— 否则 $timefilter 渲染不出来', async () => {
+    /* ⚠️ `$timefilter` 是平台的占位符，要渲染成「某一列上的时间条件」。
+       查询请求发的是 `timeColumn`（那个输入框），不是列头下拉的指派 ——
+       两边不联动的话，用户明明指派了「时间列」，SQL 里写 $timefilter
+       仍然报「需要指定时间列」，一条数据都看不到。 */
+    const user = userEvent.setup()
+    renderBrowser()
+    await user.click(screen.getByRole('button', { name: /执\s*行/ }))
+
+    await user.click(await columnRoleSelect('value'))
+    await user.click(await screen.findByTitle('时间列'))
+
+    await user.click(screen.getByRole('button', { name: /执\s*行/ }))
+
+    const body = lastRequestBody()
+    expect(body.time_column).toBe('value')
+  })
+
+  it('⚠️ 改「时间列」输入框 → 列头下拉跟着变', async () => {
+    /* ⚠️ 反向也要联动 —— 「保存回指标」用的是 `resolveRoles()` 算出来的角色，
+       不是输入框的值。不联动的话，用户改了输入框，保存时写回的却是旧指派。 */
+    const user = userEvent.setup()
+    const onUseAsMetric = vi.fn()
+    renderBrowser(onUseAsMetric)
+    await user.click(screen.getByRole('button', { name: /执\s*行/ }))
+
+    const input = screen.getByPlaceholderText(/时间列/)
+    await user.clear(input)
+    await user.type(input, 'value')
+
+    await user.click(await screen.findByRole('button', { name: '用这个结果建指标' }))
+    const payload = onUseAsMetric.mock.calls[0][0]
+    expect(payload.roles.time_column).toBe('value')
+  })
+
   it('请求里带上 time_format 与 source_timezone', async () => {
     /* ⚠️ 浏览与指标运行时用同一套 `$timefilter` 渲染（D11）——
        浏览不声明时间格式/源时区，epoch 源的预览 ≠ 跑出来的。 */

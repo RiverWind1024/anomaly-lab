@@ -121,7 +121,14 @@ def _apply_time_placeholders(sql: str, payload: SourceQueryIn, connector) -> tup
 
     if "$timefilter" in sql:
         if not payload.time_column:
-            raise ValueError("使用 $timefilter 需要指定时间列（time_column）")
+            # ⚠️ 消息要**可操作** —— 光说「需要指定时间列」，
+            #    用户不知道自己下一步该干什么（他正是靠这条 SQL 才知道有哪些列的）。
+            #    告诉他绕法：先去掉 $timefilter 跑一次看列，再把时间列填回来。
+            raise ValueError(
+                "使用 $timefilter 需要指定时间列（time_column）："
+                "先去掉 $timefilter 跑一次看结果里有哪些列，"
+                "再把时间列名填进「时间列」（或把某一列指派为「时间列」）"
+            )
         condition, params = connector.build_time_condition(
             TimeContext(
                 column=payload.time_column,

@@ -36,6 +36,48 @@ describe('resolveRoles', () => {
     const roles = resolveRoles(COLUMNS, { observed_at: 'none' })
     expect(roles.time_column).toBeUndefined()
   })
+
+  it('⚠️ epoch 存的整数时间列（名字像 ts）判成时间列，不是值列', () => {
+    /* ⚠️ **epoch 时间列是 INTEGER** —— 只看 dtype 的话它会被判成「值列」，
+       于是 `ts` 抢走值列的角色、真正的 `value` 反而「不使用」，完全反了。 */
+    const roles = resolveRoles(
+      [
+        { name: 'ts', type: 'INTEGER' },
+        { name: 'value', type: 'REAL' },
+      ],
+      {},
+    )
+    expect(roles.time_column).toBe('ts')
+    expect(roles.value_column).toBe('value')
+  })
+
+  it('名字不像时间列的 INTEGER 仍然是值列', () => {
+    // ⚠️ 名字匹配是**精确匹配** —— `ts_epoch` 不算时间列
+    const roles = resolveRoles(
+      [
+        { name: 'ts_epoch', type: 'INTEGER' },
+        { name: 'metric_value', type: 'REAL' },
+      ],
+      {},
+    )
+    expect(roles.time_column).toBeUndefined()
+    // ⚠️ 两个数值列 → 列顺序里第一个赢（推断的固有局限，可在下拉里改）
+    expect(roles.value_column).toBe('ts_epoch')
+  })
+
+  it('两个数值列时，列顺序里第一个当值列', () => {
+    /* ⚠️ 这是推断的固有局限 —— 靠列顺序猜。
+       用户可以在列头下拉里改。 */
+    const roles = resolveRoles(
+      [
+        { name: 'ts', type: 'TIMESTAMP' },
+        { name: 'value', type: 'REAL' },
+        { name: 'doubled', type: 'REAL' },
+      ],
+      {},
+    )
+    expect(roles.value_column).toBe('value')
+  })
 })
 
 describe('roleOf', () => {

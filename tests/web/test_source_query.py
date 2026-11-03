@@ -168,6 +168,23 @@ def test_query_with_timefilter_without_time_column_is_400(tmp_path, remote):
     assert "time_column" in response.json()["detail"]
 
 
+def test_timefilter_error_tells_user_how_to_unblock(tmp_path, remote):
+    """⚠️ 消息必须**可操作**。
+
+    ⚠️ 用户正是靠这条 SQL 才知道结果里有哪些列的 ——
+       只说「需要指定时间列」，他不知道自己下一步该干什么。
+       告诉他绕法：先去掉 $timefilter 跑一次看列，再把时间列填回来。
+    """
+    client, source = _client(tmp_path, remote)
+    response = client.post(
+        f"/api/platform/sources/{source['id']}/query",
+        json={"sql": "SELECT ts FROM t WHERE $timefilter"},
+    )
+    detail = response.json()["detail"]
+    assert "先去掉 $timefilter" in detail
+    assert "时间列" in detail
+
+
 def test_query_on_missing_source_is_404(tmp_path, remote):
     client, _ = _client(tmp_path, remote)
     response = client.post(

@@ -243,6 +243,31 @@ export function DataBrowser({
       }
       return next
     })
+    // ⚠️ **指派「时间列」时同步到查询用的输入框** ——
+    //    `$timefilter` 是平台的占位符，它要渲染成「某一列上的时间条件」，
+    //    而查询请求发出去的是 `timeColumn`（那个输入框），不是这里的指派。
+    //    两边不联动 = 用户在列头下拉里明明指派了「时间列」，
+    //    SQL 里写 $timefilter 仍然报「需要指定时间列」—— 白忙一场。
+    if (choice === 'time') setTimeColumn(columnName)
+  }
+
+  /**
+   * 改「时间列」输入框 → 同步列头的角色指派。
+   *
+   * ⚠️ **反向也要联动** —— 「保存回指标」用的是 `resolveRoles()` 算出来的
+   *    角色，不是输入框的值。不联动的话，用户改了输入框，
+   *    保存时写回的却是**旧的**指派 —— 改了个寂寞。
+   */
+  const onTimeColumnChange = (value: string) => {
+    setTimeColumn(value)
+    setAssignments((prev) => {
+      const next = { ...prev }
+      for (const [name, role] of Object.entries(next)) {
+        if (role === 'time' && name !== value) delete next[name]
+      }
+      if (value) next[value] = 'time'
+      return next
+    })
   }
 
   /**
@@ -312,7 +337,7 @@ export function DataBrowser({
         <Input
           placeholder="时间列（SQL 含 $timefilter 时必填）"
           value={timeColumn}
-          onChange={(e) => setTimeColumn(e.target.value)}
+          onChange={(e) => onTimeColumnChange(e.target.value)}
           style={{ width: 280 }}
         />
         <Select

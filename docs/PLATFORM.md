@@ -168,6 +168,49 @@ SELECT * FROM (SELECT ts, host, value FROM metrics
 > 浏览预览与指标运行时走的是**同一个连接器的同一条渲染路径**，所以「预览看到的」
 > 必然等于「跑出来的」。
 
+### SELECT 里哪一列是「检测的值」？—— 不是约定，是配置
+
+⚠️ **平台没有任何「叫 `value` 的列就是检测值」的约定。**
+指标里存着三个**显式的列名**：
+
+| 字段 | 作用 | 取不到时 |
+|---|---|---|
+| `time_column` | 时间列 —— 时间条件渲染到它上面 | `查询结果缺少 time_column` |
+| `value_column` | **检测的值** —— 送进检测器的就是这一列 | `查询结果缺少 value_column` |
+| `group_column` | 分组列 —— 非空时在加载层拆成多条独立序列 | `查询结果缺少 group_column` |
+
+所以 `SELECT ts, series, value FROM metrics WHERE $timefilter ORDER BY ts` 里
+送进检测器的是 **`value` 列 —— 因为指标是这么配的**，
+换成 `SELECT ts, series, latency FROM ...` 就得把 `value_column` 改成 `latency`。
+取列的代码在 `platform/sources/base.py:series_from_frame()`，按名字取，不猜。
+
+**只有「数据浏览器」在写 SQL 的过程中做推断**（为了让用户少填几个框）：
+
+| 列的样子 | 推断成 |
+|---|---|
+| 列名精确匹配 `ts` / `time` / `timestamp` / `datetime` / `date` / `observed_at` / `observedat` / `event_time` | 时间列（**名字优先于类型**） |
+| 类型是 `TIMESTAMP` | 时间列 |
+| 类型是 `REAL` / `INTEGER` | 值列 |
+| 其余 | 不推断（不作为任何角色） |
+
+⚠️ **名字优先于类型** —— epoch 存的时间列是 `INTEGER`，
+只看类型的话它会被判成「值列」：`ts` 抢走了值列的角色、
+真正的 `value` 反而「不使用」，**完全反了**。
+⚠️ **两个数值列时，列顺序里第一个被当成值列** —— 靠列顺序猜，
+在列头的角色下拉里改。
+⚠️ 推断只影响**浏览 → 建指标**这一步；指标一旦存下来，
+`value_column` 就是死的，不会再变。
+
+### `$timefilter` 需要知道时间列 —— 所以浏览时有个先后顺序
+
+`$timefilter` **不是 SQL**，是平台的占位符 —— 它要渲染成
+「**某一列**上的时间条件」，所以平台必须先知道是哪一列。
+浏览时还没指定时间列就用 `$timefilter`，请求会被拒（400）。
+
+⚠️ 这里有个**先有鸡还是先有蛋**：用户正是靠这条 SQL 才知道结果里有哪些列的。
+绕法：**先去掉 `$timefilter` 跑一次**（浏览器的默认语句就是不带它的
+`SELECT * FROM metrics LIMIT 100`），看到列以后再把时间列填上。
+
 ## HTTP 数据源（SQL 透传）
 
 平台支持把指标 SQL **原样发给远端 SQL-over-HTTP 网关**：远端自己执行、只返回结果集，
