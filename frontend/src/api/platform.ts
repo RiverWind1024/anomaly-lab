@@ -140,10 +140,11 @@ export const createJob = (payload: {
 /**
  * 改任务配置。
  *
- * ⚠️ 告警规则**不能**自由编辑（spec §8.3）——
- *    只能通过「应用反馈建议」按比例缩放。
+ * ⚠️ 告警规则**可以**自由编辑了（之前只读）——
+ *    阈值恰恰是最常调的东西，锁在「新建任务时」是锁错了地方。
  * ⚠️ 改了阈值会**重算规则表**（两者必须一致）；
- *    改其它字段时规则表不动。
+ *    改其它字段时规则表不动；
+ *    显式传了 `alert_rules` 则**反过来** —— 阈值跟着规则表走。
  */
 export const updateJob = (
   jobId: number,
@@ -156,6 +157,7 @@ export const updateJob = (
     critical_threshold?: number
     window_points?: number
     interval_seconds?: number
+    alert_rules?: AlertRule[]
   },
 ) =>
   request<unknown>(`/api/platform/jobs/${jobId}`, {

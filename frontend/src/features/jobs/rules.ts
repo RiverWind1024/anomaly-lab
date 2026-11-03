@@ -90,3 +90,16 @@ export function rulesToText(rules: AlertRule[] | null | undefined): string {
 export function defaultRulesFor(defaultThreshold: number): string {
   return `${defaultThreshold}, P1\n${(defaultThreshold * 1.5).toFixed(2)}, P0`
 }
+
+/**
+ * 默认规则**列表** —— 与 `defaultRulesFor` 同一个语义，但是结构化的。
+ *
+ * ⚠️ 编辑器要的是结构（档位表），不是文本 ——
+ *    文本版只留给「附加条件」那种自由写法用。
+ */
+export function defaultRuleList(defaultThreshold: number): AlertRule[] {
+  return [
+    { multiplier: defaultThreshold, level: 'P1' },
+    { multiplier: Number((defaultThreshold * 1.5).toFixed(2)), level: 'P0' },
+  ]
+}

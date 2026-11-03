@@ -1,9 +1,9 @@
 import { Alert, Button, Form, Input, InputNumber, Select, Space } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertRulesView } from '../../features/jobs/AlertRulesView'
+import { AlertRulesEditor } from '../../features/jobs/AlertRulesEditor'
 import { useUpdateJob } from '../../features/jobs/queries'
 import { INTERVAL_SECONDS_MIN, WINDOW_POINTS_MAX, WINDOW_POINTS_MIN } from '../../features/jobs/limits'
-import type { CatalogDetector, CatalogJob, CatalogMetric } from '../../api/types'
+import type { AlertRule, CatalogDetector, CatalogJob, CatalogMetric } from '../../api/types'
 
 export interface JobConfigPanelProps {
   job: CatalogJob
@@ -28,11 +28,21 @@ interface ConfigFormValues {
  * 之前这个页面把运行记录、预览图、多算法对比、分类结论、反馈历史
  * 全堆在一起，什么都看不清楚。现在配置归配置，其余各自独立成页。
  *
- * ⚠️ 告警规则**只读** —— 后端没有自由编辑规则的端点（spec §8.3）。
+ * ⚠️ 告警规则**可以编辑**了（之前是只读）——
+ *    阈值（2.5 / 3.75 那些）恰恰是最常调的东西，
+ *    把它锁在「新建任务时」是锁错了地方。
  */
 export function JobConfigPanel({ job, metrics, detectors, enabled }: JobConfigPanelProps) {
   const [form] = Form.useForm<ConfigFormValues>()
   const update = useUpdateJob(job.id)
+
+  /**
+   * 告警规则 —— 单独 state，不走 Form。
+   *
+   * ⚠️ 它是个**结构化**的值（档位表 + 附加条件），
+   *    塞进 Form 会让「表单值 ↔ 编辑器值」多一层转换，没有好处。
+   */
+  const [rules, setRules] = useState<AlertRule[] | null>(null)
 
   // 换任务时要重填表单（同一组件实例会被路由复用）
   useEffect(() => {
@@ -45,6 +55,7 @@ export function JobConfigPanel({ job, metrics, detectors, enabled }: JobConfigPa
         interval_seconds: job.interval_seconds,
         enabled: job.enabled,
       })
+      setRules(job.alert_rules ?? null)
     }
   }, [enabled, job, form])
 
@@ -112,6 +123,8 @@ export function JobConfigPanel({ job, metrics, detectors, enabled }: JobConfigPa
       window_points: values.window_points,
       interval_seconds: values.interval_seconds,
       enabled: values.enabled,
+      // ⚠️ 规则表**有值才传** —— 传 null 会被后端当成「显式置空」。
+      alert_rules: rules && rules.length > 0 ? rules : undefined,
     })
   }
 
@@ -205,7 +218,13 @@ export function JobConfigPanel({ job, metrics, detectors, enabled }: JobConfigPa
         </Form.Item>
 
         <Form.Item label="告警规则">
-          <AlertRulesView rules={job.alert_rules} />
+          <AlertRulesEditor
+            value={rules}
+            onChange={setRules}
+            defaultThreshold={job.alert_threshold}
+            defaultCriticalThreshold={job.critical_threshold}
+            disabled={!enabled}
+          />
         </Form.Item>
 
         <Button type="primary" loading={update.isPending} onClick={handleSave}>

@@ -8,7 +8,8 @@
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import userEvent from '@testing-library/user-event'
+import { describe, expect, it, vi } from 'vitest'
 import { JobConfigPanel } from './JobConfigPanel'
 import type { CatalogDetector, CatalogJob, CatalogMetric } from '../../api/types'
 
@@ -97,5 +98,34 @@ describe('JobConfigPanel', () => {
     pickDetector('iqr')
 
     expect(screen.queryByText(/告警阈值会自动换成/)).toBeNull()
+  })
+
+  it('⚠️ 告警规则**可以改** —— 改完保存时带上新的规则表', async () => {
+    /* 之前规则是只读的（后端没有编辑端点）——
+       2.5 / 3.75 这两个恰恰是最该能调的数。 */
+    const user = userEvent.setup()
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(JSON.stringify({ id: 7 }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderPanel()
+
+    const input = screen.getByDisplayValue('2.5')
+    await user.clear(input)
+    await user.type(input, '5')
+    await user.click(screen.getByRole('button', { name: /保\s*存\s*配\s*置/ }))
+
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find((c) => c[1]?.method === 'PATCH')
+      expect(call, '没有发出 PATCH').toBeTruthy()
+      const body = JSON.parse((call?.[1] as RequestInit).body as string)
+      // ⚠️ P1 改成 5 后比 P0 的 4 更大 —— 按倍数升序，P0 排到了前面
+      expect(body.alert_rules).toEqual([
+        { multiplier: 4, level: 'P0' },
+        { multiplier: 5, level: 'P1' },
+      ])
+    })
+    vi.unstubAllGlobals()
   })
 })

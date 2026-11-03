@@ -105,23 +105,6 @@ class JobIn(BaseModel):
     alert_rules: list[AlertRuleIn] | None = None
 
 
-class JobToggleIn(BaseModel):
-    """任务配置更新：**全部可选** —— 只传要改的字段。
-
-    ⚠️ `alert_rules` **不在其中** —— 告警规则不能自由编辑（spec §8.3），
-       只能通过「应用反馈建议」按比例缩放。
-    """
-
-    name: str | None = None
-    metric_id: int | None = None
-    enabled: bool | None = None
-    detector: str | None = None
-    alert_threshold: float | None = None
-    critical_threshold: float | None = None
-    window_points: int | None = None
-    interval_seconds: int | None = None
-
-
 class AlertRuleIn(BaseModel):
     """一条告警规则。
 
@@ -133,6 +116,27 @@ class AlertRuleIn(BaseModel):
     multiplier: float | None = None
     op: str | None = None
     value: float | None = None
+
+
+class JobToggleIn(BaseModel):
+    """任务配置更新：**全部可选** —— 只传要改的字段。
+
+    ⚠️ `alert_rules` 现在**可以自由编辑**了（之前只读）——
+       告警阈值（2.5 / 3.75 那些）本来就该是能调的，
+       只让用户在新建任务时填、事后改不了，是把配置锁在了错误的时机。
+       改了规则表，后端会把 `alert_threshold` / `critical_threshold`
+       **同步**成规则表里的最低/最高档倍数（两边必须一致）。
+    """
+
+    name: str | None = None
+    metric_id: int | None = None
+    enabled: bool | None = None
+    detector: str | None = None
+    alert_threshold: float | None = None
+    critical_threshold: float | None = None
+    window_points: int | None = None
+    interval_seconds: int | None = None
+    alert_rules: list[AlertRuleIn] | None = None
 
 
 class FeedbackIn(BaseModel):

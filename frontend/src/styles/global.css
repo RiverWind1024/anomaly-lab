@@ -309,6 +309,49 @@ pre {
   gap: var(--space-2);
 }
 
+/* 告警规则编辑器 —— 档位并排，阈值直接调 */
+.rules-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.rules-editor__tiers {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.rules-editor__tier {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+}
+
+.rules-editor__times {
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+}
+
+.rules-editor__hint {
+  margin: 0;
+}
+
+.rules-editor__extra summary {
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.rules-editor__extra .ant-input {
+  margin-top: var(--space-2);
+}
+
 .rules-input__errors {
   margin-top: var(--space-1);
 }

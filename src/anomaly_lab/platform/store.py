@@ -122,6 +122,24 @@ def _pick(fields: dict, key: str, current):
     return current if value is None else value
 
 
+def _absolute_rules_only(raw: object) -> list:
+    """从规则表里挑出**绝对值条件**（倍数条件会被重算，绝对值条件保留）。
+
+    ⚠️ 换算法、改阈值都会重算倍数 —— 那是必须的（量纲变了）。
+       但用户配的「值 > 50 记 P0」是**绝对值**的，与量纲无关 ——
+       不该跟着被冲掉。
+    """
+    if not raw:
+        return []
+    try:
+        rules = parse_rules(raw)
+    except (ValueError, TypeError):
+        # ⚠️ 旧数据里的规则表读不出来（格式变了）—— 不该让整个保存失败，
+        #    绝对值条件拿不到就算了，倍数照常重算。
+        return []
+    return [rule for rule in rules if rule.is_absolute]
+
+
 REDACTED = "••••"
 _SECRET_KEYS = ("token", "key", "password", "secret", "authorization")
 
@@ -788,6 +806,10 @@ class PlatformStore:
            反过来，改其它字段时**不动**规则表 ——
            否则用户通过「应用建议」调好的规则会被冲掉。
 
+        ⚠️ **显式给了 `alert_rules` 就以它为准** ——
+           阈值是规则表的快捷视图（最低档/最高档倍数），
+           这时反过来跟着规则表走，不重算、不覆盖。
+
         ⚠️ 已经跑过的运行记录不受影响（结果早已落盘），
            改动只在**下一次**运行任务时生效。
         """
@@ -806,6 +828,32 @@ class PlatformStore:
         )
         enabled = fields.get("enabled", current.enabled)
 
+        # ⚠️ **显式给了规则表 → 以它为准** ——
+        #    阈值只是规则表的「快捷视图」（最低档/最高档倍数）。
+        #    用户直接编规则表时，阈值必须跟着走，不能反过来。
+        explicit_rules = fields.get("alert_rules")
+        rules_json: str | None = None
+        explicit_alert: float | None = None
+        explicit_critical: float | None = None
+        if explicit_rules is not None:
+            rules = parse_rules(explicit_rules)
+            multipliers = [r.multiplier for r in rules if not r.is_absolute]
+            if len(set(multipliers)) != len(multipliers):
+                raise ValueError("告警规则的缩放因子不能重复")
+            if multipliers != sorted(multipliers):
+                raise ValueError(
+                    "告警规则的缩放因子必须从小到大排列（档位从低到高）"
+                )
+            distinct = sorted(set(multipliers))
+            if len(distinct) < 2:
+                raise ValueError(
+                    "告警规则至少要有两个不同的缩放因子档位"
+                    "（例如 P1 × 2.5、P0 × 3.75）"
+                )
+            explicit_alert = float(distinct[0])
+            explicit_critical = float(distinct[-1])
+            rules_json = json.dumps(rules_to_dicts(rules), ensure_ascii=False)
+
         # ⚠️ **换了算法就要换阈值** —— 分数的量纲变了。
         #
         # 统计族的分数是「几个尺度单位」（阈值 2.5 / 3.5），
@@ -815,11 +863,15 @@ class PlatformStore:
         #
         # ⚠️ 只在**没显式给阈值**时才重置 ——
         #    用户手填的阈值是他自己的决定，不该被覆盖。
+        #    显式给了规则表也一样 —— 那是更具体的选择。
         detector_changed = detector != current.detector
         family_changed = detector_changed and (
             detector_score_family(detector) != detector_score_family(current.detector)
         )
-        if family_changed and fields.get("alert_threshold") is None:
+        if explicit_rules is not None:
+            alert = explicit_alert
+            critical = explicit_critical
+        elif family_changed and fields.get("alert_threshold") is None:
             default_threshold = float(create_detector(detector).default_threshold)
             alert = default_threshold
             critical = default_threshold * 1.5
@@ -836,12 +888,16 @@ class PlatformStore:
                 critical = current.critical_threshold
         validate_thresholds(alert, critical)
 
-        # 阈值变了才重算规则表
-        rules_json = None
-        if alert != current.alert_threshold or critical != current.critical_threshold:
-            rules_json = json.dumps(
-                rules_to_dicts(default_rules(alert, critical)), ensure_ascii=False
+        # 阈值变了才重算规则表（显式给了规则表时不重算 —— 那会把用户的规则冲掉）
+        if rules_json is None and (
+            alert != current.alert_threshold or critical != current.critical_threshold
+        ):
+            # ⚠️ **绝对值条件要保留** ——
+            #    用户配的「值 > 50 记 P0」不该因为换了算法（或改了阈值）而消失。
+            rules = default_rules(alert, critical) + _absolute_rules_only(
+                current.alert_rules
             )
+            rules_json = json.dumps(rules_to_dicts(rules), ensure_ascii=False)
 
         try:
             with self._conn() as conn:

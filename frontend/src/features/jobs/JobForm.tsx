@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Alert, Form, Input, InputNumber, Modal, Select, Space } from 'antd'
 import type { AlertRule, CatalogDetector, CatalogMetric } from '../../api/types'
-import { AlertRulesInput } from './AlertRulesInput'
+import { AlertRulesEditor } from './AlertRulesEditor'
 import { INTERVAL_SECONDS_MIN, WINDOW_POINTS_MAX, WINDOW_POINTS_MIN } from './limits'
-import { defaultRulesFor, parseRules } from './rules'
+import { defaultRuleList } from './rules'
 
 export interface JobFormValues {
   metric_id: number
@@ -43,15 +43,13 @@ export function JobForm({
   error,
 }: JobFormProps) {
   const [form] = Form.useForm<JobFormValues>()
-  const [rulesText, setRulesText] = useState('')
-  const [rules, setRules] = useState<AlertRule[]>([])
+  const [rules, setRules] = useState<AlertRule[] | null>(null)
 
   // 打开时重置上一次的输入
   useEffect(() => {
     if (open) {
       form.resetFields()
-      setRulesText('')
-      setRules([])
+      setRules(null)
     }
   }, [open, form])
 
@@ -88,17 +86,23 @@ export function JobForm({
     [metrics],
   )
 
+  /** 当前选中的算法 —— 决定告警规则的默认档位。 */
+  const selectedDetectorName = Form.useWatch('detector', form)
+  const selectedDetector = useMemo(
+    () => detectors.find((d) => d.name === selectedDetectorName),
+    [detectors, selectedDetectorName],
+  )
+
   /**
    * 选算法 → 自动预填默认规则。
    *
-   * 照搬旧 `platform.js`：`${base}, P1\n${(base * 1.5).toFixed(2)}, P0`
+   * ⚠️ 预填的是**结构化的档位表**（P1 × base、P0 × base×1.5），
+   *    不是文本 —— 用户能直接看到并改这两个数。
    */
   const onDetectorChange = (name: string) => {
     const det = detectors.find((d) => d.name === name)
     if (!det) return
-    const text = defaultRulesFor(det.default_threshold)
-    setRulesText(text)
-    setRules(parseRules(text).rules ?? [])
+    setRules(defaultRuleList(det.default_threshold))
   }
 
   const handleOk = async () => {
@@ -111,11 +115,7 @@ export function JobForm({
       //    浏览器控制台会出现 unhandled rejection。
       return
     }
-    // 规则文本若有错，parseRules 会返回 null —— 前面 AlertRulesInput 已拦下，
-    // 这里再确认一次，避免绕过 UI 直接提交
-    const parsed = parseRules(rulesText)
-    if (parsed.errors && Object.keys(parsed.errors).length > 0) return
-    onSubmit({ ...values, alert_rules: parsed.rules })
+    onSubmit({ ...values, alert_rules: rules })
   }
 
   return (
@@ -188,11 +188,10 @@ export function JobForm({
         </Space>
 
         <Form.Item label="告警规则">
-          <AlertRulesInput
+          <AlertRulesEditor
             value={rules}
             onChange={setRules}
-            text={rulesText}
-            onTextChange={setRulesText}
+            defaultThreshold={selectedDetector?.default_threshold ?? 2.5}
           />
         </Form.Item>
       </Form>
