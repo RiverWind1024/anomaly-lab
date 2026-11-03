@@ -62,6 +62,38 @@ DEFAULT_DETECTOR = "iqr"
 #: 低于这个点数不做形态推断（特征不可靠）
 MIN_AUTO_POINTS = 30
 
+#: 分数量纲族 —— **告警阈值能不能跨算法沿用**，由它决定。
+#:
+#: ⚠️ `prob` 族（Chronos）的分数是序列内 min-max 归一化的**相对越界程度**，
+#:    取值 [0, 1]；而统计族的分数是「偏离基线多少个尺度单位」，**没有上界**。
+#:
+#: ⚠️ 跨族沿用阈值 = **告警永远不触发** ——
+#:    分数根本到不了 2.5，所以「一切正常」是假的。
+#:    这是静默失效，比报错还糟。
+SCORE_FAMILY_PROB = "prob"
+
+#: 统计族：分数是「几个尺度单位」，阈值是倍数（2.5 / 3.5 …）。
+SCORE_FAMILY_SCALE = "scale"
+
+
+def detector_score_family(name: str) -> str:
+    """检测器的分数量纲族。
+
+    ⚠️ `auto` 归到统计族 —— 形态分类器的候选里没有 Chronos
+       （慢、且没有基线带），所以 auto 永远落在统计族。
+    """
+    if name == AUTO_DETECTOR:
+        return SCORE_FAMILY_SCALE
+    try:
+        detector = create_detector(name)
+    except ValueError:
+        return SCORE_FAMILY_SCALE
+    return (
+        SCORE_FAMILY_PROB
+        if detector.score_type == "prob"
+        else SCORE_FAMILY_SCALE
+    )
+
 
 @dataclass(frozen=True)
 class DetectorResolution:

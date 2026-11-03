@@ -20,7 +20,12 @@ from anomaly_lab.platform.alerts import (
     parse_rules,
     rules_to_dicts,
 )
-from anomaly_lab.platform.detectors import AUTO_DETECTOR, DETECTOR_FACTORIES
+from anomaly_lab.platform.detectors import (
+    AUTO_DETECTOR,
+    DETECTOR_FACTORIES,
+    create_detector,
+    detector_score_family,
+)
 from anomaly_lab.platform.feedback import FEEDBACK_KINDS, normalize_ts
 from anomaly_lab.platform.models import Feedback, Job, Metric, Run, Source
 from anomaly_lab.platform.timeutil import freq_delta, to_iso, utcnow
@@ -800,16 +805,35 @@ class PlatformStore:
             int(_pick(fields, "interval_seconds", current.interval_seconds))
         )
         enabled = fields.get("enabled", current.enabled)
-        alert = float(_pick(fields, "alert_threshold", current.alert_threshold))
-        if fields.get("critical_threshold") is not None:
-            critical = float(fields["critical_threshold"])
-        elif alert != current.alert_threshold and alert >= current.critical_threshold:
-            # 只改了告警阈值、没改严重阈值 —— 严重阈值跟着抬。
-            # 否则会出现「严重阈值 ≤ 告警阈值」这种非法组合，
-            # 用户改一个数却被要求改两个。
-            critical = alert * 1.5
+
+        # ⚠️ **换了算法就要换阈值** —— 分数的量纲变了。
+        #
+        # 统计族的分数是「几个尺度单位」（阈值 2.5 / 3.5），
+        # Chronos 的分数是 [0,1] 的相对越界程度（阈值 0.5）。
+        # 跨族沿用旧阈值 = 分数永远到不了 2.5 = **告警永远不触发**，
+        # 而界面显示「一切正常」—— 那是假的。
+        #
+        # ⚠️ 只在**没显式给阈值**时才重置 ——
+        #    用户手填的阈值是他自己的决定，不该被覆盖。
+        detector_changed = detector != current.detector
+        family_changed = detector_changed and (
+            detector_score_family(detector) != detector_score_family(current.detector)
+        )
+        if family_changed and fields.get("alert_threshold") is None:
+            default_threshold = float(create_detector(detector).default_threshold)
+            alert = default_threshold
+            critical = default_threshold * 1.5
         else:
-            critical = current.critical_threshold
+            alert = float(_pick(fields, "alert_threshold", current.alert_threshold))
+            if fields.get("critical_threshold") is not None:
+                critical = float(fields["critical_threshold"])
+            elif alert != current.alert_threshold and alert >= current.critical_threshold:
+                # 只改了告警阈值、没改严重阈值 —— 严重阈值跟着抬。
+                # 否则会出现「严重阈值 ≤ 告警阈值」这种非法组合，
+                # 用户改一个数却被要求改两个。
+                critical = alert * 1.5
+            else:
+                critical = current.critical_threshold
         validate_thresholds(alert, critical)
 
         # 阈值变了才重算规则表
@@ -867,13 +891,33 @@ class PlatformStore:
             )
 
     def set_job_detector(self, job_id: int, detector: str) -> Job:
-        """改任务的检测算法（用户在多算法对比后选定其一）。"""
+        """改任务的检测算法（用户在多算法对比后选定其一）。
+
+        ⚠️ **跨量纲族时阈值跟着换** —— 与 `update_job_config` 同一套理由：
+           统计族的阈值是「几个尺度单位」，Chronos 的是 [0,1] 的相对量。
+           沿用旧阈值 = 告警永远不触发，而界面显示「一切正常」。
+        """
         if detector != AUTO_DETECTOR and detector not in DETECTOR_FACTORIES:
             raise ValueError(f"不支持的检测器: {detector}")
-        with self._conn() as conn:
-            conn.execute(
-                "UPDATE jobs SET detector = ? WHERE id = ?", (detector, job_id)
+        current = self.get_job(job_id)
+        if detector_score_family(detector) != detector_score_family(current.detector):
+            default_threshold = float(create_detector(detector).default_threshold)
+            alert = default_threshold
+            critical = default_threshold * 1.5
+            rules_json = json.dumps(
+                rules_to_dicts(default_rules(alert, critical)), ensure_ascii=False
             )
+            with self._conn() as conn:
+                conn.execute(
+                    "UPDATE jobs SET detector = ?, alert_threshold = ?,"
+                    " critical_threshold = ?, alert_rules = ? WHERE id = ?",
+                    (detector, alert, critical, rules_json, job_id),
+                )
+        else:
+            with self._conn() as conn:
+                conn.execute(
+                    "UPDATE jobs SET detector = ? WHERE id = ?", (detector, job_id)
+                )
         return self.get_job(job_id)
 
     def set_job_next_run(self, job_id: int, next_run_at: str) -> None:

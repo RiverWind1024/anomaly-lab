@@ -1,5 +1,5 @@
 import { Alert, Button, Form, Input, InputNumber, Select, Space } from 'antd'
-import { useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AlertRulesView } from '../../features/jobs/AlertRulesView'
 import { useUpdateJob } from '../../features/jobs/queries'
 import { INTERVAL_SECONDS_MIN, WINDOW_POINTS_MAX, WINDOW_POINTS_MIN } from '../../features/jobs/limits'
@@ -64,6 +64,39 @@ export function JobConfigPanel({ job, metrics, detectors, enabled }: JobConfigPa
     [detectors],
   )
 
+  /**
+   * 换了算法 → 分数量纲可能变了。
+   *
+   * ⚠️ 统计型的分数是「几个尺度单位」（阈值 2.5 / 3.5），
+   *    Chronos 的分数是 [0,1] 的相对越界程度（阈值 0.5）。
+   *    跨族沿用旧阈值 = **告警永远不触发**，而界面显示「一切正常」。
+   *
+   * ⚠️ 后端会**自动把阈值换成新算法的默认值** ——
+   *    这里提前告诉用户，免得保存后阈值「莫名其妙变了」。
+   */
+  const scoreFamily = useCallback(
+    (name: string) =>
+      name === 'chronos' || detectors.find((d) => d.name === name)?.score_type === 'prob'
+        ? 'prob'
+        : 'scale',
+    [detectors],
+  )
+
+  const [familyHint, setFamilyHint] = useState<string | null>(null)
+
+  const handleDetectorChange = (name: string) => {
+    if (scoreFamily(name) !== scoreFamily(job.detector)) {
+      const target = detectors.find((d) => d.name === name)
+      setFamilyHint(
+        `「${name}」的分数量纲与当前算法不同（${
+          target?.score_type === 'prob' ? '0~1 的相对越界程度' : '偏离基线的倍数'
+        }），保存后告警阈值会自动换成 ${target?.default_threshold ?? '该算法的默认值'}。`,
+      )
+    } else {
+      setFamilyHint(null)
+    }
+  }
+
   const handleSave = async () => {
     let values: ConfigFormValues
     try {
@@ -111,8 +144,16 @@ export function JobConfigPanel({ job, metrics, detectors, enabled }: JobConfigPa
           rules={[{ required: true, message: '请选择检测算法' }]}
           extra="「自动推荐」由形态分类器挑算法，每次运行可能选到不同的算法。"
         >
-          <Select options={detectorOptions} placeholder="选择算法" />
+          <Select
+            options={detectorOptions}
+            placeholder="选择算法"
+            onChange={handleDetectorChange}
+          />
         </Form.Item>
+
+        {familyHint ? (
+          <Alert type="info" showIcon message={familyHint} style={{ marginBottom: 16 }} />
+        ) : null}
 
         {/* ⚠️ wrap：窄屏上这两项要能换行 —— 挤在一行会顶出屏幕右边 taste-skill-ignore */}
         <Space size="large" wrap style={{ display: 'flex' }}>
