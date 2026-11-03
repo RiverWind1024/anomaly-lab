@@ -29,7 +29,7 @@ export function sectionFromPath(pathname: string): JobSection {
 }
 
 /**
- * 检测任务详情页 —— **布局壳**。
+ * 告警任务详情页 —— **布局壳**。
  *
  * 之前这一个页面把配置表单、运行记录、预览图、多算法对比、
  * 分类结论、反馈历史全堆在一起，什么都看不清楚。
@@ -71,13 +71,13 @@ export function JobDetailPage() {
     return (
       <div className="page">
         <header className="page__header">
-          <h1 className="page__title">检测任务</h1>
+          <h1 className="page__title">告警任务</h1>
           <p className="page__subtitle">任务 #{jobId}</p>
         </header>
         <div className="empty-state">
           <p className="empty-state__title">任务不存在或已被删除</p>
           <p className="muted">它可能刚被删掉了，或者链接里的编号不对。</p>
-          <Link to="/jobs">← 回到检测任务列表</Link>
+          <Link to="/jobs">← 回到告警任务列表</Link>
         </div>
       </div>
     )
@@ -88,7 +88,7 @@ export function JobDetailPage() {
       <header className="page__header">
         <div className="titlebar">
           <div>
-            <h1 className="page__title">检测任务</h1>
+            <h1 className="page__title">告警任务</h1>
             <p className="page__subtitle">
               {job ? job.name : `任务 #${jobId}`}
             </p>

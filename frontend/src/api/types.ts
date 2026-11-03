@@ -135,7 +135,7 @@ export interface SourceQueryResult {
   elapsed_ms: number
 }
 
-// ─────────────────────────────────────────── 告警中心 /api/platform/alerts
+// ─────────────────────────────────────────── 告警记录 /api/platform/alerts
 
 /**
  * 一条告警事件 = 一段连续告警点合并成的区间。

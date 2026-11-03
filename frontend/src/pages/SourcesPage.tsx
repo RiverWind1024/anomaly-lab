@@ -81,7 +81,7 @@ export function SourcesPage() {
             <b>{catalog.data?.metrics.length ?? 0}</b> 个指标
           </span>
           <span>
-            <b>{catalog.data?.jobs.length ?? 0}</b> 个检测任务
+            <b>{catalog.data?.jobs.length ?? 0}</b> 个告警任务
           </span>
         </div>
       </section>

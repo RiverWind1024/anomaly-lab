@@ -35,6 +35,15 @@ interface NavLeaf {
  *    这两者是**从属关系**（指标从某个数据源取数），
  *    平铺成两个一级入口会丢掉这层关系。
  *    分组本身不是路由，选中的是它的子项。
+ *
+ * ⚠️ 「告警」也是**分组**：「告警任务」（跑检测的定时任务）
+ *    与「告警记录」（跨任务汇总的告警事件）——
+ *    这两者是**产生与结果**的关系，同属一条告警链路。
+ *
+ * ⚠️ 名字相近但**不是一回事**，别混：
+ *    - 「告警记录」(`/alerts`) = 有告警的事件，跨任务汇总；
+ *    - 「检测记录」(`/detections`) = 每次运行里每条序列 × 算法的检测明细，
+ *      没有告警的序列也在里面。
  */
 export const NAV_ITEMS: NavItem[] = [
   { key: '/', label: '概览' },
@@ -46,8 +55,14 @@ export const NAV_ITEMS: NavItem[] = [
       { key: '/metrics', label: '指标' },
     ],
   },
-  { key: '/jobs', label: '检测任务' },
-  { key: '/alerts', label: '告警中心' },
+  {
+    key: 'alerting',
+    label: '告警',
+    children: [
+      { key: '/jobs', label: '告警任务' },
+      { key: '/alerts', label: '告警记录' },
+    ],
+  },
   { key: '/evaluation', label: '评估报告' },
   { key: '/detections', label: '检测记录' },
   { key: '/annotate', label: '标注' },
@@ -101,7 +116,7 @@ function NavMenu({
   selectedKey: string
   onNavigate?: () => void
 }) {
-  // 告警数挂在「告警中心」上 —— 它是一个待处理的队列，名词要说清楚
+  // 告警数挂在「告警记录」上 —— 它是一个待处理的队列，名词要说清楚
   const overview = useQuery({ queryKey: ['overview'], queryFn: getOverview })
   const alertCount = overview.data?.alerts.total ?? 0
 
@@ -146,6 +161,14 @@ function NavMenu({
           label: (
             <Link to={child.key} onClick={onNavigate}>
               {child.label}
+              {/* ⚠️ 告警数挂在「告警记录」上 —— 它是一个待处理的队列，
+                  名词要说清楚。
+                  ⚠️ 这段徽标逻辑必须留在**子项**里 ——
+                  「告警记录」现在是「告警」分组的子项，
+                  走的是这条分支（原来的 leaf 分支已经够不到它了）。 */}
+              {child.key === '/alerts' && alertCount > 0 ? (
+                <span className="app-nav__count mono">{alertCount}</span>
+              ) : null}
             </Link>
           ),
         })),
@@ -156,9 +179,6 @@ function NavMenu({
       label: (
         <Link to={item.key} onClick={onNavigate}>
           {item.label}
-          {item.key === '/alerts' && alertCount > 0 ? (
-            <span className="app-nav__count mono">{alertCount}</span>
-          ) : null}
         </Link>
       ),
     }

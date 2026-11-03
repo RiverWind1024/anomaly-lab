@@ -128,7 +128,7 @@ export function AlertList({ isLoading, error, data, filters, onFiltersChange }: 
       data={data}
       // ⚠️ 「一个任务都没有」才是空态；「有任务但没告警」要显示「当前没有告警」
       isEmpty={(d) => d.events.length === 0 && d.jobs.length === 0}
-      emptyTitle="还没有检测任务"
+      emptyTitle="还没有告警任务"
       emptyHint="先建一个数据源与指标，再创建任务"
     >
       {(d) => (

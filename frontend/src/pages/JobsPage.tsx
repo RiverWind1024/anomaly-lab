@@ -58,7 +58,7 @@ export function JobsPage() {
   return (
     <div className="page">
       <header className="titlebar">
-        <h1>检测任务</h1>
+        <h1>告警任务</h1>
         <div className="titlebar__actions">
           <Button type="primary" onClick={() => setFormOpen(true)}>
             新建任务

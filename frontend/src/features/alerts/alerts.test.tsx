@@ -94,9 +94,9 @@ describe('AlertList', () => {
     expect(screen.getByText('当前没有告警')).toBeTruthy()
   })
 
-  it('一个任务都没有时显示「还没有检测任务」', () => {
+  it('一个任务都没有时显示「还没有告警任务」', () => {
     renderList({ events: [], levels: [], series: [], jobs: [], skipped: [] })
-    expect(screen.getByText('还没有检测任务')).toBeTruthy()
+    expect(screen.getByText('还没有告警任务')).toBeTruthy()
   })
 
   it('跳过的任务如实展示原因', () => {

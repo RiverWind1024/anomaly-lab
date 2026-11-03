@@ -69,7 +69,7 @@ export function DashboardPage() {
         data={overview.data}
         isEmpty={(data) => data.counts.sources === 0 && data.counts.jobs === 0}
         emptyTitle="平台还没有任何配置"
-        emptyHint="先建一个数据源与指标，再创建检测任务"
+        emptyHint="先建一个数据源与指标，再创建告警任务"
       >
         {(data) => (
           <>

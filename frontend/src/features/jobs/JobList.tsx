@@ -161,7 +161,7 @@ export function JobList({
       error={error}
       data={catalog}
       isEmpty={(data) => data.jobs.length === 0}
-      emptyTitle="还没有检测任务"
+      emptyTitle="还没有告警任务"
       emptyHint="先建一个数据源与指标，再创建任务"
       emptyAction={
         <Button type="primary" onClick={onCreate}>

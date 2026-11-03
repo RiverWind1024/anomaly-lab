@@ -151,10 +151,10 @@ describe('TestRunPanel', () => {
     expect(screen.getByText('80.000')).toBeTruthy()
   })
 
-  it('说明试跑不落库 —— 免得用户以为它进了告警中心', async () => {
+  it('说明试跑不落库 —— 免得用户以为它进了告警记录', async () => {
     const user = userEvent.setup()
     renderPanel()
-    expect(screen.getByText(/不会进告警中心/)).toBeTruthy()
+    expect(screen.getByText(/不会进告警记录/)).toBeTruthy()
     await user.click(screen.getByText('试跑一次'))
     await waitFor(() => expect(screen.getByText(/再试一次/)).toBeTruthy())
   })

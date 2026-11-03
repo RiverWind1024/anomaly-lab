@@ -25,7 +25,7 @@ export interface JobFormProps {
 }
 
 /**
- * 新建检测任务表单。
+ * 新建告警任务表单。
  *
  * 这里是 spec §8.2-A 里最容易漏的几条旧功能的落点：
  *   - 倍数条件 + 绝对值条件两种规则写法
@@ -121,7 +121,7 @@ export function JobForm({
   return (
     <Modal
       open={open}
-      title="新建检测任务"
+      title="新建告警任务"
       onCancel={onCancel}
       onOk={handleOk}
       okText="创建"

@@ -26,7 +26,7 @@ export function SourceDetailPage() {
   const metrics = (catalog.data?.metrics ?? []).filter((item) => item.source_id === sourceId)
 
   /**
-   * 用这个源的指标跑着的检测任务。
+   * 用这个源的指标跑着的告警任务。
    *
    * ⚠️ 层级链是 数据源 → 指标 → 任务 ——
    *    少了这一段，用户看不到「改这个源会影响谁」。
@@ -187,7 +187,7 @@ export function SourceDetailPage() {
               数据源
             </h2>
             <p className="panel__meta mono">
-              {metrics.length} 个指标 · {jobs.length} 个检测任务
+              {metrics.length} 个指标 · {jobs.length} 个告警任务
             </p>
           </div>
         </div>
@@ -210,7 +210,7 @@ export function SourceDetailPage() {
         data={metrics}
         isEmpty={(data) => data.length === 0}
         emptyTitle="这个数据源还没有指标"
-        emptyHint="指标定义「从哪个数据源、取哪些列、怎么算频率」—— 没有指标就没法建检测任务"
+        emptyHint="指标定义「从哪个数据源、取哪些列、怎么算频率」—— 没有指标就没法建告警任务"
       >
         {(data) => (
           <section className="panel" aria-labelledby="srcMetricsTitle">
@@ -239,7 +239,7 @@ export function SourceDetailPage() {
           <div className="panel__head">
             <div>
               <h2 className="panel__title" id="srcJobsTitle">
-                检测任务
+                告警任务
               </h2>
               <p className="panel__meta mono">
                 用这个源的指标跑着的任务 · {jobs.length} 个

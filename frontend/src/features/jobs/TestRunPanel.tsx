@@ -14,10 +14,10 @@ export interface TestRunPanelProps {
  * 试跑面板 —— 「跑一次看看会不会告警，但不留痕」。
  *
  * ⚠️ **试跑不落库** —— 没有 run 记录、不写结果文件、
- *    也不会出现在告警中心。它只是「现在跑一下会得到什么」。
+ *    也不会出现在告警记录。它只是「现在跑一下会得到什么」。
  *
  * ⚠️ 与「立即运行」的区别要说清楚：
- *    立即运行 = 真的产生一条运行记录（进告警中心、进历史）；
+ *    立即运行 = 真的产生一条运行记录（进告警记录、进历史）；
  *    试跑 = 只看一眼结果，什么都不留。
  */
 export function TestRunPanel({ jobId }: TestRunPanelProps) {
@@ -81,7 +81,7 @@ export function TestRunPanel({ jobId }: TestRunPanelProps) {
         <span className="muted">
           {result
             ? `${result.n_series} 条序列 · ${result.n_alerts} 个告警点 · ${result.n_p0} 个 P0`
-            : '试跑不会产生运行记录，也不会进告警中心 —— 只是看一眼结果。'}
+            : '试跑不会产生运行记录，也不会进告警记录 —— 只是看一眼结果。'}
         </span>
         <Space>
           {result && result.series.length > 1 ? (

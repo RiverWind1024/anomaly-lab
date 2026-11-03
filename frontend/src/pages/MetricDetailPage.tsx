@@ -18,11 +18,11 @@ export interface MetricDetailPageProps {
  *
  * 这里回答三件事：
  *   1. 这个指标怎么配的（可直接改）
- *   2. 哪些检测任务在用它
+ *   2. 哪些告警任务在用它
  *   3. 这些任务最近一次运行跑出了哪些序列
  *
  * ⚠️ 序列来自「任务最近一次运行」—— 指标本身不产生序列，
- *    是检测任务跑出来的。所以第 3 块挂在任务下面。
+ *    是告警任务跑出来的。所以第 3 块挂在任务下面。
  */
 export function MetricDetailPage() {
   const params = useParams<{ metricId: string }>()
@@ -120,10 +120,10 @@ export function MetricDetailPage() {
       </section>
 
       <section className="metric-detail__jobs">
-        <h2 className="section__title">用这个指标的检测任务</h2>
+        <h2 className="section__title">用这个指标的告警任务</h2>
         {jobs.length === 0 ? (
           <p className="muted">
-            还没有检测任务用这个指标 —— 建一个任务，指标才会被跑起来、产生序列。
+            还没有告警任务用这个指标 —— 建一个任务，指标才会被跑起来、产生序列。
           </p>
         ) : (
           <ul className="metric-detail__job-list">

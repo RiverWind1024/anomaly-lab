@@ -294,7 +294,7 @@ describe('fmtBytes', () => {
 describe('DashboardPage', () => {
   it('展示关键计数', async () => {
     renderPage()
-    expect(await screen.findByText('检测任务')).toBeTruthy()
+    expect(await screen.findByText('告警任务')).toBeTruthy()
     expect(screen.getByText('数据源 / 指标')).toBeTruthy()
     expect(screen.getByText('人工反馈')).toBeTruthy()
     expect(screen.getByText('回测序列')).toBeTruthy()

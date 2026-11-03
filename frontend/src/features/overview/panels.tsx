@@ -31,7 +31,7 @@ export function KpiStrip({
         <span className="kpi__s">{p0 > 0 ? `${p0} 条 P0` : '没有 P0'}</span>
       </div>
       <div className="kpi">
-        <span className="kpi__k">检测任务</span>
+        <span className="kpi__k">告警任务</span>
         <span className="kpi__v mono">{overview.counts.jobs}</span>
         <span className="kpi__s">{overview.counts.enabled_jobs} 启用</span>
       </div>
