@@ -228,10 +228,6 @@ export function MetricPreviewPage() {
             </p>
           </div>
         </div>
-        <p className="muted">
-          改 SQL → 执行 → 看结果。列头下拉决定哪一列是时间列、值列、分组列 ——
-          指派对了，指标取到的就是这些列。
-        </p>
       </section>
 
       <DataBrowser

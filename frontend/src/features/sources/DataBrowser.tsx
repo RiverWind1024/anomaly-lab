@@ -64,6 +64,25 @@ export interface BrowserResult {
   source_timezone: string
 }
 
+/**
+ * 日期范围与 SQL 对不上时的提醒。
+ *
+ * ⚠️ 日期选择器**只替换 `$timefilter`** —— SQL 里自己写了时间条件，
+ *    它就**完全不生效**（静默失效，最容易懵：窗口选了却看着没反应）。
+ *
+ * @param sql 当前 SQL
+ * @param hasRange 用户是否选了日期范围
+ * @returns 提醒文案；不需要提醒时返回 null
+ */
+export function timeWindowIgnoredWarning(
+  sql: string,
+  hasRange: boolean,
+): string | null {
+  if (!hasRange) return null
+  if (sql.includes('$timefilter')) return null
+  return 'SQL 里没有 $timefilter —— 开始/结束日期不生效（它们只替换 $timefilter）。'
+}
+
 export interface DataBrowserProps {
   sourceId: number
   /** 数据源类型 —— 决定渲染 SQL 编辑器还是该源专属表单（spec §6.4）。 */
@@ -352,6 +371,9 @@ export function DataBrowser({
     )
   }
 
+  /** 日期范围与 SQL 对不上时的提醒（见 timeWindowIgnoredWarning）。 */
+  const windowWarning = timeWindowIgnoredWarning(sql, Boolean(range && range[0]))
+
   return (
     <section className="panel">
       <TextArea
@@ -395,6 +417,10 @@ export function DataBrowser({
         </p>
       )}
 
+      {/* ⚠️ 日期选择器只喂给 `$timefilter` ——
+          SQL 里自己写了时间条件，它就**完全不生效**（静默失效，最容易懵）。 */}
+      {windowWarning && <p className="form-hint">{windowWarning}</p>}
+
       {run.error instanceof Error && <p className="form-error">{run.error.message}</p>}
 
       {result && (
@@ -407,7 +433,10 @@ export function DataBrowser({
             size="small"
             rowKey="key"
             dataSource={rows}
-            pagination={false}
+            // ⚠️ **要分页** —— 一次取 100 行，全摊开是一屏拉到头的长表。
+            //    单页 20 行（与告警试跑表一致）。
+            // ⚠️ 是**前端分页** —— 数据已经在手上了，不必再发请求。
+            pagination={{ pageSize: 20, showSizeChanger: false, size: 'small' }}
             columns={columns}
           />
           {onUseAsMetric ? (

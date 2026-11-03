@@ -1,8 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { DataBrowser } from './DataBrowser'
+import { DataBrowser, timeWindowIgnoredWarning } from './DataBrowser'
 
 /** 假远端返回的浏览结果 —— 列名故意与表单默认值不一样。 */
 const RESULT = {
@@ -58,6 +58,42 @@ async function columnRoleSelect(columnName: string) {
   const select = within(headerRow).getAllByTitle(`${columnName} 列的角色`)[0]
   return within(select).getByRole('combobox')
 }
+
+/**
+ * 在日期范围选择器里选一段区间。
+ *
+ * ⚠️ antd 的 RangePicker **必须用 userEvent.click** 才打得开 ——
+ *    合成 MouseEvent 不触发 rc-picker 的 open。
+ */
+async function selectDateRange(user: ReturnType<typeof userEvent.setup>) {
+  const input = document.querySelector('.ant-picker input') as HTMLElement
+  await user.click(input)
+  const cells = [...document.querySelectorAll('.ant-picker-cell-inner')].filter(
+    (cell) => !cell.closest('.ant-picker-cell-disabled'),
+  )
+  await user.click(cells[0])
+  // ⚠️ 选完第一个后面板会重渲染 —— 重新取一次格子
+  const again = [...document.querySelectorAll('.ant-picker-cell-inner')].filter(
+    (cell) => !cell.closest('.ant-picker-cell-disabled'),
+  )
+  await user.click(again[1])
+}
+
+describe('timeWindowIgnoredWarning', () => {
+  it('没选日期范围 → 不提醒', () => {
+    expect(timeWindowIgnoredWarning('SELECT ts FROM t', false)).toBeNull()
+  })
+
+  it('SQL 里有 $timefilter → 不提醒', () => {
+    expect(timeWindowIgnoredWarning('SELECT ts FROM t WHERE $timefilter', true)).toBeNull()
+  })
+
+  it('⚠️ 自己写了时间条件 → 提醒（日期选择器不生效）', () => {
+    expect(timeWindowIgnoredWarning("SELECT ts FROM t WHERE ts >= '2026-01-01'", true)).toMatch(
+      /\$timefilter/,
+    )
+  })
+})
 
 describe('DataBrowser', () => {
   it('显示编辑器与执行按钮', () => {
@@ -175,6 +211,40 @@ describe('DataBrowser', () => {
     // ⚠️ 去抖 400ms —— 逐字输入不该逐字发请求
     await waitFor(() => expect(calls.length).toBeGreaterThan(before), { timeout: 3000 })
     expect(lastRequestBody().time_column).toBe('ts')
+  })
+
+  it('⚠️ 明细列表要分页 —— 一次取 100 行，全摊开是拉到头的长表', async () => {
+    const user = userEvent.setup()
+    renderBrowser()
+    await user.click(screen.getByRole('button', { name: /执\s*行/ }))
+    await screen.findAllByText('ts')
+    // ⚠️ antd 的分页条
+    expect(document.querySelector('.ant-pagination')).toBeTruthy()
+    expect(document.querySelectorAll('.ant-pagination-item').length).toBeGreaterThan(0)
+  })
+
+  it('⚠️ SQL 里没有 $timefilter 时提醒：日期选择器不生效', async () => {
+    /* 日期选择器只替换 $timefilter —— 自己写了时间条件，它就完全不生效（静默失效）。 */
+    const user = userEvent.setup()
+    renderBrowser()
+    await selectDateRange(user)
+
+    await waitFor(() => {
+      expect(screen.getByText(/开始\/结束日期不生效/)).toBeTruthy()
+    })
+  })
+
+  it('SQL 里有 $timefilter 时不提醒', async () => {
+    const user = userEvent.setup()
+    renderBrowser()
+    fireEvent.change(screen.getByPlaceholderText(/SELECT/), {
+      target: { value: 'SELECT ts, value FROM t WHERE $timefilter' },
+    })
+    await selectDateRange(user)
+
+    await waitFor(() => {
+      expect(screen.queryByText(/开始\/结束日期不生效/)).toBeNull()
+    })
   })
 
   it('请求里带上 time_format 与 source_timezone', async () => {
