@@ -37,6 +37,9 @@ const MetricDetailPage = lazy(() =>
 const MetricPreviewPage = lazy(() =>
   import('./pages/MetricPreviewPage').then((m) => ({ default: m.MetricPreviewPage })),
 )
+const MetricChartPage = lazy(() =>
+  import('./pages/MetricChartPage').then((m) => ({ default: m.MetricChartPage })),
+)
 const JobDetailPage = lazy(() =>
   import('./pages/JobDetailPage').then((m) => ({ default: m.JobDetailPage })),
 )
@@ -60,6 +63,9 @@ export function AppRoutes() {
         <Route path="/sources/:sourceId" element={<SourceDetailPage />} />
         {/* 指标：列表 / 新增 / 编辑 / 详情 */}
         <Route path="/metrics" element={<MetricsPage />} />
+        {/* ⚠️ 静态段要声明在 `/metrics/:metricId` **之前** ——
+            否则 "preview" 会被当成 metricId。 */}
+        <Route path="/metrics/preview" element={<MetricChartPage />} />
         <Route path="/metrics/new" element={<MetricFormPage />} />
         <Route path="/metrics/:metricId/edit" element={<MetricFormPage />} />
         <Route path="/metrics/:metricId" element={<MetricDetailPage />} />

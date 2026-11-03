@@ -153,6 +153,27 @@ describe('buildBrowseOption', () => {
     expect(colors[0]).not.toBe(colors[1])
   })
 
+  it('⚠️ 超出色板长度的序列用**虚线** —— 颜色会循环，得靠线型区分', () => {
+    /* 假远端有 7 条序列，色板只有 6 色 ——
+       第 7 条会和第 1 条同色，不加虚线就分不清哪条是哪条。 */
+    const many = Array.from({ length: 8 }, (_, i) => [
+      '2026-10-30T00:00:00+00:00',
+      `s${i}`,
+      i,
+    ])
+    const option = buildBrowseOption({
+      ...base,
+      rows: many,
+      timeValues: many.map(() => 1000),
+      roles: { time_column: 'ts', value_column: 'value', group_column: 'host' },
+    })
+    const types = option.series.map((s) => s.lineStyle?.type)
+    // ⚠️ 前 6 条实线，第 7、8 条虚线
+    expect(types.slice(0, 6).every((t) => t === 'solid')).toBe(true)
+    expect(types[6]).toBe('dashed')
+    expect(types[7]).toBe('dashed')
+  })
+
   it('数据点是 [x, y] 对（时间轴要成对的坐标）', () => {
     const option = buildBrowseOption(base)
     expect(option.series[0].data).toEqual([

@@ -2,7 +2,7 @@ import ReactECharts from 'echarts-for-react'
 import { Empty } from 'antd'
 import { cssVar, cssVarAlpha, invalidateCssVarCache } from '../../theme/cssVar'
 import { useThemeModeValue } from '../../theme/ThemeModeContext'
-import { seriesColor } from '../../lib/palette'
+import { seriesColor, seriesDashed } from '../../lib/palette'
 import type { SourceQueryColumn } from '../../api/types'
 
 export interface BrowseChartProps {
@@ -50,7 +50,7 @@ export interface BrowseSeriesOption {
   symbol?: string
   symbolSize?: number
   connectNulls?: boolean
-  lineStyle?: { color?: string; width?: number }
+  lineStyle?: { color?: string; width?: number; type?: string }
   itemStyle?: { color?: string }
 }
 
@@ -164,6 +164,9 @@ export function buildBrowseOption(
   const series: BrowseOption['series'] = extractBrowseSeries(props).map(
     (item, index) => {
       const color = seriesColor(index)
+      // ⚠️ 超出色板长度的序列用**虚线** —— 颜色会循环，
+      //    不同线型才分得清哪条是哪条（见 palette.seriesDashed）。
+      const dashed = seriesDashed(index)
       return {
         name: item.name,
         type: 'line',
@@ -174,7 +177,7 @@ export function buildBrowseOption(
         symbolSize: 6,
         // ⚠️ 缺点必须断线 —— ECharts 默认 connectNulls:false，别打开
         connectNulls: false,
-        lineStyle: { color, width: 1.6 },
+        lineStyle: { color, width: 1.6, type: dashed ? 'dashed' : 'solid' },
         itemStyle: { color },
         z: 3,
       }

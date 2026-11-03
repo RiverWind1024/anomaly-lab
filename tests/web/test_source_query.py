@@ -408,6 +408,96 @@ def test_query_on_sqlite_source_timefilter_excludes_out_of_range_rows(tmp_path):
     assert response.json()["total"] == 1
 
 
+def test_freq_and_window_points_compute_the_window(tmp_path):
+    """⚠️ 给了 `freq` + `window_points` → 时间范围由平台算。
+
+    这让「指标预览」能取到**告警任务真正会取的那一段**，
+    而不是让前端自己算（算错了就是「预览的不是跑出来的」）。
+    """
+    client, source_id = _sqlite_client(tmp_path)
+    response = client.post(
+        f"/api/platform/sources/{source_id}/query",
+        json={
+            "sql": "SELECT ts, value FROM metrics WHERE $timefilter",
+            "time_column": "ts",
+            "time_format": "iso_utc",
+            "freq": "5min",
+            "window_points": 60,
+        },
+    )
+    assert response.status_code == 200, response.text
+    # 范围是「现在往前 5 小时」—— 库里那两条 2026 年的数据不在窗口里
+    assert response.json()["total"] == 0
+
+
+def test_window_range_matches_runtime_computation(tmp_path):
+    """⚠️ **同一段代码**算范围 —— 浏览与指标运行时必须一致。
+
+    指标运行时：`end - freq_delta(freq) * window_points`（runner.py）。
+    浏览端点用的是同一个 `freq_delta` —— 逻辑放两处必然漂移。
+    """
+    from anomaly_lab.platform.timeutil import freq_delta, utcnow
+
+    client, source_id = _sqlite_client(tmp_path)
+    before = utcnow()
+    response = client.post(
+        f"/api/platform/sources/{source_id}/query",
+        json={
+            "sql": "SELECT ts, value FROM metrics WHERE $timefilter",
+            "time_column": "ts",
+            "time_format": "iso_utc",
+            "freq": "1min",
+            "window_points": 30,
+        },
+    )
+    after = utcnow()
+    assert response.status_code == 200, response.text
+
+    # 端点算的范围应当落在 [before - 30min, after] 之内
+    expected_start = before - freq_delta("1min") * 30
+    expected_end = after
+    assert expected_start <= expected_end
+    # 用一条落在窗口内的数据验证真的生效
+    conn = sqlite3.connect(tmp_path / "source.db")
+    conn.execute(
+        "INSERT INTO metrics VALUES (?, ?)",
+        ((before - freq_delta("1min") * 5).isoformat(), 9.0),
+    )
+    conn.commit()
+    conn.close()
+
+    response = client.post(
+        f"/api/platform/sources/{source_id}/query",
+        json={
+            "sql": "SELECT ts, value FROM metrics WHERE $timefilter",
+            "time_column": "ts",
+            "time_format": "iso_utc",
+            "freq": "1min",
+            "window_points": 30,
+        },
+    )
+    assert response.json()["total"] == 1
+
+
+def test_explicit_start_end_wins_over_window(tmp_path):
+    """⚠️ 显式给了 start/end 就用显式的 —— 窗口参数只是默认值。"""
+    client, source_id = _sqlite_client(tmp_path)
+    response = client.post(
+        f"/api/platform/sources/{source_id}/query",
+        json={
+            "sql": "SELECT ts, value FROM metrics WHERE $timefilter",
+            "time_column": "ts",
+            "time_format": "iso_utc",
+            "start": "2026-10-30T00:00:00+00:00",
+            "end": "2026-10-30T01:00:00+00:00",
+            "freq": "5min",
+            "window_points": 60,
+        },
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["total"] == 2
+
+
 def test_query_limit_is_pushed_down_and_truncated_marks_more_rows(tmp_path):
     """⚠️ limit 必须**下推**到 SQL —— 否则整个结果集会被拉进内存。
 

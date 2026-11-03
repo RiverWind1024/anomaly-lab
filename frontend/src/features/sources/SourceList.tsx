@@ -1,6 +1,6 @@
 import { Button, Space, Table } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { StateBoundary } from '../../components/StateBoundary'
 import { DeleteButton } from '../delete/DeleteButton'
 import type { Catalog, CatalogSource } from '../../api/types'
@@ -32,6 +32,8 @@ export function SourceList({
   onEdit,
   metricCounts,
 }: SourceListProps) {
+  const navigate = useNavigate()
+
   const columns: ColumnsType<CatalogSource> = [
     {
       title: 'ID',
@@ -74,9 +76,16 @@ export function SourceList({
     {
       title: '操作',
       key: 'actions',
-      width: 160,
+      width: 240,
       render: (_value, row) => (
         <Space size="small">
+          {/* ⚠️ 「预览」跳到指标预览页并**带上这个源** ——
+              那边可以直接选指标看图。
+              ⚠️ 用 navigate 而不是 `href` —— href 是整页刷新，
+              侧边栏状态、滚动位置全丢。 */}
+          <Button size="small" onClick={() => navigate(`/metrics/preview?sourceId=${row.id}`)}>
+            预览
+          </Button>
           <Button size="small" onClick={() => onEdit(row)}>
             编辑
           </Button>

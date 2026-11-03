@@ -10,11 +10,14 @@ import {
   buildMetricPayload,
   type MetricFormValues,
 } from '../features/metrics/MetricFormFields'
+import { MetricChartPanel } from '../features/metrics/MetricChartPanel'
 import {
   PREVIEW_STORAGE_KEY,
   readPreviewPayload,
 } from '../features/metrics/previewBridge'
-import { buildPreviewUrl } from '../features/metrics/previewUrl'
+
+/** 没有任何告警任务时，预览用的默认窗口点数。 */
+const DEFAULT_WINDOW_POINTS = 60
 
 /**
  * 指标配置页 —— 新增与编辑共用。
@@ -152,25 +155,39 @@ export function MetricFormPage() {
   }, [form, prefill])
 
   /**
-   * 预览页地址 —— 带上当前正在编辑的 SQL 与列配置。
+   * 表单当前值 —— 预览用它（**不是已保存的指标**）。
    *
-   * ⚠️ 编辑态带上 metricId —— 预览页就能直接「保存到指标」。
+   * ⚠️ 页内预览的价值就在于「改 SQL 立刻看到效果」——
+   *    用已保存的值预览，用户改了半天看不到变化。
    */
   const watched = Form.useWatch([], form)
-  const previewUrl = useMemo(
-    () =>
-      buildPreviewUrl({
-        metricId,
-        sourceId: watched?.source_id ?? metric?.source_id ?? Number(sourceIdParam),
-        sql: watched?.query ?? metric?.query,
-        time_column: watched?.time_column ?? metric?.time_column,
-        value_column: watched?.value_column ?? metric?.value_column,
-        group_column: watched?.group_column ?? metric?.group_column ?? undefined,
-        time_format: watched?.time_format ?? metric?.time_format,
-        source_timezone: watched?.source_timezone ?? metric?.source_timezone,
-      }),
-    [metric, metricId, sourceIdParam, watched],
+
+  /**
+   * 预览的窗口点数 —— 取该指标正在用的告警任务的设置。
+   *
+   * ⚠️ **指标本身没有「取多少数据」的字段** —— 那是告警任务的配置。
+   *    用户在这里会疑惑「为什么只这么多点」，所以下面要写清楚去哪改。
+   */
+  const metricJob = useMemo(
+    () => catalog.data?.jobs.find((item) => item.metric_id === metricId),
+    [catalog.data?.jobs, metricId],
   )
+  const windowPoints = metricJob?.window_points ?? DEFAULT_WINDOW_POINTS
+
+  /** 预览用的取数配置 —— 全取表单当前值。 */
+  const previewConfig = useMemo(
+    () => ({
+      query: watched?.query ?? metric?.query ?? '',
+      time_column: watched?.time_column ?? metric?.time_column ?? '',
+      value_column: watched?.value_column ?? metric?.value_column ?? '',
+      group_column: watched?.group_column ?? metric?.group_column ?? '',
+      time_format: watched?.time_format ?? metric?.time_format ?? 'iso_utc',
+      source_timezone: watched?.source_timezone ?? metric?.source_timezone ?? 'UTC',
+    }),
+    [watched, metric],
+  )
+  const previewSourceId = watched?.source_id ?? metric?.source_id
+  const previewFreq = watched?.freq ?? metric?.freq ?? '5min'
 
   const save = useMutation({
     mutationFn: (payload: Parameters<typeof createMetric>[0]) =>
@@ -250,16 +267,51 @@ export function MetricFormPage() {
         </Form>
 
         <Space size="middle" wrap>
-          {/* ⚠️ 新标签页打开 —— 预览是「看一眼」，
-              不该把这里填到一半的表单弄丢 */}
-          <Button href={previewUrl} target="_blank" rel="opener">
-            预览数据
-          </Button>
           <Button type="primary" loading={save.isPending} onClick={handleSave}>
             {isEditing ? '保存' : '新增'}
           </Button>
         </Space>
       </section>
+
+      {/* ⚠️ **页内预览** —— 原来这个按钮是跳到另一个页面的（新标签页），
+          跳来跳去看不到「改了什么」。
+          现在直接在这里画，改 SQL 就能看到图跟着变。 */}
+      {previewSourceId ? (
+        <section className="panel" aria-labelledby="metricFormPreviewTitle">
+          <div className="panel__head">
+            <div>
+              <h2 className="panel__title" id="metricFormPreviewTitle">
+                预览数据
+              </h2>
+              <p className="panel__meta mono">
+                取最近 {windowPoints} 个点 × {previewFreq}
+              </p>
+            </div>
+          </div>
+          <MetricChartPanel
+            sourceId={previewSourceId}
+            config={previewConfig}
+            windowPoints={windowPoints}
+            freq={previewFreq}
+            auto
+          />
+          {/* ⚠️ **窗口在告警任务里设** —— 指标本身没有这个字段，
+              不说清楚用户会在这里找「取多少数据」的开关。 */}
+          <p className="muted metric-chart-panel__note">
+            这里取的是<strong>最近 {windowPoints} 个点</strong>
+            （× {previewFreq}）—— 与告警任务的「窗口点数」一致。
+            指标本身没有「取多少数据」的设置，
+            要改就去
+            {metricJob ? (
+              <Link to={`/jobs/${metricJob.id}`}>告警任务</Link>
+            ) : (
+              '告警任务'
+            )}
+            里改「窗口点数」
+            {metricJob ? '。' : '（这个指标还没有任务，先建一个）。'}
+          </p>
+        </section>
+      ) : null}
     </div>
   )
 }

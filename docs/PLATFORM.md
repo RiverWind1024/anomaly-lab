@@ -27,7 +27,8 @@ make serve                  # 构建前端并起服务：http://127.0.0.1:8000/
 | `/metrics/new?source_id=` | **新增指标**（独立页面，不是弹窗） |
 | `/metrics/:id/edit` | **编辑指标**（与新增同一条路径） |
 | `/metrics/:id` | 指标详情：配置 + 用它的任务 + 各任务最近跑出的序列 |
-| `/metric-preview` | 指标取数预览（写只读 SQL 看结果；**顶部有 Grafana 风格时序图**；新标签页打开） |
+| `/metrics/preview` | **指标预览**（选数据源 + 选指标 → 看它的时序图与明细） |
+| `/metric-preview` | 指标取数浏览器（写只读 SQL 看结果；**顶部有 Grafana 风格时序图**；**可切数据源**） |
 | `/jobs` | **告警任务**列表 + 新建任务（含告警规则录入） |
 | `/jobs/:id` | 任务**配置**（改参数、看告警规则） |
 | `/jobs/:id/test` | **测试告警**（真跑一次但不落库 —— 见下） |
@@ -329,6 +330,18 @@ POST /api/platform/sources/{id}/query
           "rows": [[...]], "time_values": [1793328000000, ...],
           "total": 100, "truncated": true, "elapsed_ms": 12 }
 ```
+
+⚠️ 还可以给 `freq` + `window_points` —— **时间范围由平台算**：
+
+```
+  body: { "sql": "SELECT ts, value FROM t WHERE $timefilter",
+          "freq": "1min", "window_points": 60, ... }
+```
+
+范围 = `now - freq_delta(freq) × window_points` ——
+与**指标运行时同一段代码**（`runner.py` 里也是这个式子）。
+前端自己算会漂移，那样「预览看到的」就不是「跑出来的」。
+显式给了 `start`/`end` 时以显式的为准。
 
 - `columns[].type` 由 pandas dtype 推断：`TIMESTAMP` / `INTEGER` / `REAL` / `TEXT`。
 - ⚠️ `limit` **下推**到发出去的 SQL（`SELECT * FROM (...) LIMIT n`）——

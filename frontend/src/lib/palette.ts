@@ -1,7 +1,7 @@
 /**
  * 分类色板 —— 多序列图表的线条颜色。
  *
- * 来自 tokens.css 的 `--series-1..5`（单一视觉来源）。
+ * 来自 tokens.css 的 `--series-1..6`（单一视觉来源）。
  *
  * ⚠️ 旧代码的 `COMPARE_COLORS` 里 `#d97706` 与 P1 告警色撞色 ——
  *    `--series-*` 已按 D17 解出与告警三档色相错开 ≥35°。
@@ -20,6 +20,7 @@ export function seriesColors(): string[] {
     cssVar('--series-3', '#6161d1'),
     cssVar('--series-4', '#c079d8'),
     cssVar('--series-5', '#ca4994'),
+    cssVar('--series-6', '#4fc7a1'),
   ]
 }
 
@@ -31,4 +32,21 @@ export function seriesColors(): string[] {
 export function seriesColor(index: number): string {
   const colors = seriesColors()
   return colors[index % colors.length]
+}
+
+/**
+ * 第 n 个序列的**线型**。
+ *
+ * ⚠️ 为什么需要：色板只有 6 色，而假远端有 7 条序列 ——
+ *    第 7 条会和第 1 条**同色**，读图时分不清哪条是哪条。
+ *
+ * ⚠️ 在保持「与告警三档色相错开 ≥35°」的前提下，
+ *    算得出来的**空色相段只有 135°~160° 一个** ——
+ *    加不到 7 个互不撞色的分类色。
+ *
+ *    所以超出部分用**虚线**区分：颜色循环 + 线型分段。
+ */
+export function seriesDashed(index: number): boolean {
+  const count = seriesColors().length
+  return Math.floor(index / count) % 2 === 1
 }

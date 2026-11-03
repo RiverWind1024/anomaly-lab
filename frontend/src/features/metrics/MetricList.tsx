@@ -1,5 +1,6 @@
 import { Button, Space, Table } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
+import { useNavigate } from 'react-router-dom'
 import { StateBoundary } from '../../components/StateBoundary'
 import { DeleteButton } from '../delete/DeleteButton'
 import type { Catalog, CatalogMetric, CatalogSource } from '../../api/types'
@@ -30,6 +31,7 @@ export function MetricList({
   deletingId,
   onEdit,
 }: MetricListProps) {
+  const navigate = useNavigate()
   const sourceNameById = new Map((sources ?? []).map((s) => [s.id, s.name]))
 
   const columns: ColumnsType<CatalogMetric> = [
@@ -101,9 +103,15 @@ export function MetricList({
     {
       title: '操作',
       key: 'actions',
-      width: 160,
+      width: 240,
       render: (_value, row) => (
         <Space size="small">
+          {/* ⚠️ 「预览」跳到指标预览页并**带上这个指标** ——
+              那边直接就是它的时序图。
+              ⚠️ 用 navigate 而不是 `href` —— href 是整页刷新。 */}
+          <Button size="small" onClick={() => navigate(`/metrics/preview?metricId=${row.id}`)}>
+            预览
+          </Button>
           <Button size="small" onClick={() => onEdit(row)}>
             编辑
           </Button>

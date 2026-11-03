@@ -44,10 +44,14 @@ afterEach(() => {
 })
 
 describe('导航结构', () => {
-  it('「数据」是分组，带数据源与指标两个子项', () => {
+  it('「数据」是分组，带数据源、指标与指标预览三个子项', () => {
     const data = NAV_ITEMS.find((item) => item.key === 'data')
     expect(data).toBeTruthy()
-    expect(data?.children?.map((c) => c.key)).toEqual(['/sources', '/metrics'])
+    expect(data?.children?.map((c) => c.key)).toEqual([
+      '/sources',
+      '/metrics',
+      '/metrics/preview',
+    ])
   })
 
   it('分组项本身不是路由 —— 展平后只剩可路由的项', () => {
@@ -88,6 +92,14 @@ describe('导航结构', () => {
     renderLayout('/metric-preview?sourceId=1')
     const selected = document.querySelector('.ant-menu-item-selected')
     expect(selected?.textContent).toContain('指标')
+  })
+
+  it('⚠️ 指标预览页（/metrics/preview）高亮在「指标预览」上，不是「指标」', () => {
+    /* ⚠️ `/metrics/preview` 与 `/metric-preview` 只差一个 s ——
+       选中态必须能分清，否则菜单项永远不会亮。 */
+    renderLayout('/metrics/preview')
+    const selected = document.querySelector('.ant-menu-item-selected')
+    expect(selected?.textContent).toContain('指标预览')
   })
 })
 

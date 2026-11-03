@@ -316,6 +316,16 @@ pre {
   gap: var(--space-2);
 }
 
+.metric-chart-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.metric-chart-panel__note {
+  margin: var(--space-2) 0 0;
+}
+
 .rules-editor__tiers {
   display: flex;
   flex-wrap: wrap;

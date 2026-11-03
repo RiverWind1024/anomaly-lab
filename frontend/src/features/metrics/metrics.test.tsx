@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
 import type { CatalogMetric, CatalogSource } from '../../api/types'
 import { MetricList } from './MetricList'
@@ -68,13 +69,16 @@ describe('MetricList', () => {
 
   it('列：ID / 名称 / 数据源 / 分组列 / 时间列 / 值列 / 频率 / 时区 / 缺失 / 操作', () => {
     render(
-      <MetricList
-        isLoading={false}
-        error={null}
-        metrics={[metric]}
-        sources={[source]}
-        {...listProps}
-      />,
+      // ⚠️ MetricList 里有 react-router 的 useNavigate —— 必须包 Router
+      <MemoryRouter>
+        <MetricList
+          isLoading={false}
+          error={null}
+          metrics={[metric]}
+          sources={[source]}
+          {...listProps}
+        />
+      </MemoryRouter>,
     )
     // AntD 会额外渲染一行隐藏的测量用表头，所以同一个标题有两个元素 ——
     // 按 columnheader 角色取，并去掉重复。
@@ -98,39 +102,46 @@ describe('MetricList', () => {
 
   it('数据源列显示名字而不是 id', () => {
     render(
-      <MetricList
-        isLoading={false}
-        error={null}
-        metrics={[metric]}
-        sources={[source]}
-        {...listProps}
-      />,
+      // ⚠️ MetricList 里有 react-router 的 useNavigate —— 必须包 Router
+      <MemoryRouter>
+        <MetricList
+          isLoading={false}
+          error={null}
+          metrics={[metric]}
+          sources={[source]}
+          {...listProps}
+        />
+      </MemoryRouter>,
     )
     expect(screen.getByText('local')).toBeTruthy()
   })
 
   it('没有分组列时显示占位', () => {
     render(
-      <MetricList
-        isLoading={false}
-        error={null}
-        metrics={[{ ...metric, group_column: null }]}
-        sources={[source]}
-        {...listProps}
-      />,
+      <MemoryRouter>
+        <MetricList
+          isLoading={false}
+          error={null}
+          metrics={[{ ...metric, group_column: null }]}
+          sources={[source]}
+          {...listProps}
+        />
+      </MemoryRouter>,
     )
     expect(screen.getByText('—')).toBeTruthy()
   })
 
   it('空列表显示空态', () => {
     render(
-      <MetricList
-        isLoading={false}
-        error={null}
-        metrics={[]}
-        sources={[]}
-        {...listProps}
-      />,
+      <MemoryRouter>
+        <MetricList
+          isLoading={false}
+          error={null}
+          metrics={[]}
+          sources={[]}
+          {...listProps}
+        />
+      </MemoryRouter>,
     )
     expect(screen.getByText('还没有指标')).toBeTruthy()
   })
@@ -138,14 +149,16 @@ describe('MetricList', () => {
   it('列表有「编辑」按钮 —— 点它进独立编辑页', () => {
     const onEdit = vi.fn()
     render(
-      <MetricList
-        isLoading={false}
-        error={null}
-        metrics={[metric]}
-        sources={[source]}
-        {...listProps}
-        onEdit={onEdit}
-      />,
+      <MemoryRouter>
+        <MetricList
+          isLoading={false}
+          error={null}
+          metrics={[metric]}
+          sources={[source]}
+          {...listProps}
+          onEdit={onEdit}
+        />
+      </MemoryRouter>,
     )
     // ⚠️ antd 的 Button 在两个字之间插空格 —— 断言要容得下
     const button = screen.getByRole('button', { name: /编\s*辑/ })

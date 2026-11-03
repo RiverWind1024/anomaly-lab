@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Button, message } from 'antd'
+import { Button, message, Select, Space } from 'antd'
 import { useCatalog } from '../features/jobs/queries'
 import { updateMetric } from '../api/platform'
 import { DataBrowser, type BrowserResult } from '../features/sources/DataBrowser'
@@ -27,7 +27,7 @@ import type { MetricFormValues } from '../features/metrics/MetricFormFields'
  * ⚠️ 新标签页打开 —— 原页面那半张填到一半的指标表单不能因此丢掉。
  */
 export function MetricPreviewPage() {
-  const [params] = useSearchParams()
+  const [params, setParams] = useSearchParams()
   const catalog = useCatalog()
   const qc = useQueryClient()
 
@@ -222,15 +222,38 @@ export function MetricPreviewPage() {
         <div className="panel__head">
           <div>
             <h2 className="panel__title">取数配置</h2>
-            <p className="panel__meta mono">
-              {source.name} · {source.kind}
-              {metric ? ` · 指标 ${metric.name}` : ''}
-            </p>
           </div>
         </div>
+        {/* ⚠️ **数据源可以换** —— 浏览器的价值就是「拿一个源试 SQL」，
+            源定死了就只能在同一个源里试。
+            换源时**清掉列角色**（不同源的列名不同，旧指派多半对不上）。 */}
+        <Space size="large" wrap style={{ display: 'flex' }}>
+          <Select
+            style={{ width: 260 }}
+            showSearch
+            optionFilterProp="label"
+            value={sourceId}
+            options={(catalog.data?.sources ?? []).map((item) => ({
+              value: item.id,
+              label: `${item.name} · ${item.kind}`,
+            }))}
+            onChange={(next) => {
+              const nextParams = new URLSearchParams(params)
+              nextParams.set('sourceId', String(next))
+              // ⚠️ 列角色跟着源走 —— 换源后旧指派多半对不上新列
+              nextParams.delete('time_column')
+              nextParams.delete('value_column')
+              nextParams.delete('group_column')
+              setParams(nextParams, { replace: true })
+            }}
+          />
+        </Space>
       </section>
 
       <DataBrowser
+        // ⚠️ 换源要**重挂载** —— 列角色、时间列都跟源走，
+        //    靠 props 同步会漏掉内部状态。
+        key={sourceId}
         sourceId={sourceId}
         kind={source.kind}
         initialSql={initial.sql}

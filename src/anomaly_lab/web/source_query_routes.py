@@ -24,6 +24,7 @@ from anomaly_lab.platform.sources import get_connector
 from anomaly_lab.platform.sources.base import TimeContext, parse_time_column, sql_literal
 from anomaly_lab.platform.sources.http_sql import ConfigError
 from anomaly_lab.platform.store import PlatformStore
+from anomaly_lab.platform.timeutil import freq_delta, utcnow
 from anomaly_lab.platform.validation import validate_readonly_sql, validate_timezone
 
 TimeFormat = Literal["iso_utc", "iso_naive", "epoch_s", "epoch_ms"]
@@ -44,6 +45,32 @@ class SourceQueryIn(BaseModel):
     time_column: str | None = None
     time_format: TimeFormat | None = None
     source_timezone: str | None = None
+    # ⚠️ **窗口语义**（给了 freq + window_points 就用它们算时间范围）——
+    #    与指标运行时**同一段代码**算（`freq_delta(freq) * window_points`），
+    #    否则「预览看到的」≠「跑出来的」。
+    freq: str | None = None
+    window_points: int | None = None
+
+
+def _resolve_window(payload: SourceQueryIn) -> tuple[datetime | None, datetime | None]:
+    """定出这次查询的时间范围。
+
+    ⚠️ 优先级：`start`/`end` 显式给的 > `freq` + `window_points` 算的 > 都没有。
+
+    ⚠️ **算出来的范围必须与指标运行时一致** ——
+       指标每次按 `end - freq_delta(freq) * window_points` 取窗，
+       这里用**同一段代码**（`freq_delta`），否则预览会看到
+       「不是告警任务真正会取的那一段」。
+    """
+    if payload.start or payload.end:
+        return (
+            _parse_boundary(payload.start, _MIN_TIME),
+            _parse_boundary(payload.end, _MAX_TIME),
+        )
+    if payload.freq and payload.window_points and payload.window_points > 0:
+        end = utcnow()
+        return end - freq_delta(payload.freq) * payload.window_points, end
+    return None, None
 
 
 def _parse_boundary(value: str | None, default: datetime) -> datetime:
@@ -119,6 +146,9 @@ def _apply_time_placeholders(sql: str, payload: SourceQueryIn, connector) -> tup
     validate_timezone(tz)
     params: tuple = ()
 
+    # ⚠️ 时间范围：`freq` + `window_points` 算出来的与指标运行时同源
+    window_start, window_end = _resolve_window(payload)
+
     if "$timefilter" in sql:
         if not payload.time_column:
             # ⚠️ 消息要**可操作** —— 光说「需要指定时间列」，
@@ -134,8 +164,8 @@ def _apply_time_placeholders(sql: str, payload: SourceQueryIn, connector) -> tup
                 column=payload.time_column,
                 fmt=fmt,
                 timezone=tz,
-                start=_parse_boundary(payload.start, _MIN_TIME),
-                end=_parse_boundary(payload.end, _MAX_TIME),
+                start=window_start or _MIN_TIME,
+                end=window_end or _MAX_TIME,
             )
         )
         sql = sql.replace("$timefilter", condition)
@@ -144,12 +174,12 @@ def _apply_time_placeholders(sql: str, payload: SourceQueryIn, connector) -> tup
         sql = _replace_boundary(
             sql,
             "{start}",
-            sql_literal(_parse_boundary(payload.start, _MIN_TIME), fmt, tz),
+            sql_literal(window_start or _MIN_TIME, fmt, tz),
         )
         sql = _replace_boundary(
             sql,
             "{end}",
-            sql_literal(_parse_boundary(payload.end, _MAX_TIME), fmt, tz),
+            sql_literal(window_end or _MAX_TIME, fmt, tz),
         )
     return sql, params
 

@@ -115,7 +115,11 @@ describe('指标配置页', () => {
       expect(patch?.url).toContain('/api/platform/metrics/7')
       expect(JSON.parse(patch?.body ?? '{}').name).toBe('cpu2')
     })
-    expect(calls.some((c) => c.method === 'POST')).toBe(false)
+    // ⚠️ 页内预览会发一个 POST 到 `/sources/{id}/query` ——
+    //    那是**预览取数**，不是保存。要断言的是「没往 metrics 发 POST」。
+    expect(
+      calls.some((c) => c.method === 'POST' && c.url.includes('/api/platform/metrics')),
+    ).toBe(false)
   })
 
   it('新增态走 POST', async () => {
@@ -125,9 +129,11 @@ describe('指标配置页', () => {
     fireEvent.click(screen.getByRole('button', { name: /新\s*增/ }))
 
     await waitFor(() => {
-      const post = calls.find((c) => c.method === 'POST')
+      // ⚠️ 页内预览也会 POST —— 要按 URL 挑出保存那个
+      const post = calls.find(
+        (c) => c.method === 'POST' && c.url.includes('/api/platform/metrics'),
+      )
       expect(post).toBeTruthy()
-      expect(post?.url).toContain('/api/platform/metrics')
       expect(JSON.parse(post?.body ?? '{}').name).toBe('新指标')
     })
   })
@@ -137,14 +143,22 @@ describe('指标配置页', () => {
     expect(await screen.findByText('指标不存在或已被删除')).toBeTruthy()
   })
 
-  it('「预览数据」带上当前 SQL 打开预览页', async () => {
+  it('⚠️ 预览是**页内**的 —— 不再跳去另一个页面', async () => {
+    /* 原来这个按钮跳到 `/metric-preview`（新标签页）——
+       跳来跳去看不到「改了什么」。现在直接画在页面底部。 */
     renderPage('/metrics/7/edit', <MetricFormPage />)
     await waitFor(() => {
       expect((screen.getByLabelText('名称') as HTMLInputElement).value).toBe('cpu')
     })
-    const link = screen.getByRole('link', { name: '预览数据' })
-    const href = link.getAttribute('href') ?? ''
-    expect(href).toContain('/metric-preview')
-    expect(href).toContain('metricId=7')
+    expect(screen.queryByRole('link', { name: '预览数据' })).toBeNull()
+    expect(screen.getByRole('heading', { name: '预览数据' })).toBeTruthy()
+  })
+
+  it('⚠️ 提示窗口在**告警任务**里设 —— 指标本身没有这个字段', async () => {
+    renderPage('/metrics/7/edit', <MetricFormPage />)
+    await waitFor(() => {
+      expect((screen.getByLabelText('名称') as HTMLInputElement).value).toBe('cpu')
+    })
+    expect(screen.getByText(/指标本身没有「取多少数据」的设置/)).toBeTruthy()
   })
 })

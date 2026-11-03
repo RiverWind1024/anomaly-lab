@@ -77,6 +77,13 @@ export const querySource = (
     time_column?: string
     time_format?: string
     source_timezone?: string
+    /**
+     * ⚠️ **窗口语义** —— 给了 freq + window_points 就由**后端**算时间范围，
+     * 与指标运行时同一段代码（`freq_delta`）。
+     * ⚠️ 前端自己算会漂移 —— 那样「预览看到的」就不是「跑出来的」。
+     */
+    freq?: string
+    window_points?: number
   },
 ) => postJson<SourceQueryResult>(`/api/platform/sources/${sourceId}/query`, payload)
 

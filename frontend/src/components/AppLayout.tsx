@@ -53,6 +53,7 @@ export const NAV_ITEMS: NavItem[] = [
     children: [
       { key: '/sources', label: '数据源' },
       { key: '/metrics', label: '指标' },
+      { key: '/metrics/preview', label: '指标预览' },
     ],
   },
   {
@@ -221,13 +222,16 @@ export function AppLayout({ themeMode, onToggleTheme, children }: AppLayoutProps
    *
    * ⚠️ **最长前缀匹配** —— 详情页的高亮要落在列表页上：
    *    `/sources/3` → 数据源，`/metrics/5` → 指标。
-   * ⚠️ `/metric-preview`（指标取数预览）也归「指标」——
+   * ⚠️ `/metric-preview`（指标取数浏览器）也归「指标」——
    *    它是指标编辑流程的一环。
+   *    ⚠️ 注意是 `/metric-`（单数 + 连字符）而不是 `/metric` ——
+   *    否则 `/metrics/preview`（指标预览页）也会被算成「指标」，
+   *    它的菜单项就永远不会高亮。
    */
   const selectedKey = (() => {
     const path = location.pathname
     if (path === '/') return '/'
-    if (path.startsWith('/metric')) return '/metrics'
+    if (path.startsWith('/metric-')) return '/metrics'
     const match = NAV_ROUTES.filter(
       (item) => item.key !== '/' && path.startsWith(item.key),
     ).sort((a, b) => b.key.length - a.key.length)[0]
