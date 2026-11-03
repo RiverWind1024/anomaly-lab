@@ -63,14 +63,34 @@ export function MetricChartPage() {
   )
   const windowPoints = metricJob?.window_points ?? DEFAULT_WINDOW_POINTS
 
-  const setParam = (key: string, value: number | undefined) => {
-    const next = new URLSearchParams(params)
-    if (value === undefined) {
-      next.delete(key)
-    } else {
-      next.set(key, String(value))
-    }
-    setParams(next, { replace: true })
+  /**
+   * 改 URL 参数。
+   *
+   * ⚠️ **必须用函数式更新** —— 不能基于渲染时的 `params` 快照构造新值。
+   *
+   *    快照式写法在这里是个**静默失效**：
+   *    「换源」要同时改两个键（设 sourceId、删 metricId），
+   *    两次调用都基于**同一个旧快照** → 第二次构造出的 URL
+   *    把第一次写的 sourceId 冲掉了 → URL 变成空 →
+   *    数据源没选中 → 指标下拉被禁用 → 用户「选不了指标」。
+   *
+   *    改成一次调用传所有改动 + 函数式更新，就不会互相覆盖。
+   */
+  const setParams_ = (changes: Record<string, number | undefined>) => {
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        for (const [key, value] of Object.entries(changes)) {
+          if (value === undefined) {
+            next.delete(key)
+          } else {
+            next.set(key, String(value))
+          }
+        }
+        return next
+      },
+      { replace: true },
+    )
   }
 
   return (
@@ -109,8 +129,8 @@ export function MetricChartPage() {
             }))}
             onChange={(next) => {
               // ⚠️ 换源 → 换指标（不同源的指标不能混）
-              setParam('sourceId', next)
-              setParam('metricId', undefined)
+              //    两个键**一次改完** —— 分两次改会互相覆盖（见 setParams_ 的说明）。
+              setParams_({ sourceId: next, metricId: undefined })
             }}
           />
           <Select
@@ -124,7 +144,7 @@ export function MetricChartPage() {
               value: item.id,
               label: item.name,
             }))}
-            onChange={(next) => setParam('metricId', next)}
+            onChange={(next) => setParams_({ metricId: next })}
           />
         </Space>
       </section>
