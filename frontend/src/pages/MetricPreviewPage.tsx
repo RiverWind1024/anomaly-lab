@@ -5,6 +5,7 @@ import { Button, message } from 'antd'
 import { useCatalog } from '../features/jobs/queries'
 import { updateMetric } from '../api/platform'
 import { DataBrowser, type BrowserResult } from '../features/sources/DataBrowser'
+import { BrowseChart, extractBrowseSeries } from '../features/sources/BrowseChart'
 import { normalizeTimeFormat } from '../features/sources/roles'
 import { writePreviewPayload } from '../features/metrics/previewBridge'
 import { buildMetricPayload } from '../features/metrics/MetricFormFields'
@@ -40,6 +41,25 @@ export function MetricPreviewPage() {
 
   /** 跑出来的结果 —— 保存按钮靠它（没跑过就没东西可存）。 */
   const [result, setResult] = useState<BrowserResult | null>(null)
+
+  /**
+   * 时序图的标题行 —— 说清楚「画的是什么」。
+   *
+   * ⚠️ 画的是什么由**角色**决定（用户指派的），不是猜的。
+   */
+  const chartSummary = useMemo(() => {
+    if (!result) return '执行一次查询后显示'
+    const value = result.roles.value_column
+    const group = result.roles.group_column
+    if (!value) return '还没有值列 —— 在下面的列头下拉里指派'
+    const seriesCount = extractBrowseSeries({
+      rows: result.rows,
+      columns: result.columns,
+      roles: result.roles,
+      timeValues: result.time_values,
+    }).length
+    return `${value}${group ? ` · 按 ${group} 分组` : ''} · ${seriesCount} 条序列`
+  }, [result])
 
   // 预览页的初始值：地址里的参数优先（那是用户正在编辑的版本）
   const initial = useMemo(() => {
@@ -178,6 +198,25 @@ export function MetricPreviewPage() {
           ) : null}
         </div>
       </header>
+
+      {/* ⚠️ 时序图放**最上面** —— 「先看数据长什么样，再看 SQL 怎么写的」。
+          图画的是浏览结果本身（原始数据），还没有检测分数与基线带。 */}
+      <section className="panel" aria-labelledby="previewChartTitle">
+        <div className="panel__head">
+          <div>
+            <h2 className="panel__title" id="previewChartTitle">
+              时序图
+            </h2>
+            <p className="panel__meta mono">{chartSummary}</p>
+          </div>
+        </div>
+        <BrowseChart
+          rows={result?.rows ?? []}
+          columns={result?.columns ?? []}
+          roles={result?.roles ?? {}}
+          timeValues={result?.time_values ?? null}
+        />
+      </section>
 
       <section className="panel">
         <div className="panel__head">

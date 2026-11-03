@@ -51,23 +51,45 @@ def _wall_clock(value: datetime, timezone_name: str) -> str:
     return local.replace(tzinfo=None).isoformat(sep=" ")
 
 
-def _parse_time_column(frame: pd.DataFrame, metric: Metric) -> pd.Series:
+def parse_time_column(
+    frame: pd.DataFrame,
+    column: str,
+    fmt: str,
+    timezone: str,
+    *,
+    coerce: bool = False,
+) -> pd.Series:
     """按 `time_format` 把时间列解析成 UTC 时间戳。
 
-    ⚠️ 时间语义不猜 —— 存储形式由 `time_format` 声明，
-       无时区时间戳按 `source_timezone` 解释（对应 CloudWatch 的 MetricTimezone）。
+    ⚠️ 时间语义不猜 —— 存储形式由 `fmt` 声明，
+       无时区时间戳按 `timezone` 解释（对应 CloudWatch 的 MetricTimezone）。
+
+    ⚠️ **参数是散的不是 Metric** —— 浏览端点没有 Metric 对象，
+       但要画出与运行时一致的时序图，就得用**同一份**解析逻辑。
+       逻辑放两处必然漂移（iso_naive 的源时区、epoch 毫秒/秒最容易错）。
+
+    ⚠️ `coerce=True` 时坏值变成 NaT 而不是报错 ——
+       浏览是探索性的，一行坏时间不该让整个查询失败；
+       指标运行时相反（`coerce=False`），坏值必须炸出来。
     """
-    column = metric.time_column
-    if metric.time_format == "iso_utc":
-        return pd.to_datetime(frame[column], utc=True)
-    if metric.time_format == "iso_naive":
-        naive = pd.to_datetime(frame[column], utc=False)
+    errors = "coerce" if coerce else "raise"
+    if fmt == "iso_utc":
+        return pd.to_datetime(frame[column], utc=True, errors=errors)
+    if fmt == "iso_naive":
+        naive = pd.to_datetime(frame[column], utc=False, errors=errors)
         if naive.dt.tz is not None:
             naive = naive.dt.tz_convert(None)
-        return naive.dt.tz_localize(ZoneInfo(metric.source_timezone)).dt.tz_convert("UTC")
-    unit = "s" if metric.time_format == "epoch_s" else "ms"
-    numeric = pd.to_numeric(frame[column], errors="raise")
+        return naive.dt.tz_localize(ZoneInfo(timezone)).dt.tz_convert("UTC")
+    unit = "s" if fmt == "epoch_s" else "ms"
+    numeric = pd.to_numeric(frame[column], errors=errors)
     return pd.to_datetime(numeric, unit=unit, utc=True)
+
+
+def _parse_time_column(frame: pd.DataFrame, metric: Metric) -> pd.Series:
+    """按指标配置解析时间列（指标运行时的入口）。"""
+    return parse_time_column(
+        frame, metric.time_column, metric.time_format, metric.source_timezone
+    )
 
 
 def _apply_missing_policy(

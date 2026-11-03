@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DataBrowser } from './DataBrowser'
@@ -157,6 +157,24 @@ describe('DataBrowser', () => {
     await user.click(await screen.findByRole('button', { name: '用这个结果建指标' }))
     const payload = onUseAsMetric.mock.calls[0][0]
     expect(payload.roles.time_column).toBe('value')
+  })
+
+  it('⚠️ 时间列变了 → **自动重跑**（图要跟着指派走）', async () => {
+    /* ⚠️ 不重跑的话，用户换了时间列还得手动再点一次「执行」，
+       图停在旧的那一列 —— 看起来像「改了没反应」。 */
+    const user = userEvent.setup()
+    renderBrowser()
+    await user.click(screen.getByRole('button', { name: /执\s*行/ }))
+    const calls = (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls
+    const before = calls.length
+
+    const input = screen.getByPlaceholderText(/时间列/)
+    await user.clear(input)
+    await user.type(input, 'ts')
+
+    // ⚠️ 去抖 400ms —— 逐字输入不该逐字发请求
+    await waitFor(() => expect(calls.length).toBeGreaterThan(before), { timeout: 3000 })
+    expect(lastRequestBody().time_column).toBe('ts')
   })
 
   it('请求里带上 time_format 与 source_timezone', async () => {

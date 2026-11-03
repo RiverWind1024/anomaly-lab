@@ -239,6 +239,15 @@ pre {
   margin: var(--space-2) 0 0;
 }
 
+/* 浏览预览的时序图 —— 与 .preview-chart 同族，只是多一个空态的居中。 */
+.browse-chart__note {
+  margin: var(--space-2) 0 0;
+}
+
+.browse-chart .ant-empty {
+  margin: var(--space-6) 0;
+}
+
 .job-list__toolbar {
   display: flex;
   align-items: center;

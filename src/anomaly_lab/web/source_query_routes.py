@@ -21,7 +21,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from anomaly_lab.platform.sources import get_connector
-from anomaly_lab.platform.sources.base import TimeContext, sql_literal
+from anomaly_lab.platform.sources.base import TimeContext, parse_time_column, sql_literal
 from anomaly_lab.platform.sources.http_sql import ConfigError
 from anomaly_lab.platform.store import PlatformStore
 from anomaly_lab.platform.validation import validate_readonly_sql, validate_timezone
@@ -219,6 +219,15 @@ def build_source_query_router(
         #    limit 已下推，平台根本没看到更多的行。
         truncated = len(frame) > limit
         rows = frame.head(limit)
+
+        # ⚠️ `time_column` 现在是**两用**的：
+        #    ① SQL 含 `$timefilter` 时 —— 时间条件渲染到它上面
+        #    ② 不管含不含 —— 把这一列解析成时间轴坐标，给前端的时序图用
+        #    ② 用的是**与指标运行时同一份**解析逻辑（`parse_time_column`），
+        #    否则浏览里画的图与真正跑出来的对不上（iso_naive 的源时区、
+        #    epoch 毫秒/秒最容易错）。
+        time_values = _parse_time_values(frame, rows, payload)
+
         return {
             "columns": [
                 {"name": str(name), "type": _column_type(dtype)}
@@ -228,9 +237,36 @@ def build_source_query_router(
                 [_json_safe(value) for value in row]
                 for row in rows.itertuples(index=False)
             ],
+            "time_values": time_values,
             "total": len(rows),
             "truncated": truncated,
             "elapsed_ms": elapsed_ms,
         }
 
     return router
+
+
+def _parse_time_values(
+    frame: pd.DataFrame, rows: pd.DataFrame, payload: SourceQueryIn
+) -> list[int | None] | None:
+    """把时间列解析成 epoch 毫秒（ECharts 时间轴吃毫秒）。
+
+    ⚠️ **返回 None 表示「没有时间列」** —— 与「有但全解析不出来」
+       区分开：前者不画图，后者画一条空的轴。
+
+    ⚠️ 解析不出来的行给 `None`（断点）—— **绝不画到 1970 年**。
+       那样看着像「数据都在 1970 年」，比空白更误导。
+    """
+    column = payload.time_column
+    if not column or column not in frame.columns:
+        return None
+    fmt = payload.time_format or "iso_utc"
+    tz = payload.source_timezone or "UTC"
+    # ⚠️ 时区要先校验 —— 否则 ZoneInfo 抛 KeyError，
+    #    会被当成「查询失败」报 502，其实是参数填错了。
+    validate_timezone(tz)
+    parsed = parse_time_column(frame, column, fmt, tz, coerce=True)
+    return [
+        None if pd.isna(stamp) else int(stamp.value // 1_000_000)
+        for stamp in parsed.head(len(rows))
+    ]

@@ -51,6 +51,10 @@ function toIso(value: Dayjs | null): string | undefined {
 export interface BrowserResult {
   sql: string
   columns: SourceQueryResult['columns']
+  /** 行数据 —— 上层画时序图要用。 */
+  rows: SourceQueryResult['rows']
+  /** 时间轴坐标（epoch 毫秒）—— 上层画时序图要用。 */
+  time_values: SourceQueryResult['time_values']
   roles: {
     time_column?: string
     value_column?: string
@@ -165,8 +169,10 @@ export function DataBrowser({
   }, [initialAssignments])
 
   const run = useMutation({
-    mutationFn: () =>
-      querySource(sourceId, {
+    mutationFn: () => {
+      // ⚠️ 记下这次用的是哪个时间列 —— 「时间列变了要自动重跑」靠它比对
+      lastRunTimeColumn.current = timeColumn
+      return querySource(sourceId, {
         sql,
         limit: 100,
         time_column: timeColumn || undefined,
@@ -176,8 +182,27 @@ export function DataBrowser({
         source_timezone: sourceTimezone,
         start: toIso(range?.[0] ?? null),
         end: toIso(range?.[1] ?? null),
-      }),
+      })
+    },
   })
+
+  /**
+   * 时间列变了 → **自动重跑**。
+   *
+   * ⚠️ 图是按时间列画的 —— 用户在列头下拉里换了时间列，
+   *    不重跑的话图还停在旧的那一列，看起来像「改了没反应」。
+   *
+   * ⚠️ 400ms 去抖 —— 输入框是**逐字**输入的，不去抖就是每敲一个字发一次请求。
+   */
+  const lastRunTimeColumn = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    // 还没跑过 → 不重跑（首次执行交给 autoRun / 用户自己点「执行」）
+    if (lastRunTimeColumn.current === undefined) return
+    if (lastRunTimeColumn.current === timeColumn) return
+    const timer = setTimeout(() => run.mutate(), 400)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeColumn])
 
   const result = run.data
 
@@ -226,6 +251,10 @@ export function DataBrowser({
     onResultRef.current?.({
       sql,
       columns: result.columns,
+      // ⚠️ 行数据与时间坐标一起传 —— 上层要画时序图，
+      //    光有列结构画不出任何东西
+      rows: result.rows,
+      time_values: result.time_values,
       roles: resolveRoles(result.columns, assignments),
       time_format: timeFormat,
       source_timezone: sourceTimezone,
@@ -387,6 +416,8 @@ export function DataBrowser({
                 onUseAsMetric({
                   sql,
                   columns: result.columns,
+                  rows: result.rows,
+                  time_values: result.time_values,
                   roles: resolveRoles(result.columns, assignments),
                   time_format: timeFormat,
                   source_timezone: sourceTimezone,

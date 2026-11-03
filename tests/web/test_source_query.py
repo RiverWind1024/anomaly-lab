@@ -185,6 +185,150 @@ def test_timefilter_error_tells_user_how_to_unblock(tmp_path, remote):
     assert "时间列" in detail
 
 
+# ---------- time_values：给前端画时序图用的时间轴坐标 ----------
+
+
+def _sqlite_client_with_rows(tmp_path, rows, ddl="CREATE TABLE metrics (ts, value)"):
+    """建一个 SQLite 源，行内容自定。"""
+    db = tmp_path / "source.db"
+    conn = sqlite3.connect(db)
+    conn.execute(ddl)
+    conn.executemany("INSERT INTO metrics VALUES (?, ?)", rows)
+    conn.commit()
+    conn.close()
+    client = TestClient(create_app(platform_data_root=tmp_path))
+    response = client.post(
+        "/api/platform/sources",
+        json={"name": "local", "kind": "sqlite", "path": "source.db"},
+    )
+    assert response.status_code == 200, response.text
+    return client, response.json()["id"]
+
+
+def test_time_values_is_null_without_time_column(tmp_path):
+    """没指定时间列 → 没有时间轴坐标（图不画）。"""
+    client, source_id = _sqlite_client(tmp_path)
+    response = client.post(
+        f"/api/platform/sources/{source_id}/query",
+        json={"sql": "SELECT ts, value FROM metrics"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["time_values"] is None
+
+
+def test_time_values_are_epoch_milliseconds(tmp_path):
+    """⚠️ 时间轴坐标是 **epoch 毫秒** —— ECharts 的时间轴吃毫秒。"""
+    client, source_id = _sqlite_client(tmp_path)
+    response = client.post(
+        f"/api/platform/sources/{source_id}/query",
+        json={
+            "sql": "SELECT ts, value FROM metrics",
+            "time_column": "ts",
+            "time_format": "iso_utc",
+        },
+    )
+    assert response.status_code == 200, response.text
+    values = response.json()["time_values"]
+    assert len(values) == 2
+    # 2026-10-30T00:00:00Z = 1793318400000 ms
+    assert values[0] == 1793318400000
+    assert values[1] == 1793318700000
+
+
+def test_time_values_follow_source_timezone_for_naive_timestamps(tmp_path):
+    """⚠️ `iso_naive` 的墙钟按**源时区**解释 —— 这是与指标运行时同一份逻辑。
+
+    ⚠️ 放前端自己解析必然漂移 —— 这条测试守的就是「别漂移」。
+    """
+    client, source_id = _sqlite_client_with_rows(
+        tmp_path, [("2026-10-30 08:00:00", 1.0), ("2026-10-30 08:05:00", 2.0)]
+    )
+    response = client.post(
+        f"/api/platform/sources/{source_id}/query",
+        json={
+            "sql": "SELECT ts, value FROM metrics",
+            "time_column": "ts",
+            "time_format": "iso_naive",
+            "source_timezone": "Asia/Shanghai",
+        },
+    )
+    assert response.status_code == 200, response.text
+    values = response.json()["time_values"]
+    # 08:00 东八区 = 00:00 UTC
+    assert values[0] == 1793318400000
+
+
+def test_time_values_respect_epoch_unit(tmp_path):
+    """⚠️ epoch_s 与 epoch_ms 差 1000 倍 —— 弄错就是 1970 年附近。"""
+    client, source_id = _sqlite_client_with_rows(
+        tmp_path,
+        [(1793328000, 1.0), (1793328300, 2.0)],
+        ddl="CREATE TABLE metrics (ts INTEGER, value REAL)",
+    )
+    response = client.post(
+        f"/api/platform/sources/{source_id}/query",
+        json={
+            "sql": "SELECT ts, value FROM metrics",
+            "time_column": "ts",
+            "time_format": "epoch_s",
+        },
+    )
+    assert response.status_code == 200, response.text
+    # 源数据是 1793328000 秒 → 毫秒就是 ×1000
+    assert response.json()["time_values"][0] == 1793328000000
+
+
+def test_time_values_null_for_unparseable_rows(tmp_path):
+    """⚠️ 解析不出来的行给 None（断点）—— **绝不画到 1970 年**。
+
+    那样看着像「数据都在 1970 年」，比空白更误导。
+    """
+    client, source_id = _sqlite_client_with_rows(
+        tmp_path, [("2026-10-30T00:00:00+00:00", 1.0), ("不是时间", 2.0)]
+    )
+    response = client.post(
+        f"/api/platform/sources/{source_id}/query",
+        json={
+            "sql": "SELECT ts, value FROM metrics",
+            "time_column": "ts",
+            "time_format": "iso_utc",
+        },
+    )
+    assert response.status_code == 200, response.text
+    values = response.json()["time_values"]
+    assert values[0] == 1793318400000
+    assert values[1] is None
+
+
+def test_time_values_null_when_column_not_in_result(tmp_path):
+    """指定的时间列不在结果里 → 没有时间轴坐标（而不是报错）。"""
+    client, source_id = _sqlite_client(tmp_path)
+    response = client.post(
+        f"/api/platform/sources/{source_id}/query",
+        json={"sql": "SELECT value FROM metrics", "time_column": "ts"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["time_values"] is None
+
+
+def test_time_values_row_count_matches_rows(tmp_path):
+    """⚠️ `time_values` 与 `rows` 必须**逐行对应** —— 错位了图就是错的。"""
+    client, source_id = _sqlite_client_with_rows(
+        tmp_path, [(f"2026-10-30T00:0{i}:00+00:00", float(i)) for i in range(5)]
+    )
+    response = client.post(
+        f"/api/platform/sources/{source_id}/query",
+        json={
+            "sql": "SELECT ts, value FROM metrics",
+            "time_column": "ts",
+            "time_format": "iso_utc",
+        },
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert len(body["time_values"]) == len(body["rows"])
+
+
 def test_query_on_missing_source_is_404(tmp_path, remote):
     client, _ = _client(tmp_path, remote)
     response = client.post(

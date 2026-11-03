@@ -2,7 +2,7 @@ import { Button, Table, Tag, Tooltip } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import type { CompareDetector } from '../../api/types'
 import { levelColor } from './AlertRulesView'
-import { seriesColors } from './CompareChart'
+import { seriesColors } from '../../lib/palette'
 
 export interface CompareTableProps {
   detectors: CompareDetector[]

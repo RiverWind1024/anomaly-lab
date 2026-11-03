@@ -30,20 +30,9 @@ export interface CompareOption {
 /**
  * 对比图的分类色。
  *
- * 来自 tokens.css 的 `--series-1..5`（单一视觉来源）。
- *
- * ⚠️ 旧代码的 `COMPARE_COLORS` 里 `#d97706` 与 P1 告警色撞色 ——
- *    `--series-*` 已按 D17 解出与告警三档色相错开 ≥35°。
+ * ⚠️ 已挪到 `lib/palette.ts` —— 浏览预览图也要用同一份色板。
  */
-export function seriesColors(): string[] {
-  return [
-    cssVar('--series-1', '#7acd51'),
-    cssVar('--series-2', '#81c4da'),
-    cssVar('--series-3', '#6161d1'),
-    cssVar('--series-4', '#c079d8'),
-    cssVar('--series-5', '#ca4994'),
-  ]
-}
+import { seriesColors } from '../../lib/palette'
 
 /**
  * 构造多算法对比图的 ECharts option。
