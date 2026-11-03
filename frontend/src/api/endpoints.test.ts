@@ -5,7 +5,7 @@
  * EXPECTED_PATHS，缺失即失败。
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { getCatalog, getOverview, createSource, createMetric, createJob, toggleJob, runJob, getRuns, getPreview, getCompare, createFeedback, getFeedback, getSuggestion, applySuggestion, getAlerts, deleteJob, deleteMetric, deleteSource, updateSource, updateMetric, querySource, getStorage, pruneData } from './platform'
+import { getCatalog, getOverview, createSource, createMetric, createJob, toggleJob, runJob, testRunJob, getRuns, getPreview, getCompare, createFeedback, getFeedback, getSuggestion, applySuggestion, getAlerts, deleteJob, deleteMetric, deleteSource, updateSource, updateMetric, querySource, getStorage, pruneData } from './platform'
 import { getSeries, getSeriesValues, getSummary, getBadcases, getExclusions, excludeEvaluationRow, restoreEvaluationRow } from './series'
 import { getAnnotations, saveAnnotations } from './annotate'
 
@@ -32,6 +32,7 @@ const EXPECTED_PATHS = [
   '/api/platform/jobs',
   '/api/platform/jobs/{id}',
   '/api/platform/jobs/{id}/run',
+  '/api/platform/jobs/{id}/test-run',
   '/api/platform/jobs/{id}/runs',
   '/api/platform/jobs/{id}/preview',
   '/api/platform/jobs/{id}/compare',
@@ -99,6 +100,7 @@ describe('端点封装层', () => {
     await createJob({ metric_id: 1, name: 'j' })
     await toggleJob(7, { enabled: true })
     await runJob(7)
+    await testRunJob(7)
     await getRuns(7)
     await getPreview(7)
     await getPreview(7, { runId: 3, seriesId: 'a:b' })

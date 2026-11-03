@@ -1,17 +1,20 @@
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
-import { Tabs } from 'antd'
+import { Button, Tabs } from 'antd'
 import { useCatalog, useFeedback, useRuns } from '../features/jobs/queries'
+import { TestRunPanel } from '../features/jobs/TestRunPanel'
+import { buildPreviewUrl } from '../features/metrics/previewUrl'
 import { JobConfigPanel } from './job/JobConfigPanel'
 import { JobDetectionsPanel } from './job/JobDetectionsPanel'
 import { JobFeedbackPanel } from './job/JobFeedbackPanel'
 import { JobRunsPanel } from './job/JobRunsPanel'
 import { JobSummary } from './job/JobSummary'
 
-/** 详情页的四个分区。各自独立成路由，不再挤在一页里。 */
-export type JobSection = 'config' | 'runs' | 'detections' | 'feedback'
+/** 详情页的分区。各自独立成路由，不再挤在一页里。 */
+export type JobSection = 'config' | 'test' | 'runs' | 'detections' | 'feedback'
 
 const SECTIONS: Array<{ key: JobSection; suffix: string; label: string }> = [
   { key: 'config', suffix: '', label: '任务配置' },
+  { key: 'test', suffix: '/test', label: '测试告警' },
   { key: 'runs', suffix: '/runs', label: '运行记录' },
   { key: 'detections', suffix: '/detections', label: '检测结果' },
   { key: 'feedback', suffix: '/feedback', label: '人工反馈' },
@@ -83,10 +86,27 @@ export function JobDetailPage() {
   return (
     <div className="page">
       <header className="page__header">
-        <h1 className="page__title">检测任务</h1>
-        <p className="page__subtitle">
-          {job ? job.name : `任务 #${jobId}`}
-        </p>
+        <div className="titlebar">
+          <div>
+            <h1 className="page__title">检测任务</h1>
+            <p className="page__subtitle">
+              {job ? job.name : `任务 #${jobId}`}
+            </p>
+          </div>
+          {/* ⚠️ 两个按钮对应两件不同的事，名字要说清楚：
+                「测试告警」= 跑一次看结果但**不留痕**；
+                「预览数据」= 看这个任务用的指标取回来的**原始数据**。 */}
+          <div className="titlebar__actions">
+            <Button onClick={() => navigate(`/jobs/${jobId}/test`)}>
+              测试告警
+            </Button>
+            {metric ? (
+              <Button href={buildPreviewUrl({ metricId: metric.id, sourceId: metric.source_id })} target="_blank" rel="opener">
+                预览数据
+              </Button>
+            ) : null}
+          </div>
+        </div>
       </header>
 
       {job ? (
@@ -115,6 +135,10 @@ export function JobDetailPage() {
           detectors={catalog.data?.detectors ?? []}
           enabled={enabled}
         />
+      ) : null}
+
+      {section === 'test' && job ? (
+        <TestRunPanel jobId={jobId} />
       ) : null}
 
       {section === 'runs' ? <JobRunsPanel jobId={jobId} enabled={enabled} /> : null}

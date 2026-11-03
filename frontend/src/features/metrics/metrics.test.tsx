@@ -1,12 +1,12 @@
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { fireEvent, render, screen } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
 import type { CatalogMetric, CatalogSource } from '../../api/types'
 import { MetricList } from './MetricList'
 import {
   DEFAULT_METRIC_QUERY,
   MISSING_POLICY_OPTIONS,
   TIME_FORMAT_OPTIONS,
-} from './MetricForm'
+} from './MetricFormFields'
 
 const source: CatalogSource = {
   id: 1,
@@ -66,7 +66,7 @@ describe('MetricList', () => {
     onEdit: () => {},
   }
 
-  it('列：ID / 名称 / 数据源 / 分组列 / 频率 / 操作', () => {
+  it('列：ID / 名称 / 数据源 / 分组列 / 时间列 / 值列 / 频率 / 时区 / 缺失 / 操作', () => {
     render(
       <MetricList
         isLoading={false}
@@ -82,7 +82,18 @@ describe('MetricList', () => {
       .getAllByRole('columnheader')
       .map((th) => th.textContent ?? '')
       .filter((text, index, all) => all.indexOf(text) === index)
-    expect(headers).toEqual(['ID', '名称', '数据源', '分组列', '频率', '操作'])
+    expect(headers).toEqual([
+      'ID',
+      '名称',
+      '数据源',
+      '分组列',
+      '时间列',
+      '值列',
+      '频率',
+      '时区',
+      '缺失',
+      '操作',
+    ])
   })
 
   it('数据源列显示名字而不是 id', () => {
@@ -122,5 +133,24 @@ describe('MetricList', () => {
       />,
     )
     expect(screen.getByText('还没有指标')).toBeTruthy()
+  })
+
+  it('列表有「编辑」按钮 —— 点它进独立编辑页', () => {
+    const onEdit = vi.fn()
+    render(
+      <MetricList
+        isLoading={false}
+        error={null}
+        metrics={[metric]}
+        sources={[source]}
+        {...listProps}
+        onEdit={onEdit}
+      />,
+    )
+    // ⚠️ antd 的 Button 在两个字之间插空格 —— 断言要容得下
+    const button = screen.getByRole('button', { name: /编\s*辑/ })
+    expect(button).toBeTruthy()
+    fireEvent.click(button)
+    expect(onEdit).toHaveBeenCalledWith(metric)
   })
 })

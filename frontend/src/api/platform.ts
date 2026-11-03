@@ -13,6 +13,7 @@ import type {
   SourceQueryResult,
   StorageUsage,
   Suggestion,
+  TestRunResult,
 } from './types'
 
 /**
@@ -169,6 +170,16 @@ export const toggleJob = (jobId: number, payload: { enabled?: boolean; detector?
 
 export const runJob = (jobId: number) =>
   postJson<{ run_id: number }>(`/api/platform/jobs/${jobId}/run`, {})
+
+/**
+ * 试跑一次检测：真实执行，但**不落库**。
+ *
+ * ⚠️ 与 `runJob` 的区别只有「不写 runs 表、不写结果文件」——
+ *    取数、检测器选择、打分、分级全都走同一段代码。
+ * ⚠️ 所以「试跑看到的告警」就是「真跑一次会得到的告警」。
+ */
+export const testRunJob = (jobId: number) =>
+  postJson<TestRunResult>(`/api/platform/jobs/${jobId}/test-run`, {})
 
 export const getRuns = (jobId: number) =>
   request<{ runs: RunSummary[] }>(`/api/platform/jobs/${jobId}/runs`)

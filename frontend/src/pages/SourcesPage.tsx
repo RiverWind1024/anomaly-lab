@@ -2,12 +2,17 @@ import { useMemo, useState } from 'react'
 import { message } from 'antd'
 import { SourceCreateButton, SourceForm } from '../features/sources/SourceForm'
 import { SourceList } from '../features/sources/SourceList'
-import { SourceMetrics } from '../features/sources/SourceMetrics'
 import { useCatalog } from '../features/jobs/queries'
 import { useDeleteSource } from '../features/delete/queries'
 import type { CatalogSource } from '../api/types'
 
-/** 数据源页 —— 层级链的**第一级**。 */
+/**
+ * 数据源页 —— 层级链的**第一级**。
+ *
+ * ⚠️ **这里不再展示指标列表** —— 指标搬到独立页面（「数据 › 指标」）。
+ *    一个页面讲一件事；两个都塞进来，列表页就没人看得完了。
+ *    数据源详情页里仍然能看到「这个源下有哪些指标」。
+ */
 export function SourcesPage() {
   const catalog = useCatalog()
   const [formOpen, setFormOpen] = useState(false)
@@ -80,27 +85,6 @@ export function SourcesPage() {
           </span>
         </div>
       </section>
-
-      {catalog.data && catalog.data.metrics.length > 0 ? (
-        <section className="panel" aria-labelledby="metricTitle">
-          <div className="panel__head">
-            <div>
-              <h2 className="panel__title" id="metricTitle">
-                指标
-              </h2>
-              <p className="panel__meta mono">
-                {catalog.data.metrics.length} 个指标 · 取数方式与分组
-              </p>
-            </div>
-            <span className="link">在数据源详情里编辑</span>
-          </div>
-
-          <SourceMetrics
-            metrics={catalog.data.metrics}
-            sources={catalog.data.sources}
-          />
-        </section>
-      ) : null}
 
       <SourceForm
         open={formOpen}

@@ -409,6 +409,79 @@ export interface Compare {
   band_width: number
 }
 
+// ─────────────────────────────────── 试跑 /api/platform/jobs/{id}/test-run
+
+/**
+ * 一次试跑的结果。
+ *
+ * ⚠️ **不落库** —— 没有 run_id，也没有写结果文件。
+ *    但它**就是**真跑一次会得到的结果（后端走同一段执行代码）。
+ */
+export interface TestRunResult {
+  job_id: number
+  /** 实际用的检测器（auto 会落到具体算法上）。 */
+  detector: string
+  /** 任务里配的检测器（可能是 "auto"）。 */
+  requested_detector: string
+  metric_class: string
+  detector_rationale: string
+  detector_fallback: boolean
+  score_type: string
+  n_series: number
+  /** 告警点数合计。 */
+  n_alerts: number
+  /** 最高档（P0）告警点数合计。 */
+  n_p0: number
+  /** 数据不足的序列数。 */
+  n_insufficient: number
+  alert_threshold: number
+  critical_threshold: number
+  alert_rules: AlertRule[]
+  /** 档位名（["正常", "P1", "P0"]）。 */
+  levels: string[]
+  /** 每条序列的概要。 */
+  series: SeriesEntry[]
+  /** 每条序列的完整检测结果 —— 前端画图用。 */
+  results: TestRunSeries[]
+  /** 告警点逐个列出 —— **不抽样**（抽样可能正好丢掉告警点）。 */
+  alerts: TestRunAlert[]
+}
+
+/** 试跑里一条序列的完整结果。 */
+export interface TestRunSeries {
+  series_id: string
+  group: string | null
+  sufficient: boolean
+  insufficient_reason: string
+  n: number
+  n_valid: number
+  n_missing: number
+  n_alerts: number
+  n_p0: number
+  timestamps: string[]
+  values: (number | null)[]
+  scores: (number | null)[]
+  baseline: (number | null)[] | null
+  lower: (number | null)[] | null
+  upper: (number | null)[] | null
+  severity: number[]
+}
+
+/** 试跑里的一个告警点。 */
+export interface TestRunAlert {
+  series_id: string
+  group: string | null
+  /** 在该序列中的点序号。 */
+  index: number
+  timestamp: string
+  value: number
+  score: number
+  /** 严重度序号（1 = P1，2 = P0）。 */
+  severity: number
+  /** 档位名。 */
+  level: string
+}
+
 // ─────────────────────────────────────────── 反馈 /api/platform/feedback
 
 export type FeedbackKind = 'correct' | 'false_alarm' | 'missed' | 'other'

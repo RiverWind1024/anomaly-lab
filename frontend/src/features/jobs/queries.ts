@@ -10,6 +10,7 @@ import {
   getRuns,
   getSuggestion,
   runJob,
+  testRunJob,
   toggleJob,
   updateJob,
 } from '../../api/platform'
@@ -129,6 +130,18 @@ export function useRunJob() {
       void qc.invalidateQueries({ queryKey: ['preview', jobId] })
       void qc.invalidateQueries({ queryKey: ['suggestion', jobId] })
     },
+  })
+}
+
+/**
+ * 试跑：真实执行一次检测，但**不落库**。
+ *
+ * ⚠️ 不失效任何缓存 —— 试跑没有产生 run 记录，
+ *    运行记录、预览、告警中心都还是上次真跑的样子。
+ */
+export function useTestRunJob() {
+  return useMutation({
+    mutationFn: (jobId: number) => testRunJob(jobId),
   })
 }
 

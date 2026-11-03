@@ -1,17 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { Button, Descriptions, Space, Table, Tag } from 'antd'
+import { Descriptions, Space, Table, Tag } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { StateBoundary } from '../components/StateBoundary'
-import { MetricForm, type MetricFormValues } from '../features/metrics/MetricForm'
 import { DeleteButton } from '../features/delete/DeleteButton'
-import {
-  PREVIEW_STORAGE_KEY,
-  readPreviewPayload,
-} from '../features/metrics/previewBridge'
 import { useCatalog } from '../features/jobs/queries'
 import { useDeleteMetric } from '../features/delete/queries'
-import type { CatalogJob, CatalogMetric, SourceQueryColumn } from '../api/types'
+import type { CatalogJob, CatalogMetric } from '../api/types'
 
 /**
  * 数据源详情页 —— **指标的父级**。
@@ -26,46 +20,7 @@ export function SourceDetailPage() {
   const params = useParams<{ sourceId: string }>()
   const sourceId = Number(params.sourceId ?? 0)
   const catalog = useCatalog()
-  const [formOpen, setFormOpen] = useState(false)
-  const [editing, setEditing] = useState<CatalogMetric | null>(null)
-  /** 预览页带回来的取数配置 —— 用来给指标表单预填。 */
-  const [browserResult, setBrowserResult] = useState<{
-    sql: string
-    columns: SourceQueryColumn[]
-    time_column?: string
-    value_column?: string
-    group_column?: string
-    time_format?: string
-  } | null>(null)
   const deleteMetric = useDeleteMetric()
-
-  /**
-   * 接住预览页带回来的配置。
-   *
-   * ⚠️ 预览页开在新标签页里，用 localStorage 回传 ——
-   *    storage 事件只在**别的**标签页触发，正好是这里要的。
-   */
-  useEffect(() => {
-    const onStorage = (event: StorageEvent) => {
-      if (event.key !== PREVIEW_STORAGE_KEY) return
-      const payload = readPreviewPayload(event.newValue)
-      // ⚠️ 消费掉 —— 别让同一份配置反复填表单
-      window.localStorage.removeItem(PREVIEW_STORAGE_KEY)
-      if (!payload) return
-      setBrowserResult({
-        sql: payload.sql,
-        columns: payload.columns,
-        time_column: payload.time_column,
-        value_column: payload.value_column,
-        group_column: payload.group_column,
-        time_format: payload.time_format,
-      })
-      setEditing(null)
-      setFormOpen(true)
-    }
-    window.addEventListener('storage', onStorage)
-    return () => window.removeEventListener('storage', onStorage)
-  }, [])
 
   const source = catalog.data?.sources.find((item) => item.id === sourceId)
   const metrics = (catalog.data?.metrics ?? []).filter((item) => item.source_id === sourceId)
@@ -174,15 +129,11 @@ export function SourceDetailPage() {
       width: 160,
       render: (_value, row) => (
         <Space size="small">
-          <Button
-            size="small"
-            onClick={() => {
-              setEditing(row)
-              setFormOpen(true)
-            }}
-          >
+          {/* ⚠️ 编辑走**独立页面**（与新增同一条路径）——
+              指标配置要写 SQL、要预览数据，弹窗塞不下 */}
+          <Link className="btn" to={`/metrics/${row.id}/edit`}>
             编辑
-          </Button>
+          </Link>
           {/* ⚠️ 删除必须走 DeleteButton —— 它带**影响预览**与二次确认。 taste-skill-ignore
               裸按钮误点就没了，而删指标会连带删掉任务与运行记录。 */}
           <DeleteButton
@@ -197,30 +148,6 @@ export function SourceDetailPage() {
       ),
     },
   ]
-
-  /**
-   * 指标表单的预填值。
-   *
-   * ⚠️ 必须 memo —— 不然每次父组件重渲染都是新对象，
-   *    MetricForm 的同步 effect 会把用户正在敲的内容冲掉。
-   */
-  const metricInitialValues = useMemo<Partial<MetricFormValues> | undefined>(
-    () =>
-      browserResult
-        ? {
-            // ⚠️ 只有 SQL 里带 $timefilter 才预填 query ——
-            //    指标要求恰好一个 $timefilter，预填非法 SQL 会让用户白填一遍
-            ...(browserResult.sql.includes('$timefilter')
-              ? { query: browserResult.sql }
-              : {}),
-            time_column: browserResult.time_column ?? '',
-            value_column: browserResult.value_column ?? '',
-            group_column: browserResult.group_column ?? '',
-            time_format: browserResult.time_format ?? 'iso_utc',
-          }
-        : undefined,
-    [browserResult],
-  )
 
   if (catalog.data && !source) {
     return (
@@ -244,9 +171,12 @@ export function SourceDetailPage() {
           <Link className="link" to="/sources">
             ← 数据源
           </Link>
-          <Button type="primary" onClick={() => setFormOpen(true)}>
+          {/* ⚠️ **跳独立页面**，不弹窗 ——
+              指标配置要写 SQL、要选列、要预览取回来的数据，
+              弹窗塞不下，预览要开新标签页时弹窗还会跟着消失。 */}
+          <Link className="btn btn--primary" to={`/metrics/new?source_id=${sourceId}`}>
             新增指标
-          </Button>
+          </Link>
         </div>
       </header>
 
@@ -326,21 +256,6 @@ export function SourceDetailPage() {
           />
         </section>
       ) : null}
-
-      <MetricForm
-        open={formOpen}
-        sources={catalog.data?.sources ?? []}
-        editing={editing}
-        // ⚠️ 不给默认数据源的话，从浏览器建的指标「数据源」是空的
-        defaultSourceId={sourceId}
-        initialValues={metricInitialValues}
-        onCancel={() => {
-          setFormOpen(false)
-          setEditing(null)
-          // ⚠️ 清掉浏览结果 —— 否则下次打开还带着上次的预填
-          setBrowserResult(null)
-        }}
-      />
     </div>
   )
 }

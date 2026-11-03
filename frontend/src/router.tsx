@@ -8,9 +8,9 @@ import { Placeholder } from './pages/Placeholder'
  *
  * ⚠️ **页面一律懒加载** —— ECharts 有 1 MB+，只该在需要图的页面加载。
  *
- * 信息架构：数据源 → 指标 → 序列，三级从属。
- * 侧边栏只保留一级入口（「数据源」），指标与序列靠页面内下钻 ——
- * 指标是数据源的子级，平铺成两个一级页面会丢掉这层关系。
+ * 信息架构：数据（分组）→ 数据源 → 指标 → 序列。
+ * 侧边栏「数据」是**分组**，下面是「数据源」与「指标」两个平级页面；
+ * 序列靠页面内下钻 —— 指标是数据源的从属，平铺成一级入口会丢掉这层关系。
  */
 const JobsPage = lazy(() => import('./pages/JobsPage').then((m) => ({ default: m.JobsPage })))
 const DashboardPage = lazy(() =>
@@ -24,6 +24,12 @@ const SourcesPage = lazy(() =>
 )
 const SourceDetailPage = lazy(() =>
   import('./pages/SourceDetailPage').then((m) => ({ default: m.SourceDetailPage })),
+)
+const MetricsPage = lazy(() =>
+  import('./pages/MetricsPage').then((m) => ({ default: m.MetricsPage })),
+)
+const MetricFormPage = lazy(() =>
+  import('./pages/MetricFormPage').then((m) => ({ default: m.MetricFormPage })),
 )
 const MetricDetailPage = lazy(() =>
   import('./pages/MetricDetailPage').then((m) => ({ default: m.MetricDetailPage })),
@@ -52,13 +58,16 @@ export function AppRoutes() {
         <Route path="/" element={<DashboardPage />} />
         <Route path="/sources" element={<SourcesPage />} />
         <Route path="/sources/:sourceId" element={<SourceDetailPage />} />
+        {/* 指标：列表 / 新增 / 编辑 / 详情 */}
+        <Route path="/metrics" element={<MetricsPage />} />
+        <Route path="/metrics/new" element={<MetricFormPage />} />
+        <Route path="/metrics/:metricId/edit" element={<MetricFormPage />} />
         <Route path="/metrics/:metricId" element={<MetricDetailPage />} />
         {/* 指标取数预览 —— 从指标的新增/编辑表单里开新标签页跳过来 */}
         <Route path="/metric-preview" element={<MetricPreviewPage />} />
-        {/* 旧的平级「指标」页 → 指标现在是数据源的子级 */}
-        <Route path="/metrics" element={<Navigate to="/sources" replace />} />
         <Route path="/jobs" element={<JobsPage />} />
         <Route path="/jobs/:jobId" element={<JobDetailPage />} />
+        <Route path="/jobs/:jobId/test" element={<JobDetailPage />} />
         <Route path="/jobs/:jobId/runs" element={<JobDetailPage />} />
         <Route path="/jobs/:jobId/detections" element={<JobDetailPage />} />
         <Route path="/jobs/:jobId/feedback" element={<JobDetailPage />} />

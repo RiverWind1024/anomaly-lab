@@ -1,0 +1,112 @@
+"""`POST /api/platform/jobs/{id}/test-run`：试跑端点。"""
+
+from __future__ import annotations
+
+import sqlite3
+from datetime import timedelta
+
+from fastapi.testclient import TestClient
+
+from anomaly_lab.platform.store import PlatformStore
+from anomaly_lab.platform.timeutil import to_iso, utcnow
+from anomaly_lab.web.app import create_app
+
+
+def _client(tmp_path):
+    store = PlatformStore(tmp_path / "platform.db")
+    source = store.add_source("local", "platform/source.db")
+    metric = store.add_metric(
+        source_id=source.id,
+        name="cpu",
+        query="SELECT ts, value FROM t WHERE $timefilter ORDER BY ts",
+        time_column="ts",
+        value_column="value",
+    )
+    job = store.add_job(
+        metric_id=metric.id,
+        name="job",
+        detector="iqr",
+        alert_threshold=2.5,
+        critical_threshold=4.0,
+        window_points=60,
+        interval_seconds=300,
+    )
+    _write_series(tmp_path)
+    app = create_app(platform_store=store, platform_data_root=tmp_path)
+    return TestClient(app), store, job.id
+
+
+def _write_series(tmp_path) -> None:
+    path = tmp_path / "platform" / "source.db"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE IF NOT EXISTS t (ts TEXT, value REAL)")
+    end = utcnow().replace(second=0, microsecond=0)
+    base = [10.0, 11.0, 9.5, 10.5, 10.0, 11.5, 9.0, 10.2, 10.8, 9.8, 10.1, 11.0]
+    values = list(base)
+    values[5] = 80.0  # 尖峰
+    n = len(values)
+    rows = [
+        (to_iso(end - timedelta(minutes=5 * (n - 1 - index))), float(value))
+        for index, value in enumerate(values)
+    ]
+    conn.executemany("INSERT INTO t VALUES (?, ?)", rows)
+    conn.commit()
+    conn.close()
+
+
+def test_test_run_returns_alerts(tmp_path):
+    """试跑返回告警点 —— 而且**逐个列出**，不抽样。"""
+    client, _store, job_id = _client(tmp_path)
+    resp = client.post(f"/api/platform/jobs/{job_id}/test-run")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["n_alerts"] >= 1
+    assert len(body["alerts"]) == body["n_alerts"]
+    alert = body["alerts"][0]
+    for key in ("series_id", "timestamp", "value", "score", "severity", "level"):
+        assert key in alert
+
+
+def test_test_run_does_not_create_run_row(tmp_path):
+    """⚠️ 试跑不落库 —— `runs` 表一行都不多。"""
+    client, store, job_id = _client(tmp_path)
+    before = len(store.all_runs())
+    client.post(f"/api/platform/jobs/{job_id}/test-run")
+    assert len(store.all_runs()) == before
+
+
+def test_test_run_does_not_write_files(tmp_path):
+    """⚠️ 试跑不落盘。"""
+    client, _store, job_id = _client(tmp_path)
+    runs_root = tmp_path / "cache" / "platform" / "runs"
+    before = set(runs_root.iterdir()) if runs_root.exists() else set()
+    client.post(f"/api/platform/jobs/{job_id}/test-run")
+    after = set(runs_root.iterdir()) if runs_root.exists() else set()
+    assert after == before
+
+
+def test_test_run_returns_series_results(tmp_path):
+    """每条序列都要有结果 —— 前端要画图。"""
+    client, _store, job_id = _client(tmp_path)
+    body = client.post(f"/api/platform/jobs/{job_id}/test-run").json()
+    assert body["n_series"] == 1
+    result = body["results"][0]
+    for key in ("series_id", "timestamps", "values", "scores", "severity"):
+        assert key in result
+    assert len(result["timestamps"]) == len(result["values"])
+
+
+def test_test_run_unknown_job_returns_404(tmp_path):
+    client, _store, _job_id = _client(tmp_path)
+    assert client.post("/api/platform/jobs/9999/test-run").status_code == 404
+
+
+def test_test_run_reports_failure_detail(tmp_path):
+    """失败要把原因告诉调用方，而不是 500。"""
+    client, _store, job_id = _client(tmp_path)
+    # 把源库删掉 —— 取数会失败
+    (tmp_path / "platform" / "source.db").unlink()
+    resp = client.post(f"/api/platform/jobs/{job_id}/test-run")
+    assert resp.status_code == 400
+    assert resp.json()["detail"]

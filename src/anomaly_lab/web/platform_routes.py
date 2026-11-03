@@ -520,6 +520,151 @@ def build_router(
             ) from exc
         return {"run_id": run_id, "status": store.get_run(run_id).status}
 
+    @router.post("/api/platform/jobs/{job_id}/test-run")
+    def test_run(job_id: int) -> dict:
+        """**试跑**一次检测：真实执行，但**不落库**。
+
+        ⚠️ 与 `/run` 的区别只有「不写 `runs` 表、不写结果文件」——
+           取数、检测器选择、打分、分级全都走同一段代码，
+           所以试跑看到的就是真跑会得到的。
+
+        ⚠️ 告警点**逐个列出**，不做抽样 ——
+           抽样可能正好丢掉告警点，用户会误以为「没有告警」。
+        """
+        store = _store()
+        try:
+            job = store.get_job(job_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        try:
+            result = runner_module.execute_job_test(
+                store, job_id, data_root=get_data_root()
+            )
+        except Exception as exc:  # 任何失败都要把原因告诉调用方，而不是 500
+            raise HTTPException(
+                status_code=400, detail=f"{type(exc).__name__}: {exc}"
+            ) from exc
+
+        entries: list[dict] = []
+        results: list[dict] = []
+        alerts: list[dict] = []
+        # 规则表与档位名取自**执行结果** —— 任务可能没存 alert_rules，
+        # runner 会回落到「按两个阈值生成默认规则」，前端要看到的是实际用的那份。
+        rules: list[dict] = []
+        levels: list[str] = ["正常"]
+        detector = ""
+        metric_class = ""
+        detector_rationale = ""
+        detector_fallback = False
+        score_type = ""
+        for outcome in result.outcomes:
+            entry = dict(outcome.entry)
+            entry.pop("file", None)
+            entries.append(entry)
+            arrays = outcome.arrays
+            if not arrays:
+                # 数据不足：明确说明，绝不返回「一切正常」的错觉
+                results.append(
+                    {
+                        "series_id": entry["series_id"],
+                        "group": entry.get("group"),
+                        "sufficient": False,
+                        "insufficient_reason": (
+                            f"有效点仅 {entry.get('n_valid', 0)} 个，不足以做检测"
+                        ),
+                        "n": entry.get("n", 0),
+                        "n_valid": entry.get("n_valid", 0),
+                        "n_missing": entry.get("n_missing", 0),
+                        "n_alerts": 0,
+                        "n_p0": 0,
+                        "timestamps": [],
+                        "values": [],
+                        "scores": [],
+                        "baseline": None,
+                        "lower": None,
+                        "upper": None,
+                        "severity": [],
+                    }
+                )
+                continue
+
+            if not rules:
+                rules = outcome.alert_rules
+                levels = outcome.levels
+                detector = str(arrays["detector"])
+                metric_class = str(arrays["metric_class"])
+                detector_rationale = str(arrays["detector_rationale"])
+                detector_fallback = bool(entry.get("fallback", False))
+                score_type = str(arrays["score_type"])
+
+            timestamps = arrays["timestamps"].astype("datetime64[s]")
+            values = arrays["values"]
+            scores = arrays["scores"]
+            severity = arrays["severity"]
+            baseline = arrays["baseline"]
+            lower = arrays["lower"]
+            upper = arrays["upper"]
+            has_bands = baseline.size > 0
+
+            for index, level_index in enumerate(severity):
+                level_index = int(level_index)
+                if level_index <= 0:
+                    continue
+                alerts.append(
+                    {
+                        "series_id": entry["series_id"],
+                        "group": entry.get("group"),
+                        "index": index,
+                        "timestamp": str(timestamps[index]),
+                        "value": float(values[index]),
+                        "score": float(scores[index]),
+                        "severity": level_index,
+                        "level": levels[level_index] if level_index < len(levels) else "P1",
+                    }
+                )
+
+            results.append(
+                {
+                    "series_id": entry["series_id"],
+                    "group": entry.get("group"),
+                    "sufficient": True,
+                    "insufficient_reason": "",
+                    "n": entry.get("n", 0),
+                    "n_valid": entry.get("n_valid", 0),
+                    "n_missing": entry.get("n_missing", 0),
+                    "n_alerts": entry.get("n_alerts", 0),
+                    "n_p0": entry.get("n_p0", 0),
+                    "timestamps": [str(item) for item in timestamps],
+                    "values": _clean(values),
+                    "scores": _clean(scores),
+                    "baseline": _clean(baseline) if has_bands else None,
+                    "lower": _clean(lower) if has_bands else None,
+                    "upper": _clean(upper) if has_bands else None,
+                    "severity": [int(item) for item in severity],
+                }
+            )
+
+        return {
+            "job_id": job.id,
+            "detector": detector,
+            "requested_detector": job.detector,
+            "metric_class": metric_class,
+            "detector_rationale": detector_rationale,
+            "detector_fallback": detector_fallback,
+            "score_type": score_type,
+            "n_series": len(entries),
+            "n_alerts": result.n_alerts,
+            "n_p0": result.n_p0,
+            "n_insufficient": result.n_insufficient,
+            "alert_threshold": job.alert_threshold,
+            "critical_threshold": job.critical_threshold,
+            "alert_rules": rules,
+            "levels": levels,
+            "series": entries,
+            "results": results,
+            "alerts": alerts,
+        }
+
     @router.get("/api/platform/jobs/{job_id}/runs")
     def list_runs(job_id: int) -> dict:
         store = _store()

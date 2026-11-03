@@ -10,20 +10,58 @@ import './AppLayout.css'
 const { Sider, Content } = Layout
 
 /**
+ * 导航项。
+ *
+ * ⚠️ 分组项（「数据」）有 `children`，普通项没有 ——
+ *    用显式类型而不是靠推断，`flatMap` 之后才不会变成
+ *    「children 可能 undefined」的联合类型。
+ */
+interface NavItem {
+  key: string
+  label: string
+  children?: NavLeaf[]
+}
+
+/** 可路由的导航项（没有子项）。 */
+interface NavLeaf {
+  key: string
+  label: string
+}
+
+/**
  * 侧边栏导航项。路径与 router.tsx 的路由表一一对应。
  *
- * ⚠️ 只有一级入口 —— 「指标」是数据源的子级，不该平铺成同级页面。
- *    指标页的入口在数据源详情里（/sources/:id → 指标列表 → /metrics/:id）。
+ * ⚠️ 「数据」是**分组**，下面挂「数据源」与「指标」——
+ *    这两者是**从属关系**（指标从某个数据源取数），
+ *    平铺成两个一级入口会丢掉这层关系。
+ *    分组本身不是路由，选中的是它的子项。
  */
-export const NAV_ITEMS = [
+export const NAV_ITEMS: NavItem[] = [
   { key: '/', label: '概览' },
-  { key: '/sources', label: '数据源' },
+  {
+    key: 'data',
+    label: '数据',
+    children: [
+      { key: '/sources', label: '数据源' },
+      { key: '/metrics', label: '指标' },
+    ],
+  },
   { key: '/jobs', label: '检测任务' },
   { key: '/alerts', label: '告警中心' },
   { key: '/evaluation', label: '评估报告' },
   { key: '/detections', label: '检测记录' },
   { key: '/annotate', label: '标注' },
 ]
+
+/**
+ * 所有**可路由**的导航项（展平分组）。
+ *
+ * ⚠️ 选中态与页面标题都从这里算 —— 分组项（「数据」）不是路由，
+ *    混进来会让 `/data` 永远匹配不上。
+ */
+export const NAV_ROUTES: NavLeaf[] = NAV_ITEMS.flatMap((item) =>
+  item.children ? item.children : [{ key: item.key, label: item.label }],
+)
 
 export interface AppLayoutProps {
   themeMode: ThemeMode
@@ -67,21 +105,72 @@ function NavMenu({
   const overview = useQuery({ queryKey: ['overview'], queryFn: getOverview })
   const alertCount = overview.data?.alerts.total ?? 0
 
+  /**
+   * 展开的分组。
+   *
+   * ⚠️ **选中的子项所在的分组必须展开** ——
+   *    否则停在「指标」页时，侧边栏只看到「数据」两个字被高亮，
+   *    看不到是「指标」被选中 —— 用户会以为自己还在数据源页。
+   *
+   * ⚠️ 用受控的 `openKeys` 而不是 `defaultOpenKeys`：
+   *    后者只在挂载时生效，路由切换后就不管用了。
+   */
+  const [openKeys, setOpenKeys] = useState<string[]>(() => {
+    const group = NAV_ITEMS.find((item) =>
+      item.children?.some((child) => child.key === selectedKey),
+    )
+    return group ? [group.key] : []
+  })
+
+  useEffect(() => {
+    const group = NAV_ITEMS.find((item) =>
+      item.children?.some((child) => child.key === selectedKey),
+    )
+    if (!group) return
+    setOpenKeys((prev) => (prev.includes(group.key) ? prev : [...prev, group.key]))
+  }, [selectedKey])
+
+  /**
+   * 导航项 → antd Menu 的 items。
+   *
+   * ⚠️ 分组项要挂 `children` —— antd 会自动渲染成可展开的子菜单。
+   *    分组本身没有链接（它不是路由）。
+   */
+  const items = NAV_ITEMS.map((item) => {
+    if (item.children) {
+      return {
+        key: item.key,
+        label: item.label,
+        children: item.children.map((child) => ({
+          key: child.key,
+          label: (
+            <Link to={child.key} onClick={onNavigate}>
+              {child.label}
+            </Link>
+          ),
+        })),
+      }
+    }
+    return {
+      key: item.key,
+      label: (
+        <Link to={item.key} onClick={onNavigate}>
+          {item.label}
+          {item.key === '/alerts' && alertCount > 0 ? (
+            <span className="app-nav__count mono">{alertCount}</span>
+          ) : null}
+        </Link>
+      ),
+    }
+  })
+
   return (
     <Menu
       mode="inline"
       selectedKeys={selectedKey ? [selectedKey] : []}
-      items={NAV_ITEMS.map((item) => ({
-        key: item.key,
-        label: (
-          <Link to={item.key} onClick={onNavigate}>
-            {item.label}
-            {item.key === '/alerts' && alertCount > 0 ? (
-              <span className="app-nav__count mono">{alertCount}</span>
-            ) : null}
-          </Link>
-        ),
-      }))}
+      openKeys={openKeys}
+      onOpenChange={(keys) => setOpenKeys(keys as string[])}
+      items={items}
     />
   )
 }
@@ -107,14 +196,25 @@ export function AppLayout({ themeMode, onToggleTheme, children }: AppLayoutProps
   const location = useLocation()
   const [navOpen, setNavOpen] = useState(false)
 
-  // 详情页 /jobs/3 的高亮要落在 /jobs 上；
-  // 指标页 /metrics/3 的高亮要落在 /sources 上（指标是数据源的子级）
-  const selectedKey =
-    NAV_ITEMS.find((item) => item.key !== '/' && location.pathname.startsWith(item.key))?.key ??
-    (location.pathname.startsWith('/metrics') ? '/sources' : '/')
+  /**
+   * 当前选中的导航项。
+   *
+   * ⚠️ **最长前缀匹配** —— 详情页的高亮要落在列表页上：
+   *    `/sources/3` → 数据源，`/metrics/5` → 指标。
+   * ⚠️ `/metric-preview`（指标取数预览）也归「指标」——
+   *    它是指标编辑流程的一环。
+   */
+  const selectedKey = (() => {
+    const path = location.pathname
+    if (path === '/') return '/'
+    if (path.startsWith('/metric')) return '/metrics'
+    const match = NAV_ROUTES.filter(
+      (item) => item.key !== '/' && path.startsWith(item.key),
+    ).sort((a, b) => b.key.length - a.key.length)[0]
+    return match?.key ?? '/'
+  })()
 
-  const pageLabel =
-    NAV_ITEMS.find((item) => item.key === selectedKey)?.label ?? '概览'
+  const pageLabel = NAV_ROUTES.find((item) => item.key === selectedKey)?.label ?? '概览'
 
   // 路由变了就把手机导航收起来
   useEffect(() => {

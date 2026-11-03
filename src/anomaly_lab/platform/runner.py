@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import threading
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -118,6 +119,175 @@ def execute_job(
             _INFLIGHT.pop(job.id, None)
 
 
+def execute_job_test(
+    store: PlatformStore,
+    job_id: int,
+    *,
+    data_root: Path,
+    start: datetime | None = None,
+    end: datetime | None = None,
+    now: datetime | None = None,
+) -> TestResult:
+    """**试跑**一次任务：真实执行，但不落库、不落盘。
+
+    ⚠️ **与真实执行走同一段代码** —— `_compute_job` 是共用的，
+       取数、检测器选择、打分、分级全都一致。
+       差别只有两处：不写 `runs` 表、不写结果文件。
+
+    ⚠️ 所以「试跑的结果」**就是**「真跑一次的结果」，
+       而不是「另一套近似逻辑算出来的近似结果」。
+    """
+    job = store.get_job(job_id)
+    outcomes = _compute_job(
+        store, job, data_root=data_root, start=start, end=end, now=now
+    )
+    return TestResult(job=job, outcomes=outcomes)
+
+
+@dataclass
+class SeriesOutcome:
+    """一条序列的检测结果（内存态）。
+
+    ⚠️ `arrays` 的键名与**落盘的 npz 完全一致** ——
+       真实执行把它存成 npz，试跑把它直接序列化成 JSON，
+       两条路给前端的东西是同一套。
+    """
+
+    #: 索引条目 —— 与 index.json 里那条同构
+    entry: dict
+    #: 检测结果数组（timestamps / values / scores / severity / 基线带…）
+    arrays: dict[str, np.ndarray]
+    #: 告警规则表（序列化后给前端）
+    alert_rules: list[dict]
+    #: 档位名（["正常", "P1", "P0"]）
+    levels: list[str]
+
+
+@dataclass
+class TestResult:
+    """一次试跑的完整结果。"""
+
+    job: object
+    outcomes: list[SeriesOutcome]
+
+    @property
+    def n_alerts(self) -> int:
+        return sum(int(o.entry.get("n_alerts", 0)) for o in self.outcomes)
+
+    @property
+    def n_p0(self) -> int:
+        return sum(int(o.entry.get("n_p0", 0)) for o in self.outcomes)
+
+    @property
+    def n_insufficient(self) -> int:
+        return sum(1 for o in self.outcomes if not o.entry.get("sufficient", True))
+
+
+def _compute_job(
+    store: PlatformStore,
+    job,
+    *,
+    data_root: Path,
+    start: datetime | None = None,
+    end: datetime | None = None,
+    now: datetime | None = None,
+) -> list[SeriesOutcome]:
+    """取数 → 打分 → 分级。**不落盘**。
+
+    ⚠️ 真实执行（`_run_job`）与试跑（`execute_job_test`）**共用这一段** ——
+       两者的结果一致是结构性保证，不是靠两边手写得像。
+    """
+    metric = store.get_metric(job.metric_id)
+    end_time = end or now or utcnow()
+    start_time = start or (end_time - freq_delta(metric.freq) * job.window_points)
+    series_list = load_series(store, metric, data_root, start_time, end_time)
+    rules = job_rules(job)
+    # 没有倍数条件时（规则全是绝对值条件）没有「上下界宽度」可言 ——
+    # 退回到检测器自己的默认阈值。分级由规则表决定，不受影响。
+    band_width = band_multiplier_or_none(rules)
+    levels = level_labels(rules)
+    critical_ref = highest_multiplier(rules) or band_width
+    # 最高档的序号 = 规则条数（0 号固定是「正常」）
+    top_level = len(rules)
+
+    outcomes: list[SeriesOutcome] = []
+    for series in series_list:
+        sufficient = bool(series.meta.get("sufficient", True))
+        if not sufficient:
+            # 有效点太少：明确标记「数据不足」，绝不能当成「一切正常」
+            outcomes.append(
+                SeriesOutcome(
+                    entry={
+                        "series_id": series.series_id,
+                        "group": series.meta.get("group"),
+                        "n": int(series.n),
+                        "n_valid": int(series.meta.get("n_valid", series.n)),
+                        "n_missing": int(series.meta.get("n_missing", 0)),
+                        "n_alerts": 0,
+                        "n_p0": 0,
+                        "sufficient": False,
+                        "file": None,
+                    },
+                    arrays={},
+                    alert_rules=rules_to_dicts(rules),
+                    levels=levels,
+                )
+            )
+            continue
+        resolution = resolve_detector(job.detector, series)
+        detector = create_detector(resolution.detector).fit(series)
+        # 没有倍数条件时用检测器自己的默认阈值（如 Chronos 的 0.5）
+        width = band_width if band_width is not None else float(detector.default_threshold)
+        result = detector.detect(series, threshold=width)
+        bands = compute_bands(detector, series, width)
+        severity = severity_from_conditions(result.scores, series.values, rules)
+        outcomes.append(
+            SeriesOutcome(
+                entry={
+                    "series_id": series.series_id,
+                    "group": series.meta.get("group"),
+                    "n": int(series.n),
+                    "n_valid": int(series.meta.get("n_valid", series.n)),
+                    "n_missing": int(series.meta.get("n_missing", 0)),
+                    "n_alerts": int((severity > SEVERITY_NORMAL).sum()),
+                    "n_p0": int((severity == top_level).sum()),
+                    "sufficient": True,
+                    "detector": resolution.detector,
+                    "metric_class": resolution.metric_class,
+                    "fallback": resolution.fallback,
+                    "file": _file_name(series.series_id),
+                },
+                arrays={
+                    "timestamps": series.timestamps.astype("datetime64[ns]").astype(np.int64),
+                    "values": series.values,
+                    "scores": result.scores,
+                    "baseline": np.asarray(bands.baseline if bands else [], dtype=float),
+                    "lower": np.asarray(bands.lower if bands else [], dtype=float),
+                    "upper": np.asarray(bands.upper if bands else [], dtype=float),
+                    "severity": severity,
+                    "alert_threshold": np.array(width),
+                    "critical_threshold": np.array(
+                        critical_ref if critical_ref is not None else width
+                    ),
+                    "alert_rules": np.array(json.dumps(rules_to_dicts(rules), ensure_ascii=False)),
+                    "levels": np.array(json.dumps(levels, ensure_ascii=False)),
+                    "detector": np.array(result.detector),
+                    "requested_detector": np.array(job.detector),
+                    "metric_class": np.array(resolution.metric_class or ""),
+                    "detector_rationale": np.array(resolution.rationale),
+                    "score_type": np.array(result.score_type),
+                    "series_id": np.array(series.series_id),
+                    "group": np.array(
+                        "" if series.meta.get("group") is None else str(series.meta["group"])
+                    ),
+                },
+                alert_rules=rules_to_dicts(rules),
+                levels=levels,
+            )
+        )
+    return outcomes
+
+
 def _run_job(
     store: PlatformStore,
     job,
@@ -129,95 +299,24 @@ def _run_job(
     now: datetime | None = None,
 ) -> int:
     try:
-        metric = store.get_metric(job.metric_id)
-        end_time = end or now or utcnow()
-        start_time = start or (
-            end_time - freq_delta(metric.freq) * job.window_points
+        outcomes = _compute_job(
+            store, job, data_root=data_root, start=start, end=end, now=now
         )
-        series_list = load_series(store, metric, data_root, start_time, end_time)
-        rules = job_rules(job)
-        # 没有倍数条件时（规则全是绝对值条件）没有「上下界宽度」可言 ——
-        # 退回到检测器自己的默认阈值。分级由规则表决定，不受影响。
-        band_width = band_multiplier_or_none(rules)
-        levels = level_labels(rules)
-        critical_ref = highest_multiplier(rules) or band_width
-        # 最高档的序号 = 规则条数（0 号固定是「正常」）
-        top_level = len(rules)
-
         target = run_dir(data_root, run.id)
         target.mkdir(parents=True, exist_ok=True)
         entries: list[dict] = []
         total_alerts = 0
         n_insufficient = 0
 
-        for series in series_list:
-            sufficient = bool(series.meta.get("sufficient", True))
-            if not sufficient:
-                # 有效点太少：明确标记「数据不足」，绝不能当成「一切正常」
+        for outcome in outcomes:
+            entry = dict(outcome.entry)
+            file_name = entry.get("file")
+            if file_name:
+                np.savez_compressed(target / file_name, **outcome.arrays)
+            else:
                 n_insufficient += 1
-                entries.append(
-                    {
-                        "series_id": series.series_id,
-                        "group": series.meta.get("group"),
-                        "n": int(series.n),
-                        "n_valid": int(series.meta.get("n_valid", series.n)),
-                        "n_missing": int(series.meta.get("n_missing", 0)),
-                        "n_alerts": 0,
-                        "n_p0": 0,
-                        "sufficient": False,
-                        "file": None,
-                    }
-                )
-                continue
-            resolution = resolve_detector(job.detector, series)
-            detector = create_detector(resolution.detector).fit(series)
-            # 没有倍数条件时用检测器自己的默认阈值（如 Chronos 的 0.5）
-            width = band_width if band_width is not None else float(detector.default_threshold)
-            result = detector.detect(series, threshold=width)
-            bands = compute_bands(detector, series, width)
-            severity = severity_from_conditions(result.scores, series.values, rules)
-            file_name = _file_name(series.series_id)
-            np.savez_compressed(
-                target / file_name,
-                timestamps=series.timestamps.astype("datetime64[ns]").astype(np.int64),
-                values=series.values,
-                scores=result.scores,
-                baseline=np.asarray(bands.baseline if bands else [], dtype=float),
-                lower=np.asarray(bands.lower if bands else [], dtype=float),
-                upper=np.asarray(bands.upper if bands else [], dtype=float),
-                severity=severity,
-                alert_threshold=np.array(width),
-                critical_threshold=np.array(
-                    critical_ref if critical_ref is not None else width
-                ),
-                alert_rules=np.array(json.dumps(rules_to_dicts(rules), ensure_ascii=False)),
-                levels=np.array(json.dumps(levels, ensure_ascii=False)),
-                detector=np.array(result.detector),
-                requested_detector=np.array(job.detector),
-                metric_class=np.array(resolution.metric_class or ""),
-                detector_rationale=np.array(resolution.rationale),
-                score_type=np.array(result.score_type),
-                series_id=np.array(series.series_id),
-                group=np.array("" if series.meta.get("group") is None else str(series.meta["group"])),
-            )
-            n_alerts = int((severity > SEVERITY_NORMAL).sum())
-            total_alerts += n_alerts
-            entries.append(
-                {
-                    "series_id": series.series_id,
-                    "group": series.meta.get("group"),
-                    "n": int(series.n),
-                    "n_valid": int(series.meta.get("n_valid", series.n)),
-                    "n_missing": int(series.meta.get("n_missing", 0)),
-                    "n_alerts": n_alerts,
-                    "n_p0": int((severity == top_level).sum()),
-                    "sufficient": True,
-                    "detector": resolution.detector,
-                    "metric_class": resolution.metric_class,
-                    "fallback": resolution.fallback,
-                    "file": file_name,
-                }
-            )
+            total_alerts += int(entry.get("n_alerts", 0))
+            entries.append(entry)
 
         index = {
             "run_id": run.id,

@@ -1,8 +1,8 @@
 /**
  * 层级下钻：数据源 → 指标 → 序列。
  *
- * ⚠️ 这三层是从属关系，不该平铺成同级页面 ——
- *    侧边栏只留「数据源」，指标与序列靠页面内下钻。
+ * ⚠️ 这三层是从属关系 —— 侧边栏「数据」是分组，
+ *    下面挂「数据源」与「指标」两个平级页面。
  */
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -10,7 +10,9 @@ import { act, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SourceDetailPage } from './SourceDetailPage'
+import { SourcesPage } from './SourcesPage'
 import { MetricDetailPage } from './MetricDetailPage'
+import { MetricFormPage } from './MetricFormPage'
 import {
   PREVIEW_STORAGE_KEY,
   writePreviewPayload,
@@ -222,9 +224,45 @@ describe('SourceDetailPage', () => {
     expect(screen.queryByText('浏览数据')).toBeNull()
   })
 
-  it('预览页带回的配置会预填指标表单', async () => {
+  it('「新增指标」跳独立页面，不弹窗', async () => {
+    renderPage('/sources/1', '/sources/:sourceId', <SourceDetailPage />)
+    const link = await screen.findByRole('link', { name: '新增指标' })
+    // ⚠️ 带 source_id —— 新页要知道给哪个数据源建指标
+    expect(link.getAttribute('href')).toBe('/metrics/new?source_id=1')
+  })
+
+  it('数据源**列表页**不再展示指标列表', async () => {
+    renderPage('/sources', '/sources', <SourcesPage />)
+    await waitFor(() => expect(screen.getByText('demo-sqlite')).toBeTruthy())
+    // ⚠️ 指标搬到独立页面（「数据 › 指标」）——
+    //    一个页面讲一件事，两个都塞进来列表页就没法看了
+    const headings = [...document.querySelectorAll('h2')].map((h) => h.textContent)
+    expect(headings).not.toContain('指标')
+  })
+
+  it('数据源**详情页**仍然展示该源下的指标', async () => {
     renderPage('/sources/1', '/sources/:sourceId', <SourceDetailPage />)
     await waitFor(() => expect(screen.getAllByText('demo-metric').length).toBeGreaterThan(0))
+    // ⚠️ 从属关系该有的样子 —— 详情页看得到「这个源下有哪些指标」
+    const headings = [...document.querySelectorAll('h2')].map((h) => h.textContent)
+    expect(headings).toContain('指标')
+  })
+})
+
+describe('MetricFormPage', () => {
+  it('新增时带上数据源预填', async () => {
+    renderPage('/metrics/new?source_id=1', '/metrics/new', <MetricFormPage />)
+    // ⚠️ antd 的 Select 不把值放在 input.value 上 ——
+    //    它渲染成 `.ant-select-selection-item` 的文本
+    await waitFor(() => {
+      const selected = document.querySelector('.ant-select-selection-item')
+      expect(selected?.textContent).toContain('demo-sqlite')
+    })
+  })
+
+  it('预览页带回的配置会预填指标表单', async () => {
+    renderPage('/metrics/new?source_id=1', '/metrics/new', <MetricFormPage />)
+    await waitFor(() => expect(screen.getByLabelText('名称')).toBeTruthy())
     act(() => {
       sendPreviewMessage({
         sourceId: 1,
@@ -245,8 +283,8 @@ describe('SourceDetailPage', () => {
   })
 
   it('带回的 SQL 不含 $timefilter 时不预填查询语句', async () => {
-    renderPage('/sources/1', '/sources/:sourceId', <SourceDetailPage />)
-    await waitFor(() => expect(screen.getAllByText('demo-metric').length).toBeGreaterThan(0))
+    renderPage('/metrics/new?source_id=1', '/metrics/new', <MetricFormPage />)
+    await waitFor(() => expect(screen.getByLabelText('名称')).toBeTruthy())
     act(() => {
       sendPreviewMessage({
         sourceId: 1,
