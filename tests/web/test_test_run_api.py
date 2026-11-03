@@ -97,6 +97,25 @@ def test_test_run_returns_series_results(tmp_path):
     assert len(result["timestamps"]) == len(result["values"])
 
 
+def test_test_run_timestamps_are_readable_dates(tmp_path):
+    """⚠️ 时间戳必须是**能读的日期**，不能是「五百年后」那种。
+
+    ⚠️ 这个坑很隐蔽：结果里存的是 int64 **纳秒**，
+       直接 `astype("datetime64[s]")` 会把纳秒当成秒 ——
+       时间戳会变成 53870857431 年，界面上完全看不出错在哪。
+       必须先转 `datetime64[ns]` 再转 `[s]`。
+    """
+    client, _store, job_id = _client(tmp_path)
+    body = client.post(f"/api/platform/jobs/{job_id}/test-run").json()
+    timestamps = body["results"][0]["timestamps"]
+    assert timestamps, "应该有时间戳"
+    for value in timestamps:
+        # ⚠️ 断言「是 2026 年的 ISO 时间」——
+        #   只断言「不是数字」的话，别的错法也能混过去
+        assert value.startswith("2026-"), f"时间戳不该是 {value}"
+        assert "T" in value
+
+
 def test_test_run_unknown_job_returns_404(tmp_path):
     client, _store, _job_id = _client(tmp_path)
     assert client.post("/api/platform/jobs/9999/test-run").status_code == 404

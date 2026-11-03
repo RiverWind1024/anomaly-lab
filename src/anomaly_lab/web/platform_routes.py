@@ -597,7 +597,10 @@ def build_router(
                 detector_fallback = bool(entry.get("fallback", False))
                 score_type = str(arrays["score_type"])
 
-            timestamps = arrays["timestamps"].astype("datetime64[s]")
+            # ⚠️ 必须**先**转 `datetime64[ns]` 再转 `[s]` ——
+            #    数组里存的是 int64 纳秒，直接转 `[s]` 会把纳秒当成秒，
+            #    时间戳变成「五百年后」这种看不懂的东西。
+            timestamps = arrays["timestamps"].astype("datetime64[ns]").astype("datetime64[s]")
             values = arrays["values"]
             scores = arrays["scores"]
             severity = arrays["severity"]
