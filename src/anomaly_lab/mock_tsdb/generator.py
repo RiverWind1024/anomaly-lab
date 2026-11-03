@@ -1,4 +1,4 @@
-"""造数器：4 条确定性曲线，带尖峰 / 漂移 / 断流 / 值缺失。
+"""造数器：7 条确定性曲线，带尖峰 / 漂移 / 断流 / 值缺失 / 趋势 / 阶跃 / 稀疏事件。
 
 ⚠️ **确定性是硬要求** —— 同一 seed 造两次必须完全一样，
    否则测试没法断言、演示也没法复现。
@@ -13,6 +13,9 @@
 
 from __future__ import annotations
 
+import dataclasses
+import hashlib
+import json
 import zlib
 from dataclasses import dataclass
 
@@ -44,7 +47,7 @@ class SeriesSpec:
     """
 
     name: str
-    #: 基线类型：`constant` 或 `daily`（每天一个波峰）。
+    #: 基线类型：`constant` / `daily` / `trending` / `step` / `sparse`。
     baseline: str = "constant"
     #: 基线中心值。
     level: float = 0.0
@@ -69,9 +72,23 @@ class SeriesSpec:
     gap_len: int = 0
     #: 值缺失：每隔多少个点写一次 NULL。
     null_every: int = 0
+    #: 趋势型：每点的增量（每小时 = 增量 × 60）。
+    slope: float = 0.0
+    #: 阶跃型（一次性）：第几个点跳变。
+    step_at: int = 0
+    #: 阶跃型（周期性）：每隔多少个点在两个水平间切换。0 = 不启用。
+    step_period: int = 0
+    #: 阶跃型：跳变的幅度（绝对值，不是倍数）。
+    step_delta: float = 0.0
+    #: 稀疏型：每点成为事件**起点**的概率。
+    event_rate: float = 0.0
+    #: 稀疏型：事件的持续点数。
+    event_width: int = 1
+    #: 稀疏型：事件的高度（绝对值 —— 稀疏型的基线通常是 0，乘法没意义）。
+    event_value: float = 0.0
 
 
-#: 四条曲线的规格 —— 见 spec §5.1。
+#: 七条曲线的规格 —— 前四条见 spec §5.1，后三条是形态演示用的。
 SERIES: tuple[SeriesSpec, ...] = (
     SeriesSpec(
         name="web-traffic",
@@ -113,6 +130,46 @@ SERIES: tuple[SeriesSpec, ...] = (
         drift_span=240,
         drift_amount=15.0,
     ),
+    # ⚠️ 下面三条是**形态演示**用的 —— 演示「不同形态的数据，检测器表现不同」。
+    #
+    # ⚠️ `trend-load` 是**整条曲线都在涨**（不是 cache-hit 那种临时漂移）：
+    #    线性趋势对 IQR 这类只看分位数的检测器**天然不敏感** ——
+    #    窗口内单调递增，分位数间距稳定 → 不该误报。
+    SeriesSpec(
+        name="trend-load",
+        baseline="trending",
+        level=40.0,
+        slope=0.02,
+        sigma=1.2,
+        phi=0.5,
+    ),
+    # ⚠️ `step-cache` 是**水平跳变**（changepoint）：
+    #    每 3 小时在两个水平间切一次。
+    #    为什么是**周期性**而不是一次性：假远端是持续运行的，
+    #    一次性阶跃只发生一次 —— 演示时早就滚出保留窗口了，
+    #    永远看不到「抓住跳变」的那一刻。周期性才能一直演到。
+    SeriesSpec(
+        name="step-cache",
+        baseline="step",
+        level=30.0,
+        step_period=180,
+        step_delta=25.0,
+        sigma=1.5,
+        phi=0.4,
+    ),
+    # ⚠️ `job-runs` 是**稀疏事件**：绝大多数点是 0，偶尔冒一个脉冲。
+    #    这是 IQR 的**盲区** —— 窗口内 75% 分位数仍是 0 → IQR = 0 →
+    #    分数算不出来（NaN）→ 一条都不报。
+    #    留着这条不是为了好看，是为了说明「检测器各有各的盲区」。
+    SeriesSpec(
+        name="job-runs",
+        baseline="sparse",
+        level=0.0,
+        sigma=0.0,
+        event_rate=0.012,
+        event_width=2,
+        event_value=25.0,
+    ),
 )
 
 
@@ -133,12 +190,98 @@ class SeriesState:
     noise: float = 0.0
 
 
+def _event_uniform(name: str, index: int) -> float:
+    """第 `index` 点的确定性伪随机数（`[0, 1)` 均匀分布）。
+
+    ⚠️ **用 crc32 而不是 numpy 的 rng** —— 这个函数每个点要被调用
+       `event_width` 次（判断事件窗口），`default_rng` 的构造开销太大。
+       crc32 是 C 实现，快两个数量级。
+
+    ⚠️ 与 `innovation()` 的噪声**完全独立** —— 两者的取值来源不同，
+       不会互相干扰（否则噪声会「恰好」和事件重合）。
+    """
+    digest = zlib.crc32(f"{name}:{index}".encode())
+    return (digest % 1_000_000) / 1_000_000
+
+
+def _is_raw_event_start(spec: SeriesSpec, index: int) -> bool:
+    """第 `index` 点是否是稀疏事件的**候选**起点。
+
+    ⚠️ 「候选」≠「真的起点」—— 候选之间可能挨得太近，
+       那会让两个事件连成一段（宽度就不再是配置的值了）。
+       去重见 `_is_event_start`。
+    """
+    if spec.event_rate <= 0 or spec.event_width <= 0:
+        return False
+    if index < spec.event_width:
+        return False
+    return _event_uniform(f"{spec.name}#event", index) < spec.event_rate
+
+
+def _is_event_start(spec: SeriesSpec, index: int) -> bool:
+    """第 `index` 点是否是一个稀疏事件的**真起点**。
+
+    ⚠️ **保证相邻的事件不重叠** —— 真起点之间至少隔 `event_width` 个点。
+
+    做法：候选起点若与**前面 `event_width` 个点**里的候选挨着，就否决。
+    ⚠️ 范围是 `width` 个点而不是 `width - 1` ——
+       起点间隔 `width` 时，两个事件仍会首尾相接（连成 2×width 的一段），
+       那就不是「宽度 = width」了。
+
+    由于被否决的候选本身也会去否决更后面的候选 ——
+    一串挨着的候选里**只有第一个**能活下来。
+
+    ⚠️ 这样事件之间天然隔开，且判定仍是**纯函数**（不依赖递推状态）→
+       重算同一段数据结果一致。
+    """
+    if not _is_raw_event_start(spec, index):
+        return False
+    for k in range(index - spec.event_width, index):
+        if _is_raw_event_start(spec, k):
+            return False
+    return True
+
+
+def _in_event_window(spec: SeriesSpec, index: int) -> bool:
+    """第 `index` 点是否落在某个稀疏事件里。
+
+    ⚠️ 事件覆盖 `[起点, 起点 + event_width - 1]` ——
+       所以「当前点在事件里」= 「前面 `event_width` 个点里有一个起点」。
+       这样判断是**纯函数**（不依赖递推状态）→ 重算同一段数据结果一致。
+    """
+    if spec.event_rate <= 0 or spec.event_width <= 0:
+        return False
+    start = index - spec.event_width + 1
+    return any(
+        _is_event_start(spec, k) for k in range(max(0, start), index + 1)
+    )
+
+
 def _baseline(spec: SeriesSpec, index: int) -> float:
     """第 `index` 点的基线值（含漂移，不含噪声）。"""
     if spec.baseline == "daily":
         # 日周期：0 点在谷底，周期中点在峰顶。
         phase = 2.0 * np.pi * (index % POINTS_PER_DAY) / POINTS_PER_DAY
         value = spec.level + spec.amplitude * np.sin(phase - np.pi / 2)
+    elif spec.baseline == "trending":
+        # ⚠️ **整条曲线都在涨**（不是一段临时漂移）——
+        #    这类数据不该被「只看分位数」的检测器误报。
+        value = spec.level + spec.slope * index
+    elif spec.baseline == "step":
+        # ⚠️ 两种跳变语义：
+        #    `step_period > 0` → 每 period 点在两个水平间**切换**（持续可见）；
+        #    `step_period == 0` → 第 `step_at` 点**一次性**跳变。
+        if spec.step_period > 0:
+            switched = (index // spec.step_period) % 2 == 1
+            value = spec.level + (spec.step_delta if switched else 0.0)
+        else:
+            value = spec.level + (spec.step_delta if index >= spec.step_at else 0.0)
+    elif spec.baseline == "sparse":
+        # ⚠️ 平时是平的（`level` 通常取 0），偶尔冒一个脉冲。
+        #    事件高度是**绝对值** —— 基线为 0 时乘法没意义。
+        value = spec.level + (
+            spec.event_value if _in_event_window(spec, index) else 0.0
+        )
     else:
         value = spec.level
     if spec.drift_span > 0 and index >= spec.drift_from:
@@ -260,3 +403,19 @@ def series_at(spec: SeriesSpec, count: int) -> list[float | None]:
     """
     generator = Generator((spec,))
     return [value for _, _, value, _ in generator.advance_to(count)]
+
+
+def spec_fingerprint() -> str:
+    """序列定义的指纹 —— 改了定义却用旧 db，数据会**悄悄对不上**。
+
+    ⚠️ 为什么要指纹：db 里存的是**按旧定义造出来的历史数据**。
+       改了曲线定义（比如加了一条新曲线）之后，
+       旧 db 里没有新曲线的历史、新曲线的 index 也对不齐 ——
+       这种错位**不会报错**，只会让图看起来莫名其妙。
+
+       所以：指纹对不上就**明确报错**，让人删掉 db 重造。
+    """
+    payload = json.dumps(
+        [dataclasses.asdict(spec) for spec in SERIES], sort_keys=True
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]

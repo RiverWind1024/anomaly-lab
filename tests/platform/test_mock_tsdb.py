@@ -123,6 +123,187 @@ def test_ar1_noise_is_correlated():
     assert sum(diffs) / len(diffs) < 5.0
 
 
+# ---------------------------------------------------------------- 形态
+
+
+def test_trending_baseline_rises_linearly():
+    """⚠️ 趋势型是**整条曲线都在涨** —— 不是一段临时漂移。"""
+    spec = SeriesSpec(
+        name="trend", baseline="trending", level=40.0, slope=0.02, sigma=0.0
+    )
+    values = series_at(spec, 200)
+    assert values[0] == 40.0
+    assert values[100] == pytest.approx(42.0)
+    assert values[199] == pytest.approx(40.0 + 0.02 * 199)
+    # 单调递增
+    assert all(values[i] <= values[i + 1] for i in range(len(values) - 1))
+
+
+def test_trending_baseline_differs_from_drift():
+    """⚠️ 趋势与漂移是**两件事** —— 漂移有起点和终点，趋势一直涨。"""
+    trending = SeriesSpec(
+        name="t", baseline="trending", level=0.0, slope=0.01, sigma=0.0
+    )
+    drifting = SeriesSpec(
+        name="d",
+        baseline="constant",
+        level=0.0,
+        sigma=0.0,
+        drift_from=100,
+        drift_span=100,
+        drift_amount=10.0,
+    )
+    t = series_at(trending, 200)
+    d = series_at(drifting, 200)
+    # 漂移：前 100 点**不动**
+    assert d[0] == 0.0 and d[99] == 0.0
+    # 趋势：每一段都在涨
+    assert t[0] < t[50] < t[100] < t[150]
+
+
+def test_step_baseline_switches_between_two_levels():
+    """⚠️ 阶跃型是**水平跳变** —— 两段水平，中间跳一下。"""
+    spec = SeriesSpec(
+        name="step",
+        baseline="step",
+        level=30.0,
+        step_period=100,
+        step_delta=25.0,
+        sigma=0.0,
+    )
+    values = series_at(spec, 300)
+    # 前 100 点是低水平，100~200 是高水平，200~300 回到低水平
+    assert values[50] == 30.0
+    assert values[150] == 55.0
+    assert values[250] == 30.0
+
+
+def test_step_baseline_one_shot_jump():
+    """一次性阶跃（`step_period = 0`）：`step_at` 处跳一次，之后不再变。"""
+    spec = SeriesSpec(
+        name="step1",
+        baseline="step",
+        level=30.0,
+        step_at=100,
+        step_delta=25.0,
+        sigma=0.0,
+    )
+    values = series_at(spec, 200)
+    assert values[99] == 30.0
+    assert values[100] == 55.0
+    assert values[199] == 55.0
+
+
+def test_sparse_baseline_is_flat_except_events():
+    """⚠️ 稀疏型：绝大多数点是 0，偶尔冒一个脉冲。"""
+    spec = SeriesSpec(
+        name="sparse",
+        baseline="sparse",
+        level=0.0,
+        sigma=0.0,
+        event_rate=0.05,
+        event_width=2,
+        event_value=25.0,
+    )
+    values = series_at(spec, 400)
+    nonzero = [v for v in values if v != 0.0]
+    # 有事件，但不多
+    assert 0 < len(nonzero) < 400 * 0.25
+    assert all(v == 25.0 for v in nonzero)
+
+
+def test_sparse_events_have_the_configured_width():
+    """⚠️ 事件是**连续几个点**（宽度 2 就是两点），且**不与下一个事件连成一段**。"""
+    spec = SeriesSpec(
+        name="sparse2",
+        baseline="sparse",
+        level=0.0,
+        sigma=0.0,
+        event_rate=0.05,
+        event_width=2,
+        event_value=25.0,
+    )
+    values = series_at(spec, 400)
+    # 切出所有连续非零段的长度
+    runs: list[int] = []
+    current = 0
+    for value in values:
+        if value != 0.0:
+            current += 1
+        else:
+            if current:
+                runs.append(current)
+            current = 0
+    if current:
+        runs.append(current)
+    assert runs, "一个事件都没有 —— 概率上不可能（rate=0.05）"
+    # ⚠️ 每一段都恰好是配置的宽度 —— 事件之间不会连成更长的一段
+    assert all(length == 2 for length in runs), runs
+
+
+def test_sparse_baseline_is_deterministic():
+    """⚠️ 稀疏事件的**位置**也必须是确定的 —— 同一个 index 恒等。"""
+    spec = SeriesSpec(
+        name="sparse3",
+        baseline="sparse",
+        event_rate=0.05,
+        event_width=2,
+        event_value=25.0,
+    )
+    assert series_at(spec, 300) == series_at(spec, 300)
+
+
+def test_new_baselines_are_deterministic():
+    """三条新曲线都要满足「造两次完全一样」。"""
+    for spec in SERIES:
+        assert series_at(spec, 120) == series_at(spec, 120)
+
+
+def test_spec_fingerprint_changes_with_series():
+    """⚠️ 指纹要跟着定义变 —— 否则改了曲线却用旧库，数据会悄悄错位。"""
+    from anomaly_lab.mock_tsdb.generator import spec_fingerprint
+
+    first = spec_fingerprint()
+    assert first == spec_fingerprint()
+    assert len(first) == 16
+
+
+def test_storage_rejects_db_made_with_old_series(tmp_path):
+    """⚠️ 库里已有数据、但没有指纹 → **明确报错**，不静默跑出怪数据。"""
+    import sqlite3
+
+    path = tmp_path / "old.db"
+    conn = sqlite3.connect(path)
+    conn.execute(
+        "CREATE TABLE metrics (ts TEXT, series TEXT, value REAL, UNIQUE(ts, series))"
+    )
+    conn.execute("INSERT INTO metrics VALUES ('2026-11-02T10:00:00+00:00', 'x', 1.0)")
+    conn.commit()
+    conn.close()
+
+    with pytest.raises(RuntimeError, match="旧格式"):
+        MockTsdb(path).open()
+
+
+def test_storage_rejects_db_with_different_fingerprint(tmp_path):
+    """指纹对不上 → 报错并说清怎么修。"""
+    path = tmp_path / "t.db"
+    store = MockTsdb(path)
+    with store:
+        store.produce_until(datetime.now(UTC))
+
+    # 伪造一个不同的指纹
+    import sqlite3
+
+    conn = sqlite3.connect(path)
+    conn.execute("UPDATE mock_meta SET value = 'deadbeef' WHERE key = 'series_fingerprint'")
+    conn.commit()
+    conn.close()
+
+    with pytest.raises(RuntimeError, match="序列定义已变"):
+        MockTsdb(path).open()
+
+
 # ---------------------------------------------------------------- 存储
 
 
@@ -379,7 +560,7 @@ def test_connector_consistency_sqlite_vs_http(tmp_path, live_server):
     )
 
     assert [s.series_id for s in sqlite_series] == [s.series_id for s in http_series]
-    assert len(sqlite_series) == 4
+    assert len(sqlite_series) == len(SERIES)
     for left, right in zip(sqlite_series, http_series, strict=True):
         assert list(left.values) == list(right.values), left.series_id
         assert list(left.timestamps) == list(right.timestamps), left.series_id

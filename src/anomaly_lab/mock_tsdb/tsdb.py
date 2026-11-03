@@ -21,6 +21,7 @@ from anomaly_lab.mock_tsdb.generator import (
     SAMPLE_SECONDS,
     SERIES,
     Generator,
+    spec_fingerprint,
 )
 from anomaly_lab.platform.validation import validate_readonly_sql
 
@@ -47,6 +48,9 @@ CREATE TABLE IF NOT EXISTS mock_meta (
 """
 
 ANCHOR_KEY = "anchor_ts"
+
+#: 序列定义的指纹 —— 见 `generator.spec_fingerprint()`。
+SERIES_FINGERPRINT_KEY = "series_fingerprint"
 
 
 def to_iso(value: datetime) -> str:
@@ -114,6 +118,49 @@ class MockTsdb:
                 self._local.conn = _connect(self.path)
             if self._anchor is None:
                 self._anchor = self._load_or_create_anchor(history_points)
+            self._check_series_fingerprint()
+
+    def _check_series_fingerprint(self) -> None:
+        """⚠️ **序列定义与库里已有的数据必须对得上**。
+
+        db 里存的是**按旧定义造出来的历史数据**。
+        改了曲线定义（比如加了一条新曲线）之后，旧 db 里：
+          - 缺新曲线的历史（那段时间它根本没被造过）；
+          - 各曲线的 index 也可能错位。
+
+        这种错位**不会报错** —— 只会让图看起来莫名其妙，
+        或者让检测器在「不存在的数据」上跑。
+
+        所以指纹对不上就**明确报错**，让人删掉 db 重造，
+        而不是让它静默跑出一堆怪数据。
+
+        ⚠️ 没有指纹行 = 旧格式的库（指纹是后加的）——
+           同样报错，除非库里一条数据都没有（那就是全新库）。
+        """
+        expected = spec_fingerprint()
+        row = self._db.execute(
+            "SELECT value FROM mock_meta WHERE key = ?", (SERIES_FINGERPRINT_KEY,)
+        ).fetchone()
+        if row is not None:
+            if str(row[0]) != expected:
+                raise RuntimeError(
+                    f"序列定义已变（指纹 {expected}），但 {self.path} 是按旧定义造的。"
+                    f"删掉这个文件（或它的 -wal/-shm）再重启 —— "
+                    f"否则新旧数据会错位。"
+                )
+            return
+
+        has_data = self._db.execute(f"SELECT COUNT(*) FROM {TABLE}").fetchone()[0]
+        if has_data:
+            raise RuntimeError(
+                f"{self.path} 里已有数据，但没有序列定义指纹 —— "
+                f"它是旧格式的库。删掉这个文件（或它的 -wal/-shm）再重启。"
+            )
+        with self._db:
+            self._db.execute(
+                "INSERT OR REPLACE INTO mock_meta (key, value) VALUES (?, ?)",
+                (SERIES_FINGERPRINT_KEY, expected),
+            )
 
     def close(self) -> None:
         with self._lock:
