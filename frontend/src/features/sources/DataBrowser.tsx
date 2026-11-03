@@ -186,15 +186,18 @@ export function DataBrowser({
    *
    * ⚠️ 用 ref 守卫 —— effect 会因为依赖变化重跑，
    *    每跑一次都是一次多余的查询。
+   * ⚠️ SQL 为空时**不跑** —— 指标配置是异步取到的，
+   *    空 SQL 跑一次只会报错，等真 SQL 到了再跑。
    */
   const autoRan = useRef(false)
   useEffect(() => {
     if (!autoRun || autoRan.current) return
+    if (!sql.trim()) return
     autoRan.current = true
     run.mutate()
     // ⚠️ run 是每次渲染的新对象 —— 不放进依赖里，靠 ref 守卫只跑一次
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoRun])
+  }, [autoRun, sql])
 
   /**
    * 把状态报给外面。
@@ -270,6 +273,8 @@ export function DataBrowser({
       </Space>
     ),
     key: col.name,
+    // ⚠️ 数字列右对齐 —— 纵向比得准
+    align: col.type === 'INTEGER' || col.type === 'REAL' ? 'right' : 'left',
     render: (_value: unknown, record: BrowserRow) => (
       <span className="mono">{formatCell(record.row[colIndex])}</span>
     ),
@@ -349,7 +354,6 @@ export function DataBrowser({
             rowKey="key"
             dataSource={rows}
             pagination={false}
-            scroll={{ x: 'max-content' }}
             columns={columns}
           />
           {onUseAsMetric ? (

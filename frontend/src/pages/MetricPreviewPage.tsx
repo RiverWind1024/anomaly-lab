@@ -44,7 +44,9 @@ export function MetricPreviewPage() {
   // 预览页的初始值：地址里的参数优先（那是用户正在编辑的版本）
   const initial = useMemo(() => {
     return {
-      sql: params.get('sql') ?? metric?.query ?? '',
+      // ⚠️ 没有 SQL 时给 undefined —— 让浏览器用它自己的默认语句，
+      //    别传空串过去（空 SQL 跑一次只会报错）
+      sql: params.get('sql') ?? metric?.query ?? undefined,
       timeColumn: params.get('time_column') ?? metric?.time_column ?? '',
       valueColumn: params.get('value_column') ?? metric?.value_column ?? '',
       groupColumn: params.get('group_column') ?? metric?.group_column ?? '',
@@ -124,6 +126,21 @@ export function MetricPreviewPage() {
       ),
     })
     message.success('已带回表单 —— 回到原页面继续')
+  }
+
+  if (catalog.isPending) {
+    // ⚠️ 等 catalog —— 指标配置在它里面。
+    //    急着渲染的话，自动执行会用空 SQL 跑一次，然后就不跑了。
+    return (
+      <div className="page">
+        <header className="titlebar">
+          <h1>预览指标数据</h1>
+        </header>
+        <section className="panel">
+          <p className="muted">加载中…</p>
+        </section>
+      </div>
+    )
   }
 
   if (!source) {
