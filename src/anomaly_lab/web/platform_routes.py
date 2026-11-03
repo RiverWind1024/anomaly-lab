@@ -44,6 +44,7 @@ from anomaly_lab.platform.feedback import (
 from anomaly_lab.platform.store import PlatformStore
 from anomaly_lab.platform.timeutil import freq_delta, utcnow
 from anomaly_lab.web.biz_state import biz_headers
+from anomaly_lab.web.json_utils import clean_floats
 
 TimeFormat = Literal["iso_utc", "iso_naive", "epoch_s", "epoch_ms"]
 MissingPolicy = Literal["drop", "interpolate", "error"]
@@ -153,12 +154,8 @@ class ApplySuggestionIn(BaseModel):
     detector: str | None = None
 
 
-def _clean(values: np.ndarray) -> list[float | None]:
-    """把 NaN/Inf 转成 None，避免 JSON 里出现非法值。"""
-    result: list[float | None] = []
-    for value in np.asarray(values, dtype=float):
-        result.append(float(value) if np.isfinite(value) else None)
-    return result
+#: NaN/Inf → None，避免 JSON 里出现非法值（实现见 web/json_utils.py）
+_clean = clean_floats
 
 
 def _not_found(exc: ValueError) -> HTTPException:

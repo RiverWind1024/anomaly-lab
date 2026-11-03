@@ -545,6 +545,24 @@ export interface Badcases {
   timestamps: string[]
   values: number[]
   scores: number[]
+  /**
+   * 基线三件套：实际值 vs 「正常值应该在哪儿」。
+   *
+   * - `baseline`：基线（统计型 = 中心值；预测型 = 重构值/预测中位数）
+   * - `lower`/`upper`：容忍带 / 预测区间
+   *
+   * 不支持的检测器返回 null；有值时长度与 values 一致。
+   * 单点缺失（预测型的未覆盖段）用 null 表示，前端会断线而不是画假基线。
+   */
+  baseline: (number | null)[] | null
+  lower: (number | null)[] | null
+  upper: (number | null)[] | null
+  /**
+   * 带的语义：
+   * - `alert_boundary`：带边界 = 告警阈值（值出带即判异常）
+   * - `prediction_interval`：模型自己的预测区间（不是告警边界）
+   */
+  band_kind: 'alert_boundary' | 'prediction_interval' | null
   badcases: Badcase[]
 }
 

@@ -8,6 +8,7 @@ from typing import Protocol
 import numpy as np
 
 from anomaly_lab.contracts import DetectionResult, ScoreType, SeriesBundle
+from anomaly_lab.detectors.bands import Bands
 
 VALID_SCORE_TYPES: frozenset[str] = frozenset(
     {"zscore", "pvalue", "residual_ratio", "prob"}
@@ -48,6 +49,7 @@ def make_result(
     threshold: float,
     detector: str,
     elapsed_ms: float,
+    bands: Bands | None = None,
 ) -> DetectionResult:
     scores = np.asarray(scores, dtype=float)
     return DetectionResult(
@@ -58,6 +60,10 @@ def make_result(
         threshold=float(threshold),
         detector=detector,
         elapsed_ms=float(elapsed_ms),
+        expected=None if bands is None else np.asarray(bands.baseline, dtype=float),
+        lower=None if bands is None else np.asarray(bands.lower, dtype=float),
+        upper=None if bands is None else np.asarray(bands.upper, dtype=float),
+        band_kind=None if bands is None else bands.kind,
     )
 
 
@@ -79,6 +85,14 @@ class TimedDetector:
         """
         return np.asarray(values, dtype=float)
 
+    def bands(self, series: SeriesBundle, threshold: float) -> Bands | None:
+        """基线 + 双向上下界；默认不支持基线（返回 None）。
+
+        支持基线的检测器覆盖这个方法。`expected` 是"正常值应该在哪儿"，
+        `lower`/`upper` 是容忍带 —— 超出即异常。
+        """
+        return None
+
     def _timed_detect(
         self, series: SeriesBundle, threshold: float | None = None
     ) -> DetectionResult:
@@ -86,6 +100,14 @@ class TimedDetector:
         scores = self.score(series)
         elapsed_ms = (time.perf_counter() - started) * 1000.0
         chosen = self.default_threshold if threshold is None else float(threshold)
+        # 基线是**可选输出**：检测器没实现就返回 None，不影响主流程
+        bands = self.bands(series, chosen)
         return make_result(
-            series, scores, self.score_type, chosen, self.name, elapsed_ms
+            series,
+            scores,
+            self.score_type,
+            chosen,
+            self.name,
+            elapsed_ms,
+            bands=bands,
         )

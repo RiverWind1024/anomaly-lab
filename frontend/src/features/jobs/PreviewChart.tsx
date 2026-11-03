@@ -2,6 +2,7 @@ import ReactECharts from 'echarts-for-react'
 import { Alert } from 'antd'
 import { cssVar, cssVarAlpha, invalidateCssVarCache } from '../../theme/cssVar'
 import { useThemeModeValue } from '../../theme/ThemeModeContext'
+import { buildBandSeries } from '../../lib/bands'
 
 export interface PreviewChartProps {
   timestamps: string[]
@@ -39,6 +40,8 @@ export interface PreviewSeries {
   stack?: string
   yAxisIndex?: number
   symbolSize?: number
+  itemStyle?: { color?: string }
+  renderItem?: (...args: unknown[]) => unknown
 }
 
 /**
@@ -99,34 +102,28 @@ export function buildPreviewOption(
   const series: PreviewOption['series'] = []
 
   if (hasBand) {
-    // 上下界带：lower 透明打底 + upper 叠色，stack 让两者相加成带
-    series.push({
-      name: '下界',
-      type: 'line',
-      stack: 'band',
-      data: lower,
-      symbol: 'none',
-      lineStyle: { opacity: 0 },
-      silent: true,
-      tooltip: { show: false },
-    })
-    series.push({
-      name: '上下界',
-      type: 'line',
-      stack: 'band',
-      data: upper,
-      symbol: 'none',
-      lineStyle: { opacity: 0 },
-      areaStyle: { color: normal, opacity: 0.12 },
-      silent: true,
-      tooltip: { show: false },
-    })
+    // 上下界带：custom series 画多边形。
+    // ⚠️ **不用 stack + areaStyle** —— stack 是累加的，lower 为负时行为不可预测
+    //    （实测会画到 [lower+upper] 而不是 [lower, upper]），详见 lib/bands.ts。
+    series.push(
+      buildBandSeries({
+        lower,
+        upper,
+        name: '上下界',
+        color: normal,
+        opacity: 0.12,
+        z: 0,
+      }) as PreviewSeries & Record<string, unknown>,
+    )
     series.push({
       name: '基线',
       type: 'line',
       data: baseline,
       symbol: 'none',
       lineStyle: { color: textSecondary, width: 1.4, type: 'dashed' },
+      // ⚠️ 图例 marker 取 itemStyle.color —— 不给就用 ECharts 默认调色板
+      itemStyle: { color: textSecondary },
+      z: 1,
     })  }
 
   series.push({
@@ -137,6 +134,7 @@ export function buildPreviewOption(
     connectNulls: false,
     symbol: 'none',
     lineStyle: { color: textPrimary, width: 1.8 },
+    itemStyle: { color: textPrimary },
     // 数值是主角，压在分数曲线之上
     z: 3,
   })
@@ -148,6 +146,7 @@ export function buildPreviewOption(
     data: scores,
     symbol: 'none',
     lineStyle: { color: accent, width: 1, opacity: 0.65 },
+    itemStyle: { color: accent },
     z: 1,
   })
 
@@ -209,7 +208,7 @@ export function buildPreviewOption(
       itemHeight: 8,
       // 界带与阈值线是辅助元素，不进图例
       data: series
-        .filter((s) => !['下界', '上下界', '阈值'].includes(s.name ?? ''))
+        .filter((s) => !['上下界', '阈值'].includes(s.name ?? ''))
         .map((s) => s.name as string),
     },
     xAxis: {

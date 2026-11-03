@@ -57,6 +57,10 @@ const badcases: Badcases = {
   timestamps: ['2026-11-02T00:00:00'],
   values: [1],
   scores: [0.1],
+  baseline: null,
+  lower: null,
+  upper: null,
+  band_kind: null,
   badcases: [],
 }
 

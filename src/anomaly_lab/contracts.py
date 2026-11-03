@@ -13,6 +13,13 @@ MetricClass = Literal[
     "stationary", "periodic", "trending", "step", "high_zero_ratio", "sparse_event"
 ]
 
+#: 基线带的语义
+#:
+#: - `alert_boundary`：带边界**就是告警阈值** —— 值出带 ⟺ 判为异常（统计型检测器）
+#: - `prediction_interval`：带是**模型自己的预测区间**，表达「模型认为正常值在哪儿、
+#:   有多不确定」。它与告警阈值不是同一个边界（预测型检测器：TCN / LSTM / Chronos）
+BandKind = Literal["alert_boundary", "prediction_interval"]
+
 
 @dataclass(frozen=True, eq=False)
 class SeriesBundle:
@@ -50,7 +57,23 @@ class SeriesBundle:
 
 @dataclass(frozen=True, eq=False)
 class DetectionResult:
-    """一次检测的输出。`score_type` 决定分数语义，评估层按语义分桶搜阈值。"""
+    """一次检测的输出。`score_type` 决定分数语义，评估层按语义分桶搜阈值。
+
+    **可选的基线三件套**（`expected` / `lower` / `upper`）：
+
+    分数只说"多异常"，不说"正常值应该在哪儿"。没有基线，
+    「实际值 vs 预测基线」就画不出来，告警也只能给一个孤零零的分数。
+
+    - 统计型检测器：`expected` 是中心（中位数 / 相位中位数 / 拟合值），
+      `lower`/`upper` 是 `expected ± threshold × scale` 的容忍带；
+    - 预测型检测器（TCN / LSTM / Chronos）：`expected` 是**重构值或预测值**，
+      `lower`/`upper` 是预测区间 —— 超出区间即异常。
+
+    三者要么全为 None（检测器不支持基线），要么长度都等于序列长度。
+
+    `band_kind` 声明带的语义 —— 前端据此标注「告警边界」还是「预测区间」，
+    避免把模型的置信区间误读成告警线。
+    """
 
     series_id: str
     scores: np.ndarray
@@ -59,7 +82,25 @@ class DetectionResult:
     threshold: float
     detector: str
     elapsed_ms: float
+    expected: np.ndarray | None = None
+    lower: np.ndarray | None = None
+    upper: np.ndarray | None = None
+    band_kind: BandKind | None = None
 
     def __post_init__(self) -> None:
         if len(self.scores) != len(self.is_anomaly):
             raise ValueError("scores 与 is_anomaly 长度不一致")
+        bands = (self.expected, self.lower, self.upper)
+        present = [b is not None for b in bands]
+        if any(present) and not all(present):
+            raise ValueError("expected/lower/upper 必须同时提供或同时为空")
+        if all(present):
+            n = len(self.scores)
+            for name, arr in zip(("expected", "lower", "upper"), bands):
+                if len(arr) != n:
+                    raise ValueError(f"{name} 长度必须等于 scores 长度")
+
+    @property
+    def has_bands(self) -> bool:
+        """是否带基线（可画出「实际 vs 基线 ± 容忍带」）。"""
+        return self.expected is not None

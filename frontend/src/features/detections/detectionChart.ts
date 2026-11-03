@@ -6,6 +6,7 @@
  */
 
 import { cssVar, cssVarAlpha, invalidateCssVarCache, withAlpha } from '../../theme/cssVar'
+import { buildBandSeries } from '../../lib/bands'
 import type { Badcases } from '../../api/types'
 
 export interface DetectionChartProps {
@@ -18,8 +19,16 @@ export interface DetectionSeries {
   data?: unknown
   yAxisIndex?: number
   symbol?: string
+  stack?: string
+  z?: number
+  silent?: boolean
+  connectNulls?: boolean
+  tooltip?: { show?: boolean }
+  itemStyle?: { color?: string }
   lineStyle?: { color?: string; width?: number; type?: string; opacity?: number }
+  areaStyle?: { color?: string; opacity?: number }
   markArea?: { silent?: boolean; data?: unknown[] }
+  renderItem?: (...args: unknown[]) => unknown
 }
 
 export interface DetectionOption {
@@ -107,36 +116,88 @@ export function buildDetectionOption(
   const threshold = Number(data.threshold || 0)
   const thresholdLine = data.scores.map(() => threshold)
 
+  // 基线带：custom series 画多边形（**不用 stack** —— 负值下 stack 的行为不可预测，
+  // 实测会画到 [lower+upper] 而不是 [lower, upper]，详见 lib/bands.ts）。
+  // ⚠️ 按**长度**判断，不只判 null —— 后端对不支持基线的检测器存空数组。
+  const hasBand =
+    (data.baseline?.length ?? 0) > 0 &&
+    (data.lower?.length ?? 0) > 0 &&
+    (data.upper?.length ?? 0) > 0
+  // 预测区间的带是「模型的不确定性」，用中性色；告警边界带用状态色
+  const isPrediction = data.band_kind === 'prediction_interval'
+  const bandColor = isPrediction ? textSecondary : p1
+
+  const series: Array<DetectionSeries & Record<string, unknown>> = []
+
+  if (hasBand) {
+    series.push(
+      buildBandSeries({
+        lower: data.lower,
+        upper: data.upper,
+        name: isPrediction ? '预测区间' : '容忍带',
+        color: bandColor,
+        opacity: 0.1,
+        z: 0,
+      }) as DetectionSeries & Record<string, unknown>,
+    )
+    series.push({
+      name: isPrediction ? '预测基线' : '基线',
+      type: 'line',
+      data: data.baseline,
+      symbol: 'none',
+      lineStyle: { color: textSecondary, width: 1.3, type: 'dashed', opacity: 0.85 },
+      // ⚠️ 图例 marker 取的是 itemStyle.color，不是 lineStyle.color ——
+      //    不显式给，图例就会用 ECharts 默认调色板，颜色与线对不上
+      itemStyle: { color: textSecondary },
+      connectNulls: false,
+      z: 1,
+    })
+  }
+
+  series.push(
+    {
+      name: '数值',
+      type: 'line',
+      data: data.values,
+      symbol: 'none',
+      lineStyle: { color: chart, width: 1.6 },
+      // ⚠️ 线下压一层极淡的同色 —— 主数据元素要真的带上那一个色相，
+      //    光靠一条 1.6px 的线在整屏里几乎看不见颜色
+      areaStyle: { color: chart, opacity: 0.09 },
+      itemStyle: { color: chart },
+      markArea: { silent: true, data: areas },
+      z: 3,
+    },
+    {
+      name: '分数',
+      type: 'line',
+      yAxisIndex: 1,
+      data: data.scores,
+      symbol: 'none',
+      lineStyle: { color: textSecondary, width: 1, opacity: 0.7 },
+      itemStyle: { color: textSecondary },
+      z: 1,
+    },
+    {
+      name: '阈值',
+      type: 'line',
+      yAxisIndex: 1,
+      data: thresholdLine,
+      symbol: 'none',
+      lineStyle: { color: p1, width: 1, type: 'dashed' },
+      itemStyle: { color: p1 },
+      z: 2,
+    },
+  )
+
+  const legendData = ['数值', '分数', '阈值']
+  if (hasBand) {
+    legendData.unshift(isPrediction ? '预测区间' : '容忍带')
+    legendData.unshift(isPrediction ? '预测基线' : '基线')
+  }
+
   return {
-    series: [
-      {
-        name: '数值',
-        type: 'line',
-        data: data.values,
-        symbol: 'none',
-        lineStyle: { color: chart, width: 1.6 },
-        // ⚠️ 线下压一层极淡的同色 —— 主数据元素要真的带上那一个色相，
-        //    光靠一条 1.6px 的线在整屏里几乎看不见颜色
-        areaStyle: { color: chart, opacity: 0.09 },
-        markArea: { silent: true, data: areas },
-      },
-      {
-        name: '分数',
-        type: 'line',
-        yAxisIndex: 1,
-        data: data.scores,
-        symbol: 'none',
-        lineStyle: { color: textSecondary, width: 1, opacity: 0.7 },
-      },
-      {
-        name: '阈值',
-        type: 'line',
-        yAxisIndex: 1,
-        data: thresholdLine,
-        symbol: 'none',
-        lineStyle: { color: p1, width: 1, type: 'dashed' },
-      },
-    ],
+    series,
     title: {
       text: `${data.series_id} / ${data.detector} / ${data.score_type}`,
       top: 0,
@@ -147,7 +208,7 @@ export function buildDetectionOption(
       textStyle: { color: textTertiary, fontSize: 11 },
       itemWidth: 14,
       itemHeight: 8,
-      data: ['数值', '分数', '阈值'],
+      data: legendData,
     },
     xAxis: {
       type: 'category',

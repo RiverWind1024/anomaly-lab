@@ -252,6 +252,23 @@ def _cmd_detect(args: argparse.Namespace) -> int:
     for series in series_list:
         detector = _DETECTORS[args.detector]().fit(series)
         result = detector.detect(series)
+        # 基线三件套：检测器不支持基线时存**空数组**（不是 None）——
+        # 前端按长度判断有没有带，空数组 ≠ null，不会误判成「有带」。
+        expected = (
+            np.asarray([], dtype=float)
+            if result.expected is None
+            else np.asarray(result.expected, dtype=float)
+        )
+        lower = (
+            np.asarray([], dtype=float)
+            if result.lower is None
+            else np.asarray(result.lower, dtype=float)
+        )
+        upper = (
+            np.asarray([], dtype=float)
+            if result.upper is None
+            else np.asarray(result.upper, dtype=float)
+        )
         np.savez(
             out_dir / f"{series.series_id}.npz",
             scores=result.scores,
@@ -260,6 +277,11 @@ def _cmd_detect(args: argparse.Namespace) -> int:
             score_type=np.array(result.score_type),
             detector=np.array(result.detector),
             elapsed_ms=np.array(result.elapsed_ms),
+            expected=expected,
+            lower=lower,
+            upper=upper,
+            # 带的语义（alert_boundary / prediction_interval）；没有带就是空串
+            band_kind=np.array(result.band_kind or ""),
         )
     print(f"检测完成：{len(series_list)} 条序列 -> {out_dir}")
     return 0

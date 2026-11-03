@@ -21,6 +21,7 @@ from anomaly_lab.evaluation.exclusions import ExclusionStore, exclusion_key
 from anomaly_lab.platform.store import PlatformStore
 from anomaly_lab.platform.validation import validate_identifier
 from anomaly_lab.web.biz_state import biz_headers
+from anomaly_lab.web.json_utils import clean_floats
 from anomaly_lab.web.platform_routes import build_router
 from anomaly_lab.web.source_query_routes import build_source_query_router
 
@@ -239,6 +240,17 @@ def create_app(
         import numpy as np
 
         data = np.load(path, allow_pickle=False)
+        # 基线三件套是**可选**的：旧版落盘的 npz 没有这三个键，
+        # 只有三者都在、长度都对齐时才填进契约（契约要求同生同灭）。
+        bands: dict[str, np.ndarray] = {}
+        for key in ("expected", "lower", "upper"):
+            if key in data.files:
+                array = data[key].astype(float)
+                if array.size == len(data["scores"]):
+                    bands[key] = array
+        has_bands = len(bands) == 3
+        # 带的语义：老版本落盘的 npz 没有这个键
+        band_kind = str(data["band_kind"]) if "band_kind" in data.files else ""
         result = DetectionResult(
             series_id=series_id,
             scores=data["scores"].astype(float),
@@ -247,6 +259,10 @@ def create_app(
             threshold=float(data["threshold"]),
             detector=str(data["detector"]),
             elapsed_ms=float(data["elapsed_ms"]),
+            expected=bands.get("expected"),
+            lower=bands.get("lower"),
+            upper=bands.get("upper"),
+            band_kind=band_kind or None,  # type: ignore[arg-type]
         )
         cases = attribute_badcases(series, result)
         return {
@@ -259,6 +275,11 @@ def create_app(
             "timestamps": [str(ts)[:19] for ts in series.timestamps],
             "values": [float(v) for v in series.values],
             "scores": [float(v) for v in result.scores],
+            # 基线带：NaN → None（前端会把 null 断线，不会画出假基线）
+            "baseline": clean_floats(bands["expected"]) if has_bands else None,
+            "lower": clean_floats(bands["lower"]) if has_bands else None,
+            "upper": clean_floats(bands["upper"]) if has_bands else None,
+            "band_kind": result.band_kind,
             "badcases": [
                 {
                     "kind": case.kind,

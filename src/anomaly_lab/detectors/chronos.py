@@ -20,6 +20,7 @@ from pathlib import Path
 import numpy as np
 
 from anomaly_lab.contracts import DetectionResult, SeriesBundle
+from anomaly_lab.detectors.bands import Bands
 from anomaly_lab.detectors.base import TimedDetector
 
 #: 默认模型。可以用 `ANOMALY_LAB_CHRONOS_MODEL` 换（例：`amazon/chronos-t5-tiny`）。
@@ -184,7 +185,17 @@ class ChronosDetector(TimedDetector):
             raise ChronosUnavailable(f"加载 Chronos 失败: {exc}") from exc
         return self
 
-    def score(self, series: SeriesBundle) -> np.ndarray:
+    def _predict(
+        self, series: SeriesBundle
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """跑一遍预测，返回 (原始越界分数, 中位数预测, q10 下界, q90 上界)。
+
+        分数与基线**同源**：分数就是「实际值越出 q10~q90 区间的程度 ÷ 区间宽度」，
+        基线带就是那个区间本身。两边必须来自同一次预测，否则画的带和报的分数对不上。
+
+        没有被预测覆盖的点（前 min_context 个、以及末尾不足一个 horizon 的尾巴）
+        用 NaN 表示 —— 前端会把 NaN 变成 null 从而断线，不会画出一条假基线。
+        """
         if self.pipeline is None:
             self.fit(series)
         assert self.pipeline is not None
@@ -193,6 +204,9 @@ class ChronosDetector(TimedDetector):
         values = np.asarray(series.values, dtype=float)
         n = len(values)
         scores = np.zeros(n)
+        median = np.full(n, np.nan)
+        low_band = np.full(n, np.nan)
+        high_band = np.full(n, np.nan)
         context_len = min(self.window, max(8, n - self.horizon))
         # 从**最小上下文**开始滚动：原来从 context_len 才开始评分，
         # 前 256 点（占 51%）完全没打分，召回被结构性封顶在 49.8%。
@@ -216,15 +230,41 @@ class ChronosDetector(TimedDetector):
                 arr = np.asarray(samples)
                 low = np.quantile(arr.reshape(-1, len(target)), 0.1, axis=0)
                 high = np.quantile(arr.reshape(-1, len(target)), 0.9, axis=0)
+                mid = np.quantile(arr.reshape(-1, len(target)), 0.5, axis=0)
             except Exception as exc:
                 raise ChronosUnavailable(f"Chronos 预测失败: {exc}") from exc
             width = np.maximum(high - low, 1e-6)
             outside = np.maximum(low - target, 0.0) + np.maximum(target - high, 0.0)
-            scores[start : start + len(target)] = outside / width
-        low, high = float(scores.min()), float(scores.max())
+            end = start + len(target)
+            scores[start:end] = outside / width
+            median[start:end] = mid
+            low_band[start:end] = low
+            high_band[start:end] = high
+        return scores, median, low_band, high_band
+
+    def score(self, series: SeriesBundle) -> np.ndarray:
+        raw, _, _, _ = self._predict(series)
+        low, high = float(raw.min()), float(raw.max())
         if high - low < 1e-12:
-            return np.zeros_like(scores)
-        return (scores - low) / (high - low)
+            return np.zeros_like(raw)
+        return (raw - low) / (high - low)
+
+    def bands(self, series: SeriesBundle, threshold: float) -> Bands:
+        """基线 = 模型预测中位数；带 = 预测的 q10~q90 分位区间。
+
+        ⚠️ 这与统计型检测器的带**语义不同**：这里的带是模型自己的
+        预测区间（表达「模型认为正常值在哪儿、有多不确定」），
+        不是告警阈值边界 —— Chronos 的分数是序列内 min-max 归一的相对量。
+        """
+        _, median, low_band, high_band = self._predict(series)
+        return Bands(
+            baseline=median,
+            lower=low_band,
+            upper=high_band,
+            detector=self.name,
+            threshold=float(threshold),
+            kind="prediction_interval",
+        )
 
     def detect(
         self, series: SeriesBundle, threshold: float | None = None

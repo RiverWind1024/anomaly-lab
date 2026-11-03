@@ -38,6 +38,15 @@ describe('PreviewChart', () => {
     expect(names.some((n) => n?.includes('界'))).toBe(true)
   })
 
+  it('⚠️ 带用 custom series 画，不用 stack', () => {
+    // stack 是累加的，lower 为负时会画到 [lower+upper] 而不是 [lower, upper]
+    const option = buildPreviewOption(base)
+    const band = option.series.find((s) => s.name === '上下界')
+    expect(band?.type).toBe('custom')
+    expect(band?.stack).toBeUndefined()
+    expect(typeof band?.renderItem).toBe('function')
+  })
+
   it('无基线带时不画基线与界带', () => {
     const option = buildPreviewOption({ ...base, baseline: null, lower: null, upper: null })
     const names = option.series.map((s) => s.name)

@@ -1,6 +1,15 @@
 """检测器的可解释输出：中心基线 + 双向上下界。
 
 平台层用它把「异常分数」翻译成「实际值偏离基线多远」，避免前端各自实现公式。
+
+⚠️ **两种语义必须分清**（`kind` 字段）：
+
+- `alert_boundary`（统计型检测器）：带的边界**就是告警阈值** ——
+  值落在带外 ⟺ 分数超过阈值。前端画出来就能直接对照告警点。
+- `prediction_interval`（预测型检测器：TCN / LSTM / Chronos）：
+  带是**模型自己的预测区间**（重构值 ± 残差尺度 / 预测分位数），
+  表达「模型认为正常值在哪儿、有多不确定」。它与告警阈值**不是同一个边界** ——
+  预测型检测器的分数是序列内 min-max 归一的相对量，阈值语义与之不同。
 """
 
 from __future__ import annotations
@@ -9,7 +18,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from anomaly_lab.contracts import SeriesBundle
+from anomaly_lab.contracts import BandKind, SeriesBundle
 
 
 @dataclass(frozen=True, eq=False)
@@ -21,6 +30,7 @@ class Bands:
     upper: np.ndarray
     detector: str
     threshold: float
+    kind: BandKind = "alert_boundary"
 
     def __post_init__(self) -> None:
         n = len(self.baseline)
