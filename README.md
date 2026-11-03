@@ -31,6 +31,23 @@ flowchart LR
 
 详见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)、[docs/ALGORITHMS.md](docs/ALGORITHMS.md)、[docs/DATA.md](docs/DATA.md)、[docs/PLATFORM.md](docs/PLATFORM.md)。
 
+### 分层与契约
+
+五层单向依赖，层间只走两个数据契约（`src/anomaly_lab/contracts.py`）：
+
+```
+L1 数据 → L2 形态分类 → L3 检测器 → L4 评估闭环 → L5 CLI / Web
+```
+
+| 契约 | 作用 |
+|---|---|
+| `SeriesBundle` | 一条时序 + 标注来源 + 元信息（L1 出，全程携带） |
+| `DetectionResult` | 分数 + `score_type` + 阈值 + **基线三件套** + `band_kind` |
+
+检测器的输出**必须**显式声明分数语义（`score_type`）与带的语义（`band_kind`）——
+这是评估层能按语义分桶搜阈值、前端能正确标注的前提。详见
+[docs/DESIGN.md §13](docs/DESIGN.md#13-原始设想与落实对照)（原始设想 → 落实逐条对照）。
+
 ## 5 分钟快速开始
 
 ```bash
@@ -83,6 +100,13 @@ MOCK_TSDB=1 make dev
 # 或离线模式：ANOMALY_LAB_OFFLINE=1 ./scripts/smoke.sh
 ```
 
+测试：
+
+```bash
+.venv/bin/python -m pytest -p no:warnings   # 后端 590 passed
+cd frontend && npx vitest run                # 前端 292 passed / 35 files
+```
+
 ## 数据
 
 - **合成集（主力）**：6 种形态（平稳、周期、趋势、阶梯、高零值、稀疏事件）× 6 种异常（尖峰、上下文、漂移、频率突变、方差突变、平台断流），共 120 条、每条 500 点，随机种子可复现，真值逐点标注。
@@ -105,6 +129,25 @@ MOCK_TSDB=1 make dev
 | 统计 | EventCount | 窗口非零事件数 vs 泊松基线 |
 | 自训深度 | TCN / LSTM | 一维重构自编码器，重构误差归一为概率 |
 | 预训练 | Chronos | 分位数预测区间的越界程度（权重不可用时跳过） |
+
+### 基线三件套：分数之外，还要说「正常值在哪儿」
+
+分数只说“多异常”，不说“正常值应该在哪儿”。所以 `DetectionResult` 除了分数，还带一组可选的
+`expected`（基线）/ `lower` / `upper`（容忍带），三者同生同灭、长度等于序列长度。
+
+**带的语义有两种，不能混**（`band_kind` 显式声明）：
+
+| `band_kind` | 谁产出 | 含义 |
+|---|---|---|
+| `alert_boundary` | 统计型检测器 | 带边界**就是告警阈值** —— 值出带 ⟺ 判为异常 |
+| `prediction_interval` | TCN / LSTM / Chronos | 带是**模型自己的预测/重构区间**，表达「模型认为正常值在哪儿、有多不确定」，**不是**告警边界 |
+
+预测型检测器的分数是序列内 min-max 归一的相对量（不是「多少倍尺度」），所以它的带和它的告警阈值
+本来就不是同一条边界 —— 前端会分别标注，不让人把置信区间误读成告警线。
+
+⚠️ 前端画带**不用 `stack` + `areaStyle`**：stack 是累加的，且对负值行为不可预测（实测会画到
+`[lower+upper]` 而不是 `[lower, upper]`）。改用 custom series 画多边形，行为确定。详见
+`frontend/src/lib/bands.ts`。
 
 ## 评测结果（真实跑出，单次 CPU 测量）
 
