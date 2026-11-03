@@ -11,7 +11,7 @@ import {
 } from '../features/metrics/previewBridge'
 import { useCatalog } from '../features/jobs/queries'
 import { useDeleteMetric } from '../features/delete/queries'
-import type { CatalogMetric, SourceQueryColumn } from '../api/types'
+import type { CatalogJob, CatalogMetric, SourceQueryColumn } from '../api/types'
 
 /**
  * 数据源详情页 —— **指标的父级**。
@@ -69,6 +69,75 @@ export function SourceDetailPage() {
 
   const source = catalog.data?.sources.find((item) => item.id === sourceId)
   const metrics = (catalog.data?.metrics ?? []).filter((item) => item.source_id === sourceId)
+
+  /**
+   * 用这个源的指标跑着的检测任务。
+   *
+   * ⚠️ 层级链是 数据源 → 指标 → 任务 ——
+   *    少了这一段，用户看不到「改这个源会影响谁」。
+   */
+  const metricIds = new Set(metrics.map((m) => m.id))
+  const jobs = (catalog.data?.jobs ?? []).filter((job) => metricIds.has(job.metric_id))
+  const metricNameById = new Map((catalog.data?.metrics ?? []).map((m) => [m.id, m.name]))
+
+  const jobColumns: ColumnsType<CatalogJob> = [
+    {
+      title: '任务',
+      dataIndex: 'name',
+      key: 'name',
+      render: (value: string, row) => <Link to={`/jobs/${row.id}`}>{value}</Link>,
+    },
+    {
+      title: '指标',
+      dataIndex: 'metric_id',
+      key: 'metric_id',
+      width: 150,
+      render: (value: number) => (
+        <span className="mono dim">{metricNameById.get(value) ?? String(value)}</span>
+      ),
+    },
+    {
+      title: '算法',
+      dataIndex: 'detector',
+      key: 'detector',
+      width: 110,
+      render: (value: string) =>
+        value === 'auto' ? (
+          <span className="pill pill--auto">自动推荐</span>
+        ) : (
+          <span className="mono dim">{value}</span>
+        ),
+    },
+    {
+      title: '阈值',
+      key: 'thresholds',
+      width: 150,
+      render: (_value, row) => (
+        <span className="mono dim">
+          {row.alert_threshold}×→P1 / {row.critical_threshold}×→P0
+        </span>
+      ),
+    },
+    {
+      title: '间隔',
+      dataIndex: 'interval_seconds',
+      key: 'interval_seconds',
+      width: 80,
+      align: 'right',
+      render: (value: number) => <span className="mono dim">{value}s</span>,
+    },
+    {
+      title: '状态',
+      dataIndex: 'enabled',
+      key: 'enabled',
+      width: 90,
+      render: (value: boolean) => (
+        <span className={`pill ${value ? 'pill--ok' : 'pill--p1'}`}>
+          {value ? '启用' : '停用'}
+        </span>
+      ),
+    },
+  ]
 
   const columns: ColumnsType<CatalogMetric> = [
     {
@@ -169,31 +238,41 @@ export function SourceDetailPage() {
 
   return (
     <div className="page">
-      <header className="page__header">
-        <h1 className="page__title">{source?.name ?? '数据源'}</h1>
-        <p className="page__subtitle">
-          <Link to="/sources">数据源</Link> / {source?.name ?? sourceId}
-        </p>
+      <header className="titlebar">
+        <h1>{source?.name ?? '数据源'}</h1>
+        <div className="titlebar__actions">
+          <Link className="link" to="/sources">
+            ← 数据源
+          </Link>
+          <Button type="primary" onClick={() => setFormOpen(true)}>
+            新增指标
+          </Button>
+        </div>
       </header>
 
-      <Descriptions size="small" column={3} bordered className="source-detail__info">
-        <Descriptions.Item label="类型">
-          <Tag>{source?.kind ?? '—'}</Tag>
-        </Descriptions.Item>
-        <Descriptions.Item label="路径">
-          <span className="mono">{source?.path ?? '—'}</span>
-        </Descriptions.Item>
-        <Descriptions.Item label="创建时间">
-          <span className="mono">{source?.created_at?.slice(0, 19).replace('T', ' ') ?? '—'}</span>
-        </Descriptions.Item>
-      </Descriptions>
-
-      <div className="source-detail__toolbar">
-        <span className="muted">共 {metrics.length} 个指标</span>
-        <Button type="primary" onClick={() => setFormOpen(true)}>
-          新增指标
-        </Button>
-      </div>
+      <section className="panel" aria-labelledby="srcInfoTitle">
+        <div className="panel__head">
+          <div>
+            <h2 className="panel__title" id="srcInfoTitle">
+              数据源
+            </h2>
+            <p className="panel__meta mono">
+              {metrics.length} 个指标 · {jobs.length} 个检测任务
+            </p>
+          </div>
+        </div>
+        <Descriptions size="small" column={3} bordered className="source-detail__info">
+          <Descriptions.Item label="类型">
+            <Tag>{source?.kind ?? '—'}</Tag>
+          </Descriptions.Item>
+          <Descriptions.Item label="路径">
+            <span className="mono">{source?.path ?? '—'}</span>
+          </Descriptions.Item>
+          <Descriptions.Item label="创建时间">
+            <span className="mono">{source?.created_at?.slice(0, 19).replace('T', ' ') ?? '—'}</span>
+          </Descriptions.Item>
+        </Descriptions>
+      </section>
 
       <StateBoundary
         isLoading={catalog.isPending}
@@ -204,16 +283,49 @@ export function SourceDetailPage() {
         emptyHint="指标定义「从哪个数据源、取哪些列、怎么算频率」—— 没有指标就没法建检测任务"
       >
         {(data) => (
-          <Table<CatalogMetric>
+          <section className="panel" aria-labelledby="srcMetricsTitle">
+            <div className="panel__head">
+              <div>
+                <h2 className="panel__title" id="srcMetricsTitle">
+                  指标
+                </h2>
+                <p className="panel__meta mono">共 {data.length} 个指标</p>
+              </div>
+            </div>
+            <Table<CatalogMetric>
+              rowKey="id"
+              columns={columns}
+              dataSource={data}
+              size="middle"
+              pagination={false}
+              scroll={{ x: 'max-content' }}
+            />
+          </section>
+        )}
+      </StateBoundary>
+
+      {jobs.length > 0 ? (
+        <section className="panel" aria-labelledby="srcJobsTitle">
+          <div className="panel__head">
+            <div>
+              <h2 className="panel__title" id="srcJobsTitle">
+                检测任务
+              </h2>
+              <p className="panel__meta mono">
+                用这个源的指标跑着的任务 · {jobs.length} 个
+              </p>
+            </div>
+          </div>
+          <Table<CatalogJob>
             rowKey="id"
-            columns={columns}
-            dataSource={data}
+            columns={jobColumns}
+            dataSource={jobs}
             size="middle"
             pagination={false}
             scroll={{ x: 'max-content' }}
           />
-        )}
-      </StateBoundary>
+        </section>
+      ) : null}
 
       <MetricForm
         open={formOpen}

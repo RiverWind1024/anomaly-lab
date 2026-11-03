@@ -198,7 +198,8 @@ afterEach(() => {
 describe('SourceDetailPage', () => {
   it('列出这个数据源下的指标', async () => {
     renderPage('/sources/1', '/sources/:sourceId', <SourceDetailPage />)
-    expect(await screen.findByText('demo-metric')).toBeTruthy()
+    // ⚠️ 「demo-metric」出现两处 —— 指标表里一次，任务表的「指标」列里一次
+    await waitFor(() => expect(screen.getAllByText('demo-metric').length).toBeGreaterThan(0))
   })
 
   it('指标名链到指标详情', async () => {
@@ -214,7 +215,7 @@ describe('SourceDetailPage', () => {
 
   it('不再挂数据浏览器 —— 浏览数据在指标的编辑流程里', async () => {
     renderPage('/sources/1', '/sources/:sourceId', <SourceDetailPage />)
-    await screen.findByText('demo-metric')
+    await waitFor(() => expect(screen.getAllByText('demo-metric').length).toBeGreaterThan(0))
     // ⚠️ 浏览数据是「写 SQL 时看结果」的工具 ——
     //    放在数据源页上只是个孤立的功能块
     expect(screen.queryByPlaceholderText(/SELECT/)).toBeNull()
@@ -223,7 +224,7 @@ describe('SourceDetailPage', () => {
 
   it('预览页带回的配置会预填指标表单', async () => {
     renderPage('/sources/1', '/sources/:sourceId', <SourceDetailPage />)
-    await screen.findByText('demo-metric')
+    await waitFor(() => expect(screen.getAllByText('demo-metric').length).toBeGreaterThan(0))
     act(() => {
       sendPreviewMessage({
         sourceId: 1,
@@ -245,7 +246,7 @@ describe('SourceDetailPage', () => {
 
   it('带回的 SQL 不含 $timefilter 时不预填查询语句', async () => {
     renderPage('/sources/1', '/sources/:sourceId', <SourceDetailPage />)
-    await screen.findByText('demo-metric')
+    await waitFor(() => expect(screen.getAllByText('demo-metric').length).toBeGreaterThan(0))
     act(() => {
       sendPreviewMessage({
         sourceId: 1,
