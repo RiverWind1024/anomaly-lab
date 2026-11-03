@@ -187,7 +187,7 @@ export function ScoreTrail({
                       y={geom.y(value)}
                       textAnchor="end"
                       dominantBaseline="middle"
-                      style={{ fill: 'var(--text-tertiary)', fontSize: 11 }}
+                      style={{ fill: 'var(--text-tertiary)', fontSize: 12 }}
                     >
                       {Math.round(value)}
                     </text>
@@ -228,7 +228,7 @@ export function ScoreTrail({
                     x={geom.padL + geom.plotW - 2}
                     y={th.v === p0 ? Math.max(geom.padT + 12, geom.y(th.v) - 6) : geom.y(th.v) + 12}
                     textAnchor="end"
-                    style={{ fill: th.color, fontSize: 11 }}
+                    style={{ fill: th.color, fontSize: 12 }}
                   >
                     {th.name} {th.v}
                   </text>
@@ -288,7 +288,7 @@ export function ScoreTrail({
                   x={geom.padL - 7}
                   y={geom.p0RowY + geom.stripH - 1}
                   textAnchor="end"
-                  style={{ fill: 'var(--status-p0)', fontSize: 11 }}
+                  style={{ fill: 'var(--status-p0)', fontSize: 12 }}
                 >
                   P0
                 </text>
@@ -296,7 +296,7 @@ export function ScoreTrail({
                   x={geom.padL - 7}
                   y={geom.p1RowY + geom.stripH - 1}
                   textAnchor="end"
-                  style={{ fill: 'var(--status-p1)', fontSize: 11 }}
+                  style={{ fill: 'var(--status-p1)', fontSize: 12 }}
                 >
                   P1
                 </text>
@@ -319,7 +319,7 @@ export function ScoreTrail({
                   )}
                   y={Math.max(geom.padT + 11, geom.y(geom.peak.s) - 9)}
                   textAnchor="middle"
-                  style={{ fill: 'var(--text-primary)', fontSize: 11, fontWeight: 500 }}
+                  style={{ fill: 'var(--text-primary)', fontSize: 12, fontWeight: 500 }}
                 >
                   {geom.peak.s.toFixed(2)}σ
                   {geom.clipped ? ' ↑' : ''} ·{' '}
@@ -344,7 +344,7 @@ export function ScoreTrail({
                   x={geom.x(t)}
                   y={236}
                   textAnchor={anchor}
-                  style={{ fill: 'var(--text-tertiary)', fontSize: 11 }}
+                  style={{ fill: 'var(--text-tertiary)', fontSize: 12 }}
                 >
                   {label}
                 </text>

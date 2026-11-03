@@ -85,7 +85,7 @@
 .link {
   flex: none;
   color: var(--accent-text);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 /* 次要信息 —— 代码、路径、说明这类，不必抢注意力 */
@@ -228,7 +228,8 @@
 
 .kpi__k {
   color: var(--text-tertiary);
-  font-size: 12px;
+  /* ⚠️ 13px —— 标签要读得清（12px 只留给副行与轴刻度） */
+  font-size: 13px;
 }
 
 .kpi__v {

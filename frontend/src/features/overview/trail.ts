@@ -86,7 +86,8 @@ function toMs(ts: string): number {
  */
 export function niceStep(spanHours: number, plotWidth: number, wideLabel: boolean): number {
   const steps = [1, 2, 3, 6, 12, 24]
-  const labelPx = wideLabel ? 64 : 42
+  // ⚠️ 12px 的等宽时间标签约 6px/字符 —— 「MM-DD HH:mm」要 66px
+  const labelPx = wideLabel ? 70 : 48
   for (const step of steps) {
     const count = spanHours / step
     if (count <= 12 && plotWidth / count >= labelPx) return step
