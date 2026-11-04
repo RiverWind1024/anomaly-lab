@@ -4,6 +4,7 @@ import type { ColumnsType } from 'antd/es/table'
 import { useSearchParams } from 'react-router-dom'
 import { StateBoundary } from '../../components/StateBoundary'
 import { fmtMetric } from '../../lib/format'
+import { detectorLabel } from '../../lib/detectorLabels'
 import { DetectionChart } from './DetectionChart'
 import { badcaseLabel } from './detectionChart'
 import { DetectionsList } from './DetectionsList'
@@ -212,7 +213,7 @@ function DetectionDetailHead({
             <th>序列</th>
             <td className="mono">{selected.series_id}</td>
             <th>算法</th>
-            <td className="mono">{selected.detector ?? '—'}</td>
+            <td>{detectorLabel(selected.detector)}</td>
           </tr>
           <tr>
             <th>形态</th>

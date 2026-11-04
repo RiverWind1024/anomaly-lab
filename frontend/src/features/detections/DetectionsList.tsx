@@ -1,5 +1,6 @@
 import { List, Pagination, Tag } from 'antd'
 import type { EvaluationRow } from '../../api/types'
+import { detectorLabel } from '../../lib/detectorLabels'
 import { isSelectedRow, paginate, recordKey, type RecordKey } from './records'
 
 export interface DetectionsListProps {
@@ -45,7 +46,7 @@ export function DetectionsList({
             <span className="mono detections-list__id">{row.series_id}</span>
             {/* ⚠️ 算法标签不是装饰 —— 记录是「序列 × 算法」， taste-skill-ignore
                 只看序列分不清同序列的不同算法。 */}
-            <Tag className="detections-list__detector">{row.detector}</Tag>
+            <Tag className="detections-list__detector">{detectorLabel(row.detector)}</Tag>
           </List.Item>
         )}
       />

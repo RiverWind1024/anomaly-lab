@@ -2,6 +2,7 @@ import { Alert, Button, Space, Tag } from 'antd'
 import { StateBoundary } from '../../components/StateBoundary'
 import type { Preview } from '../../api/types'
 import { AlertRulesView } from './AlertRulesView'
+import { detectorLabel } from '../../lib/detectorLabels'
 import { DetectionConclusion } from './ClassificationCard'
 import { PreviewChart } from './PreviewChart'
 
@@ -39,7 +40,7 @@ export function PreviewPanel({ isLoading, error, preview, onRun, running = false
         <div className="preview-panel">
           <div className="preview-panel__meta">
             <Space size="small" wrap>
-              <Tag>{p.detector}</Tag>
+              <Tag>{detectorLabel(p.detector)}</Tag>
               <Tag>score_type: {p.score_type}</Tag>
               <Tag>{p.n_valid}/{p.n} 有效点</Tag>
               {p.n_missing > 0 && <Tag color="warning">{p.n_missing} 缺点</Tag>}

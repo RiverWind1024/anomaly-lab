@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Alert, Form, Input, InputNumber, Modal, Select, Space } from 'antd'
 import type { AlertRule, CatalogDetector, CatalogMetric } from '../../api/types'
 import { AlertRulesEditor } from './AlertRulesEditor'
+import { detectorLabel } from '../../lib/detectorLabels'
 import { INTERVAL_SECONDS_MIN, WINDOW_POINTS_MAX, WINDOW_POINTS_MIN } from './limits'
 import { defaultRuleList } from './rules'
 
@@ -59,7 +60,13 @@ export function JobForm({
         value: d.name,
         label: (
           <span>
-            {d.label || d.name}
+            {/* ⚠️ 用统一的中文标签表 —— 后端给的 label 只覆盖主名 */}
+            {detectorLabel(d.name)}
+            {/* ⚠️ **显示惯用阈值** ——
+                每个算法的「最佳工作点」不一样（iqr 2.5 / mad 3.5 /
+                theil_sen 3.5），用户换算法时要知道该把阈值调成多少。
+                不显示的话，用户只能靠猜 —— 而猜错就是误报率翻倍。 */}
+            <span className="muted"> （惯用 {d.default_threshold}）</span>
             {d.available === false && (
               <span className="muted"> （不可用）</span>
             )}

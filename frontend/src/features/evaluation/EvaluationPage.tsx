@@ -4,6 +4,7 @@ import type { ColumnsType } from 'antd/es/table'
 import { Link } from 'react-router-dom'
 import { StateBoundary } from '../../components/StateBoundary'
 import { fmtMetric, fmtUtcTime } from '../../lib/format'
+import { detectorLabel } from '../../lib/detectorLabels'
 import './evaluation.css'
 import { aggregateBy } from './aggregate'
 import { FilterBar } from './FilterBar'
@@ -384,7 +385,7 @@ export function EvaluationPage() {
               <li key={item.key}>
                 <Space size="small" wrap>
                   <span className="mono">{item.series_id}</span>
-                  <Tag>{item.detector}</Tag>
+                  <Tag>{detectorLabel(item.detector)}</Tag>
                   <Button
                     size="small"
                     loading={restore.isPending}

@@ -1,6 +1,7 @@
 import { Button, DatePicker, Select, Space } from 'antd'
 import dayjs, { type Dayjs } from 'dayjs'
 import { distinctValues, type EvaluationFilters } from './filters'
+import { detectorLabel } from '../../lib/detectorLabels'
 import type { EvaluationRow } from '../../api/types'
 
 const { RangePicker } = DatePicker
@@ -55,7 +56,9 @@ export function FilterBar({ rows, filters, onChange }: FilterBarProps) {
         onChange={(value) => onChange({ ...filters, detector: value })}
         options={distinctValues(rows, (row) => row.detector).map((v) => ({
           value: v,
-          label: v,
+          // ⚠️ 显示中文标签，但**值仍是原始算法名** ——
+          //    筛选是拿值去比 row.detector 的
+          label: detectorLabel(v),
         }))}
       />
       <Select

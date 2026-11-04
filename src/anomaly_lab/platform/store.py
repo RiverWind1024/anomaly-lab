@@ -24,6 +24,7 @@ from anomaly_lab.platform.detectors import (
     AUTO_DETECTOR,
     DETECTOR_FACTORIES,
     create_detector,
+    detector_default_threshold,
     detector_score_family,
 )
 from anomaly_lab.platform.feedback import FEEDBACK_KINDS, normalize_ts
@@ -868,10 +869,39 @@ class PlatformStore:
         family_changed = detector_changed and (
             detector_score_family(detector) != detector_score_family(current.detector)
         )
+        # ⚠️ **同族换算法**：分数量纲一样，但**尺度的定义不同**
+        #    （IQR 尺度 vs MAD 尺度 vs 去趋势后的残差 MAD），
+        #    所以每个算法的**惯用阈值本来就不一样**：
+        #    iqr 2.5 / mad 3.5 / zscore 3.0 / theil_sen 3.5。
+        #
+        #    那为什么不能一律换成新算法的默认值？
+        #    因为用户可能**特意**把 mad 的阈值调成 2.5（要更灵敏）。
+        #    「同族沿用旧阈值」这条规则本意就是保护那种调整。
+        #
+        #    ⚠️ **但它有个盲点**：它分不清
+        #    「用户特意调过的阈值」与「从来没动过的默认值」。
+        #    后者不该被沿用 ——
+        #    用户从没调过 2.5，换到 theil_sen 后继续用 2.5，
+        #    精确率会从 98% 掉到 73%，而界面**一点提示都没有**。
+        #
+        #    所以判据是：**两个阈值都恰好等于旧算法的默认值**时，
+        #    认定它是「继承来的」，按新算法重设；
+        #    只要用户动过其中任何一个，就保留他的值。
+        inherited_thresholds = False
+        if detector_changed and not family_changed:
+            # ⚠️ 用 `detector_default_threshold` 而不是 `create_detector` ——
+            #    当前算法可能是 `auto`（它不在注册表里，运行时才落到具体算法）
+            old_default = detector_default_threshold(current.detector)
+            inherited_thresholds = (
+                abs(current.alert_threshold - old_default) < 1e-9
+                and abs(current.critical_threshold - old_default * 1.5) < 1e-9
+            )
         if explicit_rules is not None:
             alert = explicit_alert
             critical = explicit_critical
-        elif family_changed and fields.get("alert_threshold") is None:
+        elif (family_changed or inherited_thresholds) and fields.get(
+            "alert_threshold"
+        ) is None:
             default_threshold = float(create_detector(detector).default_threshold)
             alert = default_threshold
             critical = default_threshold * 1.5

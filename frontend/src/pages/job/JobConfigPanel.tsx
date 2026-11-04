@@ -1,6 +1,7 @@
 import { Alert, Button, Form, Input, InputNumber, Select, Space } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AlertRulesEditor } from '../../features/jobs/AlertRulesEditor'
+import { detectorLabel } from '../../lib/detectorLabels'
 import { useUpdateJob } from '../../features/jobs/queries'
 import { INTERVAL_SECONDS_MIN, WINDOW_POINTS_MAX, WINDOW_POINTS_MIN } from '../../features/jobs/limits'
 import type { AlertRule, CatalogDetector, CatalogJob, CatalogMetric } from '../../api/types'
@@ -68,7 +69,11 @@ export function JobConfigPanel({ job, metrics, detectors, enabled }: JobConfigPa
     () =>
       detectors.map((d) => ({
         value: d.name,
-        label: d.label || d.name,
+        // ⚠️ 用统一的中文标签表 —— 后端给的 label 只覆盖主名，
+        //    而任务配置里可能存着**旧名**（改名前建的）。
+        //    顺带显示**惯用阈值** —— 每个算法的最佳工作点不一样，
+        //    用户换算法时要知道该把阈值调成多少。
+        label: `${detectorLabel(d.name)}（惯用 ${d.default_threshold}）`,
         disabled: d.available === false,
         title: d.available === false ? (d.reason ?? '当前环境不可用') : undefined,
       })),

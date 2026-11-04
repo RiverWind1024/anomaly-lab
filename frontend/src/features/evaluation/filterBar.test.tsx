@@ -2,6 +2,7 @@ import { fireEvent, render } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import type { EvaluationRow } from '../../api/types'
 import { FilterBar } from './FilterBar'
+import { detectorLabel } from '../../lib/detectorLabels'
 
 const rows: EvaluationRow[] = [
   {
@@ -78,7 +79,8 @@ describe('FilterBar', () => {
     // ⚠️ antd 的 Select 是 **mousedown** 打开下拉，不是 click
     fireEvent.mouseDown(select.querySelector('.ant-select-selector') as HTMLElement)
     const option = [...document.querySelectorAll('.ant-select-item-option')].find(
-      (el) => el.textContent === 'mad',
+      // ⚠️ 显示的是中文标签，但**选中后传回的是原始算法名**
+      (el) => el.textContent === detectorLabel('mad'),
     )
     expect(option).toBeTruthy()
     fireEvent.click(option as HTMLElement)

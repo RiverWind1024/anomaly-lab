@@ -32,13 +32,16 @@ def test_validation_reports_per_detector_means():
     series = _bundle(_periodic_with_spike(), [0] * 100 + [1] + [0] * 99)
     report = validate_auto([series])
     assert len(report.rows) == 1
+    # ⚠️ 集合里是**主名** —— 旧名 `deseasonalized_iqr` 已改名为
+    #    `trend_residual_iqr`，评测产物里不再出现旧名（避免同一算法分裂成两条记录）
     assert set(report.detector_mean_f1) == {
         "iqr",
         "mad",
         "zscore",
         "seasonal",
         "stl_residual",
-        "deseasonalized_iqr",
+        "trend_residual_iqr",
+        "theil_sen",
     }
     for score in report.detector_mean_f1.values():
         assert 0.0 <= score <= 1.0

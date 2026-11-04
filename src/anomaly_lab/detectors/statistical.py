@@ -329,10 +329,22 @@ class STLResidualDetector(TimedDetector):
         return self._timed_detect(series, threshold)
 
 
-class DeseasonalizedIQRDetector(TimedDetector):
-    """先去线性趋势，再对残差跑 IQR。"""
+class TrendResidualIQRDetector(TimedDetector):
+    """先去线性趋势，再对残差跑 IQR。
 
-    name = "deseasonalized_iqr"
+    ⚠️ **旧名 `deseasonalized_iqr` 已改名** —— 那个名字说的是「去季节化」，
+       做的却是「去**趋势**」。名不副实会让人以为它在处理季节性，
+       于是想找「趋势」时 grep 不到它。
+       旧名仍可用（见 `platform/detectors.py` 的 `DETECTOR_ALIASES`），
+       历史评测产物里的记录也照常显示。
+
+    ⚠️ **趋势线用清洗值估** —— 最小二乘会被尖峰拉偏
+       （一次大幅尖峰就能把整条趋势线拽歪，剩下的点全变成「残差」）。
+       估趋势时先 `winsorize`，但**打分仍用原始值** ——
+       异常点必须留在残差里，否则检测器就看不见它了。
+    """
+
+    name = "trend_residual_iqr"
     score_type = "zscore"
     default_threshold = 2.5
 
@@ -340,7 +352,7 @@ class DeseasonalizedIQRDetector(TimedDetector):
         self.k = float(k)
         self.default_threshold = float(k)
 
-    def fit(self, series: SeriesBundle) -> DeseasonalizedIQRDetector:
+    def fit(self, series: SeriesBundle) -> TrendResidualIQRDetector:
         return self
 
     def score(self, series: SeriesBundle) -> np.ndarray:
@@ -357,7 +369,8 @@ class DeseasonalizedIQRDetector(TimedDetector):
 
     def _trend_and_residual(self, values: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         t = np.arange(len(values), dtype=float)
-        slope, intercept = np.polyfit(t, values, 1)
+        # ⚠️ 趋势用**清洗值**估，残差用**原始值**
+        slope, intercept = np.polyfit(t, winsorize(values), 1)
         trend = slope * t + intercept
         return trend, values - trend
 
@@ -378,6 +391,13 @@ class DeseasonalizedIQRDetector(TimedDetector):
         self, series: SeriesBundle, threshold: float | None = None
     ) -> DetectionResult:
         return self._timed_detect(series, threshold)
+
+
+#: 旧类名 → 新类名。
+#:
+#: ⚠️ 保留它是为了**不打断已有导入**（`from ... import DeseasonalizedIQRDetector`）。
+#:    新代码请用 `TrendResidualIQRDetector`。
+DeseasonalizedIQRDetector = TrendResidualIQRDetector
 
 
 class ChangePointDetector(TimedDetector):

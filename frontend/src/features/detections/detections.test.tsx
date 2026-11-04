@@ -5,6 +5,7 @@ import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Badcases, EvaluationRow, Summary } from '../../api/types'
 import { DetectionsPage } from './DetectionsPage'
+import { detectorLabel } from '../../lib/detectorLabels'
 
 /**
  * 图表换成占位 —— ECharts 要 canvas，jsdom 没实现。
@@ -138,8 +139,9 @@ describe('DetectionsPage', () => {
     const tags = [...document.querySelectorAll('.detections-list__detector')].map(
       (el) => el.textContent,
     )
-    expect(tags).toContain('iqr')
-    expect(tags).toContain('mad')
+    // ⚠️ 列表显示**中文标签**（算法名是内部标识，不直接给人看）
+    expect(tags).toContain(detectorLabel('iqr'))
+    expect(tags).toContain(detectorLabel('mad'))
   })
 
   it('⚠️ 同序列的不同算法不会同时高亮', async () => {  // taste-skill-ignore

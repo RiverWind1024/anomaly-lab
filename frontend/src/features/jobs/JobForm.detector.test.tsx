@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import type { CatalogDetector } from '../../api/types'
 import { JobForm } from './JobForm'
+import { detectorLabel } from '../../lib/detectorLabels'
 
 const detector = (over: Partial<CatalogDetector> = {}): CatalogDetector => ({
   name: 'iqr',
@@ -41,7 +42,7 @@ describe('算法下拉的可选性与标记', () => {
     expect(await screen.findByText(/不可用/)).toBeInTheDocument()
     // 不可用的项带 disabled
     const option = document.querySelector('.ant-select-item-option-disabled')
-    expect(option?.textContent).toContain('chronos')
+    expect(option?.textContent).toContain(detectorLabel('chronos'))
   })
 
   it('慢的算法标出「慢」', async () => {

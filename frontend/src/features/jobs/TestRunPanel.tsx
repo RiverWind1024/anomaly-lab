@@ -3,6 +3,7 @@ import { Alert, Button, Empty, Select, Space, Table, Tag } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { PreviewChart } from './PreviewChart'
 import { AlertRulesView } from './AlertRulesView'
+import { detectorLabel } from '../../lib/detectorLabels'
 import { useTestRunJob } from './queries'
 import type { TestRunAlert, TestRunSeries } from '../../api/types'
 
@@ -121,11 +122,11 @@ export function TestRunPanel({ jobId }: TestRunPanelProps) {
           <section className="test-run__rules">
             <AlertRulesView rules={result.alert_rules} />
             <p className="muted">
-              实际使用的检测器：<span className="mono">{result.detector}</span>
+              实际使用的检测器：<strong>{detectorLabel(result.detector)}</strong>
               {result.requested_detector !== result.detector ? (
                 <>
                   {' '}
-                  （任务里配的是 <span className="mono">{result.requested_detector}</span>）
+                  （任务里配的是 <strong>{detectorLabel(result.requested_detector)}</strong>）
                 </>
               ) : null}
               {result.detector_rationale ? ` —— ${result.detector_rationale}` : null}

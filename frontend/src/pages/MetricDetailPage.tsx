@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { Alert, Button, Form, Space, Table, Tag } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { StateBoundary } from '../components/StateBoundary'
+import { detectorLabel } from '../lib/detectorLabels'
 import { MetricFormFields, buildMetricPayload, type MetricFormValues } from '../features/metrics/MetricFormFields'
 import { useCatalog, usePreview } from '../features/jobs/queries'
 import { updateMetric } from '../api/platform'
@@ -192,7 +193,7 @@ function JobSeriesBlock({ job }: { job: CatalogJob }) {
         <Space size="small" wrap>
           <Link to={`/jobs/${job.id}`}>{job.name}</Link>
           <Tag color={job.enabled ? 'success' : 'default'}>{job.enabled ? '启用' : '停用'}</Tag>
-          <span className="muted mono">{job.detector}</span>
+          <span className="muted">{detectorLabel(job.detector)}</span>
         </Space>
       </div>
 

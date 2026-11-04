@@ -21,13 +21,14 @@ from dataclasses import dataclass, field
 
 from anomaly_lab.detectors.chronos import ChronosDetector
 from anomaly_lab.detectors.statistical import (
-    DeseasonalizedIQRDetector,
     IQRDetector,
     MADDetector,
     SeasonalDetector,
     STLResidualDetector,
+    TrendResidualIQRDetector,
     ZScoreDetector,
 )
+from anomaly_lab.detectors.trend import TheilSenTrendDetector
 
 DETECTOR_FACTORIES = {
     "iqr": IQRDetector,
@@ -36,9 +37,25 @@ DETECTOR_FACTORIES = {
     "seasonal": SeasonalDetector,
     # period 传 None = 按序列自动估计周期（FFT + ACF）
     "stl_residual": STLResidualDetector,
-    "deseasonalized_iqr": DeseasonalizedIQRDetector,
+    "trend_residual_iqr": TrendResidualIQRDetector,
+    # 趋势型专用：Theil-Sen 稳健趋势线 + 残差 MAD（抗离群点）
+    "theil_sen": TheilSenTrendDetector,
     # 预训练模型：可选依赖 + 需要本地权重，慢且没有基线
     "chronos": ChronosDetector,
+}
+
+#: **旧名 → 新名**（改名后旧名仍然可用）。
+#:
+#: ⚠️ 为什么需要：检测器名会进**历史数据**（评测产物、任务配置、告警记录），
+#:    改名就等于让那些记录里的算法名变成「不认识的名字」——
+#:    界面显示不出来，重跑也找不到对应算法。
+#:
+#: ⚠️ 别名**不出现在下拉清单里**（`detector_catalog` 只列主名）——
+#:    否则用户会看到两个一模一样的选项。
+#:    但历史评测产物里的旧名要能显示，所以前端另有标签映射。
+DETECTOR_ALIASES = {
+    # ⚠️ 旧名说的是「去季节化」，做的却是「去**趋势**」——名不副实。
+    "deseasonalized_iqr": "trend_residual_iqr",
 }
 
 #: 慢算法（秒级/序列）—— 前端要提示用户留足执行间隔
@@ -127,11 +144,46 @@ class DetectorResolution:
 
 
 def create_detector(name: str):
+    """按名字造检测器。
+
+    ⚠️ **旧名会被解析成新名** —— 见 `DETECTOR_ALIASES`。
+       别名解析后造出来的对象，其 `name` 是**新名** ——
+       所以检测结果里的 `detector` 字段不会因为用了旧名而分裂成两条记录。
+    """
+    name = DETECTOR_ALIASES.get(name, name)
     try:
         factory = DETECTOR_FACTORIES[name]
     except KeyError as exc:
         raise ValueError(f"不支持的检测器: {name}") from exc
     return factory()
+
+
+def canonical_detector_name(name: str) -> str:
+    """把旧名解析成新名（未知名原样返回）。
+
+    ⚠️ 候选列表、可用性检查都要走这里 ——
+       否则旧名会被判成「不支持的检测器」，
+       而它其实只是**改过名**，历史数据里全是它。
+    """
+    return DETECTOR_ALIASES.get(name, name)
+
+
+def detector_default_threshold(name: str) -> float:
+    """取某个算法的**惯用阈值**（它的 `default_threshold`）。
+
+    ⚠️ **`auto` 要落到兜底算法上** ——
+       `auto` 本身不在注册表里（它在运行时才落到具体算法），
+       但任务的阈值是按兜底算法的默认值预填的，
+       所以这里必须用同一个算法（`DEFAULT_DETECTOR`）才算得对。
+    """
+    if name == AUTO_DETECTOR:
+        name = DEFAULT_DETECTOR
+    name = canonical_detector_name(name)
+    try:
+        return float(create_detector(name).default_threshold)
+    except ValueError:
+        # 未知算法：退回最通用的默认值
+        return float(create_detector(DEFAULT_DETECTOR).default_threshold)
 
 
 def resolve_detector(requested: str, series) -> DetectorResolution:
@@ -157,7 +209,8 @@ def resolve_detector(requested: str, series) -> DetectorResolution:
     from anomaly_lab.classification.classifier import classify
 
     result = classify(series)
-    candidates = list(result.recommendation.detectors)
+    # ⚠️ 候选统一成**主名** —— 推荐表里写旧名时（历史配置）也要能解析
+    candidates = [canonical_detector_name(name) for name in result.recommendation.detectors]
     supported = [name for name in candidates if name in DETECTOR_FACTORIES]
     unsupported = [name for name in candidates if name not in DETECTOR_FACTORIES]
     if supported:
@@ -194,6 +247,8 @@ def detector_available(name: str) -> tuple[bool, str | None]:
     """
     if name == AUTO_DETECTOR:
         return True, None
+    # ⚠️ 旧名要能用 —— 它只是**改过名**，不是不支持
+    name = canonical_detector_name(name)
     if name not in DETECTOR_FACTORIES:
         return False, f"不支持的检测器: {name}"
     if name not in SLOW_DETECTORS:
@@ -203,6 +258,23 @@ def detector_available(name: str) -> tuple[bool, str | None]:
     if chronos_available():
         return True, None
     return False, "chronos 未安装或本地无权重缓存（huggingface.co 不可达时不会自动下载）"
+
+
+#: 检测器名 → 中文标签（给 API 消费者用）。
+#:
+#: ⚠️ 前端另有一份同源的映射（`frontend/src/lib/detectorLabels.ts`）——
+#:    前端那份**多带旧名**（历史评测产物里还有），这份只有主名。
+#:    两份要一起改。
+DETECTOR_LABELS = {
+    "iqr": "IQR 围栏",
+    "mad": "MAD",
+    "zscore": "Z 分数",
+    "seasonal": "季节性分组",
+    "stl_residual": "STL 残差",
+    "trend_residual_iqr": "去趋势残差 IQR",
+    "theil_sen": "稳健趋势线 Theil-Sen",
+    "chronos": "Chronos 预训练模型",
+}
 
 
 def detector_catalog() -> list[dict]:
@@ -228,7 +300,7 @@ def detector_catalog() -> list[dict]:
                 "name": name,
                 "default_threshold": float(detector.default_threshold),
                 "score_type": detector.score_type,
-                "label": name,
+                "label": DETECTOR_LABELS.get(name, name),
                 "available": available,
                 "reason": reason,
                 "slow": name in SLOW_DETECTORS,

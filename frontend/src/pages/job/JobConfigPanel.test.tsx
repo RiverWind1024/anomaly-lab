@@ -12,6 +12,7 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { JobConfigPanel } from './JobConfigPanel'
 import type { CatalogDetector, CatalogJob, CatalogMetric } from '../../api/types'
+import { detectorLabel } from '../../lib/detectorLabels'
 
 const DETECTORS: CatalogDetector[] = [
   { name: 'iqr', default_threshold: 2.5, score_type: 'zscore', label: 'iqr' },
@@ -76,8 +77,10 @@ function pickDetector(name: string) {
   expect(item, '找不到「检测算法」表单项').toBeTruthy()
   const select = item?.querySelector('.ant-select') as HTMLElement
   fireEvent.mouseDown(select.querySelector('.ant-select-selector') as HTMLElement)
+  // ⚠️ 下拉里显示的是**中文标签 + 惯用阈值**（统一的 detectorLabel 映射），
+  //    底层值仍是原始算法名
   const option = [...document.querySelectorAll('.ant-select-item-option')].find(
-    (el) => el.textContent === name,
+    (el) => el.textContent?.startsWith(detectorLabel(name)),
   )
   expect(option, `找不到选项 ${name}`).toBeTruthy()
   fireEvent.click(option as HTMLElement)

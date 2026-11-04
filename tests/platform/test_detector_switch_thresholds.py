@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from anomaly_lab.platform.detectors import (
     SCORE_FAMILY_PROB,
     SCORE_FAMILY_SCALE,
@@ -35,6 +37,33 @@ def _make_store(tmp_path: Path) -> tuple[PlatformStore, int]:
         detector="iqr",
         alert_threshold=2.5,
         critical_threshold=4.0,
+        window_points=60,
+        interval_seconds=300,
+    )
+    return store, job.id
+
+
+def _make_store_with_defaults(tmp_path: Path) -> tuple[PlatformStore, int]:
+    """建一个**阈值全是默认值**的任务（2.5 / 3.75 = iqr 的惯用阈值）。
+
+    ⚠️ 与 `_make_store` 的区别：那里的 critical 是 4.0（≠ 默认 3.75），
+    也就是「用户调过」的任务 —— 两者的换算法行为**应该不同**。
+    """
+    store = PlatformStore(tmp_path / "platform.db")
+    source = store.add_source("local", "platform/source.db")
+    metric = store.add_metric(
+        source_id=source.id,
+        name="cpu",
+        query="SELECT ts, value FROM t WHERE $timefilter ORDER BY ts",
+        time_column="ts",
+        value_column="value",
+    )
+    job = store.add_job(
+        metric_id=metric.id,
+        name="job",
+        detector="iqr",
+        alert_threshold=2.5,
+        critical_threshold=3.75,
         window_points=60,
         interval_seconds=300,
     )
@@ -88,6 +117,42 @@ def test_switching_within_same_family_keeps_thresholds(tmp_path):
     """⚠️ 同族换算法**不动**阈值 —— 用户调好的 2.5 在 mad 下依然有意义。"""
     store, job_id = _make_store(tmp_path)
     updated = store.update_job_config(job_id, detector="mad")
+
+    assert updated.alert_threshold == 2.5
+    assert updated.critical_threshold == 4.0
+
+
+# ---------- 「继承来的默认值」与「用户调过的值」要分得清 ----------
+
+
+def test_switching_to_a_detector_with_another_default_resets_inherited_thresholds(
+    tmp_path,
+):
+    """⚠️ **同族换算法，但阈值从没被调过** → 按新算法的惯用阈值重设。
+
+    这是本文件存在的第二个理由。同族换算法沿用旧阈值有个**盲点**：
+    它分不清「用户特意调过的阈值」与「从来没动过的默认值」。
+
+    后果很实在：iqr 的惯用阈值是 2.5，theil_sen 的是 3.5（实测值）。
+    用户从没调过阈值，从 iqr 换到 theil_sen 后继续用 2.5 ——
+    精确率会从 98% 掉到 73%，而界面**一点提示都没有**。
+    """
+    store, job_id = _make_store_with_defaults(tmp_path)
+    updated = store.update_job_config(job_id, detector="theil_sen")
+
+    assert updated.alert_threshold == 3.5
+    assert updated.critical_threshold == pytest.approx(5.25)
+
+
+def test_user_adjusted_thresholds_survive_a_same_family_switch(tmp_path):
+    """⚠️ 用户**调过**阈值 → 换算法时保留他的值。
+
+    这是「同族沿用旧阈值」这条规则的**本意**：
+    用户可能特意把阈值调低（要更灵敏），不该被默认值冲掉。
+    """
+    store, job_id = _make_store(tmp_path)
+    # 2.5 / 4.0 —— critical 不是 iqr 的默认 3.75，说明用户动过
+    updated = store.update_job_config(job_id, detector="theil_sen")
 
     assert updated.alert_threshold == 2.5
     assert updated.critical_threshold == 4.0

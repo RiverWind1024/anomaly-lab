@@ -16,14 +16,15 @@ from anomaly_lab.data.loader import build_synthetic_dataset, load_dataset
 from anomaly_lab.data.synthetic import METRIC_CLASSES
 from anomaly_lab.detectors.statistical import (
     ChangePointDetector,
-    DeseasonalizedIQRDetector,
     EventCountDetector,
     IQRDetector,
     MADDetector,
     SeasonalDetector,
     STLResidualDetector,
+    TrendResidualIQRDetector,
     ZScoreDetector,
 )
+from anomaly_lab.detectors.trend import TheilSenTrendDetector
 from anomaly_lab.evaluation.backtest import BacktestRow, _mask_to_intervals, series_span
 from anomaly_lab.evaluation.compare import CompareRow, compare_detectors
 from anomaly_lab.evaluation.metrics import precision_recall_f1, range_based_prf
@@ -39,7 +40,8 @@ _DETECTORS = {
     "seasonal": SeasonalDetector,
     # period 传 None = 按序列自动估计周期
     "stl_residual": STLResidualDetector,
-    "deseasonalized_iqr": DeseasonalizedIQRDetector,
+    "trend_residual_iqr": TrendResidualIQRDetector,
+    "theil_sen": TheilSenTrendDetector,
     "changepoint": ChangePointDetector,
     "event_count": EventCountDetector,
 }
@@ -356,10 +358,11 @@ def _cmd_compare(args: argparse.Namespace) -> int:
         ("Seasonal", "anomaly_lab.detectors.statistical", "SeasonalDetector"),
         ("STLResidual", "anomaly_lab.detectors.statistical", "STLResidualDetector"),
         (
-            "DeseasonalizedIQR",
+            "TrendResidualIQR",
             "anomaly_lab.detectors.statistical",
-            "DeseasonalizedIQRDetector",
+            "TrendResidualIQRDetector",
         ),
+        ("TheilSen", "anomaly_lab.detectors.trend", "TheilSenTrendDetector"),
         ("ChangePoint", "anomaly_lab.detectors.statistical", "ChangePointDetector"),
         ("EventCount", "anomaly_lab.detectors.statistical", "EventCountDetector"),
         ("TCN", "anomaly_lab.detectors.deep", "TCNDetector"),
