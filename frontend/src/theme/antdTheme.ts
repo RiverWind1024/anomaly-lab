@@ -50,15 +50,15 @@ export function buildAntdTheme(mode: ThemeMode): ThemeConfig {
     },
     components: {
       Layout: {
-        siderBg: readToken('--surface-panel', '#111113'),
-        headerBg: readToken('--surface-panel', '#111113'),
+        siderBg: readToken('--surface-canvas', '#09090b'),
+        headerBg: readToken('--surface-canvas', '#09090b'),
         bodyBg: readToken('--surface-canvas', '#09090b'),
       },
       Menu: {
         // AntD 的 Menu 有 dark/light 两套内置调色板，都跟我们的 token 不一样。
-        // 这里把两套都按 token 覆盖 —— 侧栏在两个主题下都用同一套表面色。
-        itemBg: readToken('--surface-panel', '#111113'),
-        subMenuItemBg: readToken('--surface-panel', '#111113'),
+        // 这里把两套都按 token 覆盖 —— 侧栏在两个主题下都用外框色。
+        itemBg: readToken('--surface-canvas', '#09090b'),
+        subMenuItemBg: readToken('--surface-canvas', '#09090b'),
         // 选中态：**不铺色**，靠文字变亮 + 左侧 1px accent 线标记（见 AppLayout.css）
         itemSelectedBg: 'transparent',
         itemSelectedColor: readToken('--text-primary', '#fafafa'),
@@ -69,6 +69,8 @@ export function buildAntdTheme(mode: ThemeMode): ThemeConfig {
         itemHeight: 34,
         itemMarginInline: 0,
         iconMarginInlineEnd: 10,
+        iconSize: 16,
+        collapsedIconSize: 16,
         // 暗色侧栏专用的 dark* 键（Menu theme="dark" 时生效）
         darkItemBg: 'transparent',
         darkSubMenuItemBg: 'transparent',
@@ -93,7 +95,7 @@ export function buildAntdTheme(mode: ThemeMode): ThemeConfig {
       },
       Card: {
         colorBorderSecondary: readToken('--border-subtle', '#26262b'),
-        borderRadiusLG: 6,
+        borderRadiusLG: Number.parseFloat(readToken('--radius-md', '8px')) || 8,
         headerHeight: 46,
         headerFontSize: 15,
       },

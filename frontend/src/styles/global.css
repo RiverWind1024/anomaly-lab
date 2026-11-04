@@ -54,19 +54,21 @@ a:hover {
   text-decoration: underline;
 }
 
-/* 数值 / 时间戳一律等宽，便于纵向比对 */
+/* 数值 / 时间戳 / ID 一律等宽，便于纵向比对 */
+.num,
 .mono,
 code,
 pre {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
 }
 
 /* 页面级布局 —— 所有路由页面共用的骨架 */
 .page {
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
+  gap: var(--space-6);
   max-width: var(--layout-max-width);
 }
 
@@ -78,7 +80,7 @@ pre {
 
 .page__title {
   font-size: var(--text-xl);
-  letter-spacing: -0.01em;
+  letter-spacing: -0.015em;
 }
 
 .page__subtitle {
@@ -593,24 +595,6 @@ html.theme-switching *::after {
   margin: 0;
 }
 
-/* 评估报告页 */
-.evaluation {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.evaluation__overall {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  flex-wrap: wrap;
-  padding: var(--space-3);
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  font-size: var(--text-sm);
-}
-
 /* Bad Case 页 */
 .badcases-layout {
   display: grid;
@@ -742,18 +726,6 @@ html.theme-switching *::after {
 .detections__meta {
   margin-bottom: var(--space-3);
   font-size: 12px;
-}
-
-.evaluation__aggregate {
-  margin-bottom: var(--space-4);
-}
-
-.evaluation__aggregate-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  margin-bottom: var(--space-2);
 }
 
 .excluded-list {
@@ -897,14 +869,4 @@ html.theme-switching *::after {
   display: inline-flex;
   align-items: baseline;
   gap: var(--space-2);
-}
-
-.evaluation__metric-class {
-  display: flex;
-  flex-direction: column;
-  line-height: 1.4;
-}
-
-.evaluation__metric-class .mono {
-  font-size: 11px;
 }

@@ -37,14 +37,20 @@
 /* ============================================================ 暗色（默认） */
 :root,
 [data-theme='dark'] {
-  /* ---- 表面 ---- */
-  --surface-canvas: #09090b; /* 页面底色（design system: Surface） */
-  --surface-panel: #111113; /* 面板 / 卡片 */
-  --surface-raised: #1a1a1e; /* 悬浮 / 选中 / 表头 */
-  --surface-sunken: #101012; /* 输入框等内嵌表面 */
-  --border-subtle: #26262b; /* 常规描边 */
-  --border-strong: #3f3f46; /* 强调描边 / focus */
-  --line-soft: #1c1c20; /* 行分隔线（表格行之间，比描边更淡） */
+  color-scheme: dark;
+
+  /* ---- 表面 ----
+   * canvas = 外框（侧栏与内容区四周的地），sheet = 内容纸面。
+   * 浅色下是「冷灰框 + 白纸」，暗色下把纸面压深一档、外框更暗。 */
+  --surface-canvas: #09090b; /* 外框（侧栏 / 页面底） */
+  --surface-sheet: #111214; /* 内容纸面 */
+  --surface-panel: #111214; /* 面板（与纸面同色，靠线分隔） */
+  --surface-raised: #1b1d21; /* 悬浮 / 选中 / 表头 */
+  --surface-sunken: #0d0e10; /* 输入框等内嵌表面 */
+  --border-subtle: #26282d; /* 常规描边 */
+  --border-strong: #3f434a; /* 强调描边 / focus */
+  --line-soft: #1c1e22; /* 行分隔线（表格行之间，比描边更淡） */
+  --chart-paper: rgba(109, 168, 227, 0.045); /* 图表区的描图纸底 */
 
   /* ---- 文本（ink） ---- */
   --text-primary: #fafafa; /* design system: Text */
@@ -104,48 +110,52 @@
 
 /* ============================================================ 浅色 */
 [data-theme='light'] {
+  color-scheme: light;
+
   /* ---- 表面 ---- */
-  --surface-canvas: #f5f5f6;
+  --surface-canvas: #eceef1; /* 冷灰外框 —— 让白纸浮起来，而不是靠投影 */
+  --surface-sheet: #ffffff; /* 内容纸面 */
   --surface-panel: #ffffff;
-  --surface-raised: #efeff1;
-  --surface-sunken: #ffffff;
-  --border-subtle: #e2e2e5;
-  --border-strong: #c7c7cd;
-  --line-soft: #ececef; /* 行分隔线 */
+  --surface-raised: #f2f4f7;
+  --surface-sunken: #f7f8fa;
+  --border-subtle: #dfe3e8;
+  --border-strong: #c2c8d0;
+  --line-soft: #eaedf1; /* 行分隔线 */
+  --chart-paper: #f7f9fc; /* 图表区：极淡的蓝灰「描图纸」 */
 
   /* ---- 文本（ink） ---- */
-  --text-primary: #18181b;
-  --text-secondary: #52525b;
-  --text-tertiary: #6b6b76; /* 12px 标签在浅底上也要 ≥4.5:1 */
+  --text-primary: #16181b;
+  --text-secondary: #4e5661;
+  --text-tertiary: #6b7280; /* 12px 标签在浅底上也要 ≥4.5:1 */
   --text-inverse: #ffffff;
 
   /* ---- 语义色（浅底重新取值以保对比度） ---- */
   --accent: #0c5cab;
   --accent-hover: #0a4a8a;
-  --accent-text: #1d66af;
+  --accent-text: #1a5fa8;
   --accent-subtle: rgba(12, 92, 171, 0.1);
 
-  --status-normal: #218362;
-  --status-p1: #8f5d09; /* 12px pill 文字在浅底上要 ≥4.5:1 */
-  --status-p0: #ca1616;
-  --status-info: #1d66af;
+  --status-normal: #1c7a5c;
+  --status-p1: #96620b; /* 12px pill 文字在浅底上要 ≥4.5:1 */
+  --status-p0: #c41616;
+  --status-info: #1a5fa8;
 
-  --status-normal-subtle: rgba(33, 131, 98, 0.12);
-  --status-p1-subtle: rgba(160, 106, 13, 0.12);
-  --status-p0-subtle: rgba(202, 22, 22, 0.1);
-  --status-info-subtle: rgba(29, 102, 175, 0.1);
+  --status-normal-subtle: rgba(28, 122, 92, 0.1);
+  --status-p1-subtle: rgba(150, 98, 11, 0.11);
+  --status-p0-subtle: rgba(196, 22, 22, 0.09);
+  --status-info-subtle: rgba(26, 95, 168, 0.09);
 
   /* ---- 图表分类色（mark，浅底取深一档） ---- */
-  --series-1: #59a333;
-  --series-2: #3c9dbe;
-  --series-3: #6464ce;
-  --series-4: #bd77d4;
-  --series-5: #c74d94;
-  --series-6: #2a9d84;
+  --series-1: #4f922c;
+  --series-2: #318caa;
+  --series-3: #5a5ac0;
+  --series-4: #a968bf;
+  --series-5: #b84383;
+  --series-6: #238b75;
 
   /* 主数据元素的色相（浅底取深一档） */
-  --chart: #1d66af;
-  --chart-fill: rgba(29, 102, 175, 0.08);
+  --chart: #1d5fa9;
+  --chart-fill: rgba(29, 95, 169, 0.07);
 
   /* ---- 提示条 ---- */
   --hint-bg: rgba(37, 99, 235, 0.06);
@@ -166,12 +176,14 @@
     'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
-  /* design system 字号刻度 12 / 14 / 16 / 20 / 24 / 32 */
+  /* 字号刻度收敛到 5 档：12 / 13 / 15 / 20 / 26，
+   * 另有一档 34 只给「首屏主数字」。不再出现 11 / 15.5 / 30 这些散值。 */
   --text-xs: 12px;
-  --text-sm: 14px;
-  --text-md: 16px;
+  --text-sm: 13px;
+  --text-md: 15px;
   --text-lg: 20px;
-  --text-xl: 24px;
+  --text-xl: 26px;
+  --text-2xl: 34px;
 
   --font-weight-regular: 400;
   --font-weight-medium: 500;
@@ -195,11 +207,12 @@
 
   --radius-sm: 4px;
   --radius-md: 8px;
-  --radius-lg: 12px;
+  --radius-lg: 10px; /* 内容纸面 */
   --radius-full: 999px;
 
   --layout-sidebar-width: 232px;
-  --layout-max-width: 1560px;
+  --layout-max-width: 1320px;
+  --layout-frame: 12px; /* 纸面与外框之间的那圈地 */
 
   --motion-fast: 150ms;
   --motion-normal: 250ms;

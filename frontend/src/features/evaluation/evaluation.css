@@ -1,0 +1,213 @@
+/**
+ * 评估报告页 —— 与概览页同一张「实验记录纸」。
+ *
+ * 区块之间只有一条顶线和留白，不再套卡片；
+ * 颜色只出现在数据上（F1 条形、链接），其余走灰阶。
+ *
+ * ⚠️ 颜色一律取 tokens.css 的变量。
+ */
+
+.page--evaluation {
+  gap: var(--space-6);
+}
+
+/* 这一页的面板 = 无框区块：一条顶线 + 留白 */
+.page--evaluation .panel {
+  padding: var(--space-4) 0 0;
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+  border-radius: 0;
+}
+
+.page--evaluation .panel__head {
+  margin-bottom: var(--space-2);
+}
+
+.evaluation {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+/* 生成时间这类出处信息：小一号、不抢注意力 */
+.evaluation__provenance {
+  margin: 0;
+  font-size: var(--text-xs);
+}
+
+/* ---------- 总体指标：KPI 是字，不是卡片 ---------- */
+
+.kpis.kpis--eval {
+  grid-template-columns: minmax(0, 1.6fr) repeat(4, minmax(0, 1fr));
+}
+
+/* ---------- 筛选条：计数放右端，不另起一行 ---------- */
+
+.evaluation__filters {
+  margin: 0;
+}
+
+.evaluation__filters .filter-bar__count {
+  margin-left: auto;
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+.evaluation__filters .filter-bar__count b {
+  color: var(--text-primary);
+  font-weight: var(--font-weight-medium);
+}
+
+/* ---------- 分组表现：名称 + F1 条 + 两列数值 ---------- */
+
+.eval-groups {
+  border-top: 1px solid var(--line-soft);
+}
+
+.eval-groups__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.4fr) 92px 92px 56px;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+/* 表头：12px 灰字，无底色 —— 与下面的行同一条左边缘 */
+.eval-groups__row--head {
+  padding: 6px 0;
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+}
+
+.eval-groups__name {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.eval-groups__name b {
+  color: var(--text-primary);
+  font-weight: var(--font-weight-medium);
+}
+
+.eval-groups__name .mono {
+  font-size: var(--text-xs);
+}
+
+.eval-groups__r {
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.eval-groups__row--head .eval-groups__r,
+.eval-groups__row--head > span:first-child {
+  color: var(--text-tertiary);
+  font-weight: var(--font-weight-regular);
+}
+
+.eval-groups__score {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+}
+
+.eval-groups__score .num {
+  min-width: 42px;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  text-align: left;
+}
+
+/* F1 条：0–1 固定量程，只看长度就能排序 */
+.eval-bar {
+  flex: 1;
+  width: auto;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--accent-subtle);
+}
+
+.eval-bar > i {
+  display: block;
+  height: 100%;
+  background: var(--chart);
+}
+
+/* ---------- 明细表 ---------- */
+
+.evaluation__detail {
+  min-width: 0;
+}
+
+/* 形态列：中文标签 + 原始类名上下两行（并排会在窄列里折成竖排） */
+.evaluation__metric-class {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  line-height: 1.35;
+}
+
+.evaluation__metric-class .mono {
+  font-size: var(--text-xs);
+}
+
+@media (max-width: 900px) {
+  .kpis.kpis--eval {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    row-gap: var(--space-4);
+  }
+
+  /* 每行第一格：去掉左边框与左内边距 */
+  .kpis.kpis--eval .kpi:nth-child(4) {
+    padding-left: 0;
+    border-left: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .kpis.kpis--eval {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* 主数字（F1）独占一行，剩下四项正好排成 2×2 —— 不会在最末留下一个孤格 */
+  .kpis.kpis--eval .kpi--lead {
+    grid-column: 1 / -1;
+    padding-right: 0;
+  }
+
+  /* 每行第一格（主数字之后的偶数格）去掉竖线与左内边距 */
+  .kpis.kpis--eval .kpi:nth-child(2n) {
+    padding-left: 0;
+    border-left: none;
+  }
+
+  /* 通用规则把奇数格也去掉了竖线，这里把右列（3、5）还回来 */
+  .kpis.kpis--eval .kpi:nth-child(2n + 1):not(:first-child) {
+    padding-left: 18px;
+    border-left: 1px solid var(--line-soft);
+  }
+
+  .eval-groups__row {
+    grid-template-columns: minmax(0, 1fr) 120px 40px;
+    gap: var(--space-3);
+  }
+
+  /* 手机上先只留 F1（最重要）与序列数，Precision / Recall 收起 */
+  .eval-groups__row > :nth-child(3),
+  .eval-groups__row > :nth-child(4) {
+    display: none;
+  }
+
+  /* 窄屏里原始类名会被切掉半截 —— 只留中文标签，语义不丢 */
+  .evaluation__metric-class .mono {
+    display: none;
+  }
+}

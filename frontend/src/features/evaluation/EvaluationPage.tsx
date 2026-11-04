@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
-import { Button, Drawer, Popconfirm, Select, Space, Table, Tag } from 'antd'
+import { Button, Drawer, Popconfirm, Space, Table, Tag } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { Link } from 'react-router-dom'
 import { StateBoundary } from '../../components/StateBoundary'
-import { fmtMetric } from '../../lib/format'
+import { fmtMetric, fmtUtcTime } from '../../lib/format'
+import './evaluation.css'
 import { aggregateBy } from './aggregate'
 import { FilterBar } from './FilterBar'
 import { DIMENSIONS, filterRows, type DimensionKey, type EvaluationFilters } from './filters'
@@ -64,7 +65,7 @@ export function EvaluationTable({
         title: '形态',
         dataIndex: 'metric_class',
         key: 'metric_class',
-        width: 170,
+        width: 160,
         render: (value: string) => (
           // ⚠️ 必须上下两行，不能并排 —— 中文标签 + 原始类名并排的话，
           //    在窄列里会折成竖排（一个字一行），整张表就毁了
@@ -78,14 +79,14 @@ export function EvaluationTable({
         title: '检测器',
         dataIndex: 'detector',
         key: 'detector',
-        width: 110,
+        width: 96,
         render: (value: string) => <span className="mono">{value}</span>,
       },
       {
         title: 'Precision',
         dataIndex: 'precision',
         key: 'precision',
-        width: 100,
+        width: 92,
         align: 'right',
         render: (value: number) => <span className="mono">{fmtMetric(value)}</span>,
       },
@@ -93,7 +94,7 @@ export function EvaluationTable({
         title: 'Recall',
         dataIndex: 'recall',
         key: 'recall',
-        width: 100,
+        width: 92,
         align: 'right',
         render: (value: number) => <span className="mono">{fmtMetric(value)}</span>,
       },
@@ -101,7 +102,7 @@ export function EvaluationTable({
         title: 'F1',
         dataIndex: 'f1',
         key: 'f1',
-        width: 90,
+        width: 84,
         align: 'right',
         render: (value: number) => <span className="mono">{fmtMetric(value)}</span>,
       },
@@ -109,7 +110,7 @@ export function EvaluationTable({
         title: 'Range-F1',
         dataIndex: 'range_f1',
         key: 'range_f1',
-        width: 110,
+        width: 104,
         align: 'right',
         render: (value: number) => <span className="mono">{fmtMetric(value)}</span>,
       },
@@ -117,7 +118,7 @@ export function EvaluationTable({
         title: '真值点',
         dataIndex: 'n_truth',
         key: 'n_truth',
-        width: 90,
+        width: 84,
         align: 'right',
         render: (value: number) => <span className="mono">{value}</span>,
       },
@@ -125,16 +126,16 @@ export function EvaluationTable({
         title: '预测点',
         dataIndex: 'n_pred',
         key: 'n_pred',
-        width: 90,
+        width: 84,
         align: 'right',
         render: (value: number) => <span className="mono">{value}</span>,
       },
       {
         title: '操作',
         key: 'actions',
-        width: 110,
+        width: 96,
         // ⚠️ 固定在右侧 —— 列多的时候横向滚动，
-        //    否则「删除」按钮会被推出屏幕外，用户根本找不到
+        //    否则「排除」按钮会被推出屏幕外，用户根本找不到
         fixed: 'right',
         render: (_value, row) => (
           <Popconfirm
@@ -144,7 +145,9 @@ export function EvaluationTable({
             cancelText="取消"
             onConfirm={() => onExclude(row)}
           >
-            <Button size="small">删除</Button>
+            <Button size="small" type="text">
+              排除
+            </Button>
           </Popconfirm>
         ),
       },
@@ -152,62 +155,15 @@ export function EvaluationTable({
     [onExclude],
   )
 
-  const bucketColumns: ColumnsType<(typeof buckets)[number]> = [
-    { title: '分组', dataIndex: 'key', key: 'key', width: 200 },
-    {
-      title: '序列数',
-      dataIndex: 'n_series',
-      key: 'n_series',
-      width: 100,
-      align: 'right',
-    },
-    {
-      title: 'Precision',
-      dataIndex: 'precision',
-      key: 'precision',
-      width: 110,
-      align: 'right',
-      render: (value: number) => <span className="mono">{fmtMetric(value)}</span>,
-    },
-    {
-      title: 'Recall',
-      dataIndex: 'recall',
-      key: 'recall',
-      width: 110,
-      align: 'right',
-      render: (value: number) => <span className="mono">{fmtMetric(value)}</span>,
-    },
-    {
-      title: 'F1',
-      dataIndex: 'f1',
-      key: 'f1',
-      width: 100,
-      align: 'right',
-      render: (value: number) => <span className="mono">{fmtMetric(value)}</span>,
-    },
-    {
-      title: 'Range-F1',
-      dataIndex: 'range_f1',
-      key: 'range_f1',
-      width: 120,
-      align: 'right',
-      render: (value: number) => <span className="mono">{fmtMetric(value)}</span>,
-    },
-    {
-      title: '真值点',
-      dataIndex: 'n_truth',
-      key: 'n_truth',
-      width: 100,
-      align: 'right',
-    },
-    {
-      title: '预测点',
-      dataIndex: 'n_pred',
-      key: 'n_pred',
-      width: 100,
-      align: 'right',
-    },
-  ]
+  const dimensionLabel = DIMENSIONS.find((item) => item.key === dimension)?.label ?? ''
+  const totals = buckets.reduce(
+    (acc, bucket) => ({
+      n_series: acc.n_series + bucket.n_series,
+      n_truth: acc.n_truth + bucket.n_truth,
+      n_pred: acc.n_pred + bucket.n_pred,
+    }),
+    { n_series: 0, n_truth: 0, n_pred: 0 },
+  )
 
   return (
     <StateBoundary
@@ -221,66 +177,141 @@ export function EvaluationTable({
       {(data) => (
         <div className="evaluation">
           {overall && (
-            <div className="evaluation__overall">
-              <Tag>总体</Tag>
-              <span>
-                Precision <span className="mono">{fmtMetric(overall.precision)}</span>
-              </span>
-              <span>
-                Recall <span className="mono">{fmtMetric(overall.recall)}</span>
-              </span>
-              <span>
-                F1 <span className="mono">{fmtMetric(overall.f1)}</span>
-              </span>
-              <span>
-                Range-F1 <span className="mono">{fmtMetric(overall.range_f1)}</span>
-              </span>
-              <span className="muted">
-                {overall.n_series} 条序列 · 真值 {overall.n_truth} 点 · 预测 {overall.n_pred} 点
-              </span>
+            <div className="evaluation__overall kpis kpis--eval">
+              <div className="kpi kpi--lead">
+                <span className="kpi__k">F1</span>
+                <span className="kpi__v num">{fmtMetric(overall.f1)}</span>
+                <span className="kpi__s">Precision / Recall 调和平均</span>
+              </div>
+              <div className="kpi">
+                <span className="kpi__k">Precision</span>
+                <span className="kpi__v num">{fmtMetric(overall.precision)}</span>
+                <span className="kpi__s">报警中真异常占比</span>
+              </div>
+              <div className="kpi">
+                <span className="kpi__k">Recall</span>
+                <span className="kpi__v num">{fmtMetric(overall.recall)}</span>
+                <span className="kpi__s">真异常被检出占比</span>
+              </div>
+              <div className="kpi">
+                <span className="kpi__k">Range-F1</span>
+                <span className="kpi__v num">{fmtMetric(overall.range_f1)}</span>
+                <span className="kpi__s">按区间重叠计分</span>
+              </div>
+              <div className="kpi">
+                <span className="kpi__k">标注点</span>
+                <span className="kpi__v num">{overall.n_truth.toLocaleString()}</span>
+                <span className="kpi__s">预测 {overall.n_pred.toLocaleString()} 点</span>
+              </div>
             </div>
           )}
-          <div className="filter-bar">
+
+          <div className="filter-bar evaluation__filters">
             <FilterBar rows={rows} filters={filters} onChange={setFilters} />
-            <Button size="small" onClick={onOpenExcluded}>
-              已排除记录{excludedCount > 0 ? `（${excludedCount}）` : ''}
-            </Button>
+            <span className="filter-bar__count">
+              筛选后 <b className="num">{filtered.length}</b> / {data.rows.length} 条记录
+            </span>
           </div>
 
-          <div className="evaluation__meta muted">
-            筛选后 {filtered.length} / {data.rows.length} 条记录
-          </div>
-
-          <section className="evaluation__aggregate">
-            <div className="evaluation__aggregate-head">
-              <h2 className="section__title">聚合统计</h2>
-              <Select
-                value={dimension}
-                style={{ width: 160 }}
-                onChange={setDimension}
-                options={DIMENSIONS.map((item) => ({ value: item.key, label: `按${item.label}` }))}
-              />
+          <section className="panel">
+            <div className="panel__head">
+              <div>
+                <h2 className="panel__title">分组表现</h2>
+                <p className="panel__meta">
+                  按{dimensionLabel}汇总 · 按 F1 从高到低
+                </p>
+              </div>
+              <div className="seg" role="tablist" aria-label="聚合维度">
+                {DIMENSIONS.map((item) => (
+                  <button
+                    key={item.key}
+                    type="button"
+                    role="tab"
+                    aria-selected={dimension === item.key}
+                    onClick={() => setDimension(item.key)}
+                  >
+                    按{item.label}
+                  </button>
+                ))}
+              </div>
             </div>
-            <Table<(typeof buckets)[number]>
-              rowKey="key"
-              columns={bucketColumns}
-              dataSource={buckets}
-              size="small"
-              pagination={false}
-              scroll={{ x: 'max-content' }}
-            />
+
+            <div className="eval-groups" role="table" aria-label={`按${dimensionLabel}分组的表现`}>
+              <div className="eval-groups__row eval-groups__row--head" role="row">
+                <span role="columnheader">{dimensionLabel}</span>
+                <span role="columnheader">F1</span>
+                <span className="eval-groups__r" role="columnheader">
+                  Precision
+                </span>
+                <span className="eval-groups__r" role="columnheader">
+                  Recall
+                </span>
+                <span className="eval-groups__r" role="columnheader">
+                  序列
+                </span>
+              </div>
+              {buckets.map((bucket) => {
+                const label = metricClassLabel(bucket.key)
+                return (
+                  <div className="eval-groups__row" role="row" key={bucket.key}>
+                    <span className="eval-groups__name" role="cell">
+                      <b>{label}</b>
+                      {label !== bucket.key ? <span className="mono dim">{bucket.key}</span> : null}
+                    </span>
+                    <div className="eval-groups__score" role="cell">
+                      <span className="num">{fmtMetric(bucket.f1)}</span>
+                      <i className="eval-bar" aria-hidden="true">
+                        <i style={{ width: `${Math.max(0, Math.min(1, bucket.f1)) * 100}%` }} />
+                      </i>
+                    </div>
+                    <span className="eval-groups__r num" role="cell">
+                      {fmtMetric(bucket.precision)}
+                    </span>
+                    <span className="eval-groups__r num" role="cell">
+                      {fmtMetric(bucket.recall)}
+                    </span>
+                    <span className="eval-groups__r num" role="cell">
+                      {bucket.n_series}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+
+            <p className="tfoot">
+              <span>
+                合计 <b className="num">{totals.n_series}</b> 条序列
+              </span>
+              <span>
+                标注 <b className="num">{totals.n_truth.toLocaleString()}</b> 点
+              </span>
+              <span>
+                预测 <b className="num">{totals.n_pred.toLocaleString()}</b> 点
+              </span>
+            </p>
           </section>
 
-          <div className="evaluation__detail">
-            <Table<EvaluationRow>
-              rowKey={(row) => `${row.series_id}-${row.detector}`}
-              columns={columns}
-              dataSource={filtered}
-              size="middle"
-              pagination={{ pageSize: 20, showSizeChanger: true }}
-              scroll={{ x: 'max-content' }}
-            />
-          </div>
+          <section className="panel">
+            <div className="panel__head">
+              <div>
+                <h2 className="panel__title">序列明细</h2>
+                <p className="panel__meta">点序列名查看该条记录的检测明细</p>
+              </div>
+              <Button type="text" size="small" onClick={onOpenExcluded}>
+                已排除记录{excludedCount > 0 ? `（${excludedCount}）` : ''}
+              </Button>
+            </div>
+            <div className="evaluation__detail">
+              <Table<EvaluationRow>
+                rowKey={(row) => `${row.series_id}-${row.detector}`}
+                columns={columns}
+                dataSource={filtered}
+                size="small"
+                pagination={{ pageSize: 20, showSizeChanger: true }}
+                scroll={{ x: 'max-content' }}
+              />
+            </div>
+          </section>
         </div>
       )}
     </StateBoundary>
@@ -295,13 +326,38 @@ export function EvaluationPage() {
   const [excludedOpen, setExcludedOpen] = useState(false)
 
   const excluded: Exclusion[] = summary.data?.excluded ?? []
+  const overall = summary.data?.summary.overall
+  const ranked = Object.entries(summary.data?.summary.by_metric_class ?? {}).sort(
+    (a, b) => b[1].f1 - a[1].f1,
+  )
+  const best = ranked[0]
+  const worst = ranked[ranked.length - 1]
 
   return (
-    <div className="page">
+    <div className="page page--evaluation">
       <header className="page__header">
         <h1 className="page__title">评估报告</h1>
-        <p className="page__subtitle">
-          {summary.data ? `${summary.data.rows.length} 条序列的回测结果` : '加载中…'}
+        <p className="finding">
+          {summary.data ? (
+            <>
+              <span className="num">{summary.data.rows.length}</span> 条序列 · F1{' '}
+              <span className="num">{fmtMetric(overall?.f1)}</span>
+              {best && worst && best[0] !== worst[0] ? (
+                <>
+                  ；<b>{metricClassLabel(best[0])}</b> 最好（
+                  <span className="num">{fmtMetric(best[1].f1)}</span>），
+                  <b>{metricClassLabel(worst[0])}</b> 最差（
+                  <span className="num">{fmtMetric(worst[1].f1)}</span>）
+                </>
+              ) : null}
+              。
+            </>
+          ) : (
+            '加载中…'
+          )}
+        </p>
+        <p className="evaluation__provenance dim">
+          {summary.data?.title ?? '回测'} · 生成于 {fmtUtcTime(summary.data?.generated_at)} UTC
         </p>
       </header>
 

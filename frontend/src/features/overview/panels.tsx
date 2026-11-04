@@ -25,40 +25,42 @@ export function KpiStrip({
   const p0 = overview.alerts.by_level.find((l) => l.level === 'P0')?.count ?? 0
   return (
     <section className="kpis" aria-label="平台规模">
-      <div className="kpi">
+      <div className="kpi kpi--lead">
         <span className="kpi__k">告警</span>
-        <span className="kpi__v mono">{overview.alerts.total}</span>
-        <span className="kpi__s">{p0 > 0 ? `${p0} 条 P0` : '没有 P0'}</span>
+        <span className="kpi__v num">{overview.alerts.total}</span>
+        <span className="kpi__s">
+          {p0 > 0 ? <span className="kpi__flag">{p0} 条 P0</span> : '没有 P0'}
+        </span>
       </div>
       <div className="kpi">
         <span className="kpi__k">告警任务</span>
-        <span className="kpi__v mono">{overview.counts.jobs}</span>
+        <span className="kpi__v num">{overview.counts.jobs}</span>
         <span className="kpi__s">{overview.counts.enabled_jobs} 启用</span>
       </div>
       <div className="kpi">
         <span className="kpi__k">保留期运行</span>
-        <span className="kpi__v mono">{overview.runs.total}</span>
+        <span className="kpi__v num">{overview.runs.total}</span>
         <span className="kpi__s">
           {overview.runs.failed > 0 ? `${overview.runs.failed} 失败` : '全部成功'}
         </span>
       </div>
       <div className="kpi">
         <span className="kpi__k">数据源 / 指标</span>
-        <span className="kpi__v mono">
+        <span className="kpi__v num">
           {overview.counts.sources} / {overview.counts.metrics}
         </span>
         <span className="kpi__s">已接入平台</span>
       </div>
       <div className="kpi">
         <span className="kpi__k">人工反馈</span>
-        <span className="kpi__v mono">{overview.feedback.total}</span>
+        <span className="kpi__v num">{overview.feedback.total}</span>
         <span className="kpi__s">
           {overview.feedback.total > 0 ? '已标注的误报漏报' : '尚无标注'}
         </span>
       </div>
       <div className="kpi">
         <span className="kpi__k">回测序列</span>
-        <span className="kpi__v mono">{bt?.n_series ?? '—'}</span>
+        <span className="kpi__v num">{bt?.n_series ?? '—'}</span>
         <span className="kpi__s">{bt ? `${bt.n_truth} 个真值点` : '还没有报告'}</span>
       </div>
     </section>
@@ -80,14 +82,20 @@ export function AlertEventsPanel({
   seriesId: string | undefined
 }) {
   return (
-    <section className="panel" aria-labelledby="eventsTitle">
+    <section className="panel panel--events" aria-labelledby="eventsTitle">
       <div className="panel__head">
         <div>
           <h2 className="panel__title" id="eventsTitle">
             告警事件
           </h2>
-          <p className="panel__meta mono">
-            {seriesId ? `${seriesId} · ${events.length} 条` : `${events.length} 条`}
+          <p className="panel__meta">
+            {seriesId ? (
+              <>
+                <span className="num">{seriesId}</span> · {events.length} 条
+              </>
+            ) : (
+              `${events.length} 条`
+            )}
           </p>
         </div>
         <Link className="link" to="/alerts">
@@ -99,19 +107,19 @@ export function AlertEventsPanel({
         <p className="muted">这个序列当前没有告警</p>
       ) : (
         <ul className="eventlist">
-          {events.slice(0, 4).map((e) => (
+          {events.slice(0, 6).map((e) => (
             <li className="event" key={`${e.job_id}-${e.series_id}-${e.start_ts}`}>
               <span className={`pill pill--${e.level_index >= 2 ? 'p0' : 'p1'}`}>{e.level}</span>
               <span className="event__main">
-                <span className="event__series mono">
+                <span className="event__series num">
                   {fmtUtcTime(e.start_ts)}
                   {e.end_ts !== e.start_ts ? ` – ${fmtUtcTime(e.end_ts).slice(6)}` : ''}
                 </span>
-                <span className="event__time mono">{e.detector}</span>
+                <span className="event__time">{e.detector}</span>
               </span>
               <span className="event__score">
-                <span className="mono">{e.max_score.toFixed(2)}σ</span>
-                <span className="event__pts mono">{e.n_points} 点</span>
+                <span className="num">{e.max_score.toFixed(2)}σ</span>
+                <span className="event__pts">{e.n_points} 点</span>
               </span>
             </li>
           ))}
@@ -119,12 +127,8 @@ export function AlertEventsPanel({
       )}
 
       <div className="panel__foot">
-        <span className="mono">
-          {events.length > 4 ? `还有 ${events.length - 4} 条` : '本序列的告警'}
-        </span>
-        <Link className="link" to="/alerts">
-          查看全部 {events.length} 条
-        </Link>
+        <span>本序列共 {events.length} 条</span>
+        <span>{events.length > 6 ? '显示最近 6 条' : '已全部显示'}</span>
       </div>
     </section>
   )
@@ -147,13 +151,13 @@ export function JobHealthPanel({
   const lastJob = jobs.find((j) => j.last_run?.n_series)
 
   return (
-    <section className="panel" aria-labelledby="jobsTitle">
+    <section className="panel panel--jobs" aria-labelledby="jobsTitle">
       <div className="panel__head">
         <div>
           <h2 className="panel__title" id="jobsTitle">
             任务运行状况
           </h2>
-          <p className="panel__meta mono">{jobs.length} 个任务</p>
+          <p className="panel__meta">{jobs.length} 个任务</p>
         </div>
         <Link className="link" to="/jobs">
           管理任务
@@ -187,7 +191,7 @@ export function JobHealthPanel({
                 <b>
                   <Link to={`/jobs/${job.id}`}>{job.name}</Link>
                 </b>
-                <span className="mono">
+                <span>
                   {job.detector} · 每 {conf?.interval_seconds ?? '—'}s
                 </span>
               </span>
@@ -200,21 +204,21 @@ export function JobHealthPanel({
                   <span className="muted">未运行</span>
                 )}
               </span>
-              <span className="r mono" role="cell">
-                <span className="k">序列</span>
-                {last?.n_series ?? '—'}
+              <span className="r" role="cell">
+                <span className="num">{last?.n_series ?? '—'}</span>
               </span>
-              <span className="r mono" role="cell">
-                <span className="k">告警</span>
-                {last?.n_alerts ?? '—'}
+              <span className="r" role="cell">
+                <span className="num">{last?.n_alerts ?? '—'}</span>
               </span>
-              <span className="r mono jobrow__hide" role="cell">
-                <span className="k">耗时</span>
-                {last ? fmtRunDuration(last.started_at, last.finished_at) : '—'}
+              <span className="r jobrow__hide" role="cell">
+                <span className="num">
+                  {last ? fmtRunDuration(last.started_at, last.finished_at) : '—'}
+                </span>
               </span>
-              <span className="r mono jobrow__hide" role="cell">
-                <span className="k">下次</span>
-                {conf?.next_run_at ? fmtUtcTime(conf.next_run_at).slice(6) : '—'}
+              <span className="r jobrow__hide" role="cell">
+                <span className="num">
+                  {conf?.next_run_at ? fmtUtcTime(conf.next_run_at).slice(6) : '—'}
+                </span>
               </span>
             </div>
           )
@@ -291,14 +295,15 @@ export function BacktestPanel({ summary }: { summary: Summary | undefined }) {
     .sort((a, b) => a[1].f1 - b[1].f1)[0]
 
   return (
-    <section className="panel" aria-labelledby="btTitle">
+    <section className="panel panel--backtest" aria-labelledby="btTitle">
       <div className="panel__head">
         <div>
           <h2 className="panel__title" id="btTitle">
             回测总体
           </h2>
-          <p className="panel__meta mono">
-            {bt.n_series} 条序列 · {summary.generated_at?.slice(0, 10) ?? ''}
+          <p className="panel__meta">
+            <span className="num">{bt.n_series}</span> 条序列 ·{' '}
+            <span className="num">{summary.generated_at?.slice(0, 10) ?? ''}</span>
           </p>
         </div>
         <Link className="link" to="/evaluation">
@@ -309,25 +314,25 @@ export function BacktestPanel({ summary }: { summary: Summary | undefined }) {
       <div className="backtest">
         <div className="backtest__lead">
           <span className="kpi__k">回测 F1</span>
-          <span className="backtest__f1 mono">{bt.f1.toFixed(3)}</span>
+          <span className="backtest__f1 num">{bt.f1.toFixed(3)}</span>
           <span className="backtest__note">点级 F1，阈值逐条搜索</span>
         </div>
         <dl className="backtest__grid">
           <div>
             <dt>Precision</dt>
-            <dd className="mono">{bt.precision.toFixed(3)}</dd>
+            <dd className="num">{bt.precision.toFixed(3)}</dd>
           </div>
           <div>
             <dt>Recall</dt>
-            <dd className="mono">{bt.recall.toFixed(3)}</dd>
+            <dd className="num">{bt.recall.toFixed(3)}</dd>
           </div>
           <div>
             <dt>Range-F1</dt>
-            <dd className="mono">{bt.range_f1.toFixed(3)}</dd>
+            <dd className="num">{bt.range_f1.toFixed(3)}</dd>
           </div>
           <div>
             <dt>真值 / 预测</dt>
-            <dd className="mono">
+            <dd className="num">
               {bt.n_truth.toLocaleString('en-US')} / {bt.n_pred.toLocaleString('en-US')}
             </dd>
           </div>
@@ -337,8 +342,8 @@ export function BacktestPanel({ summary }: { summary: Summary | undefined }) {
             <span className="dot dot--p0" aria-hidden="true" />
             <p>
               <b>{worst[0]}</b> 形态最弱：{worst[1].n_series} 条序列 F1 为{' '}
-              <span className="mono">{worst[1].f1.toFixed(3)}</span>，真值异常点{' '}
-              <span className="mono">{worst[1].n_truth.toLocaleString('en-US')}</span> 个。
+              <span className="num">{worst[1].f1.toFixed(3)}</span>，真值异常点{' '}
+              <span className="num">{worst[1].n_truth.toLocaleString('en-US')}</span> 个。
             </p>
             <Link className="link" to="/evaluation">
               看是哪几条
@@ -367,13 +372,13 @@ export function RetentionPanel() {
   })
 
   return (
-    <section className="panel" aria-labelledby="retTitle">
+    <section className="panel retention-panel" aria-labelledby="retTitle">
       <div className="panel__head">
         <div>
           <h2 className="panel__title" id="retTitle">
             数据保留
           </h2>
-          <p className="panel__meta mono">超出窗口的运行记录会被自动清掉</p>
+          <p className="panel__meta">超出窗口的运行记录会被自动清掉</p>
         </div>
       </div>
 
@@ -381,13 +386,13 @@ export function RetentionPanel() {
         <div className="retention">
           <span className="retention__item">
             <span className="muted">运行记录</span>
-            <span className="mono">{storage.data.runs.kept}</span>
+            <span className="num">{storage.data.runs.kept}</span>
             <span className="muted">条</span>
-            <span className="mono">{fmtBytes(storage.data.runs.bytes)}</span>
+            <span className="num">{fmtBytes(storage.data.runs.bytes)}</span>
           </span>
           <span className="retention__item">
             <span className="muted">保留策略</span>
-            <span className="mono">最近 {storage.data.policy.retention_days} 天</span>
+            <span>最近 {storage.data.policy.retention_days} 天</span>
           </span>
           <span className="retention__item">
             <span className="muted">上次清理</span>

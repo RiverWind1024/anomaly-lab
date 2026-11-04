@@ -18,8 +18,7 @@
   overflow: auto;
   display: flex;
   flex-direction: column;
-  background: var(--surface-panel);
-  border-right: 1px solid var(--border-subtle);
+  background: var(--surface-canvas);
 }
 
 /* ---------- 品牌 ---------- */
@@ -64,13 +63,41 @@
   border-inline-end: none;
   background: transparent;
   padding: 0 var(--space-2);
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .app-sider .ant-menu-item {
   margin-block: 2px;
   width: 100%;
   color: var(--text-secondary);
+}
+
+/* 导航图标：16px 线稿，跟文字同色、同粗细 */
+.app-nav__icon {
+  display: inline-flex;
+  color: var(--text-tertiary);
+}
+
+.app-nav__icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.app-sider .ant-menu-item-selected .app-nav__icon,
+.app-sider .ant-menu-submenu-selected > .ant-menu-submenu-title .app-nav__icon {
+  color: var(--accent-text);
+}
+
+.app-sider .ant-menu-submenu-title {
+  color: var(--text-secondary);
+}
+
+.app-sider .ant-menu-submenu-title:hover {
+  color: var(--text-primary);
+}
+
+.app-sider .ant-menu-sub {
+  background: transparent !important;
 }
 
 /* 选中态：**不铺色** —— 文字变亮 + 左侧 1px accent 线（同一屏只出现一次） */
@@ -105,9 +132,55 @@
 /* ---------- 主题切换 ---------- */
 
 .app-sider__footer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
   margin-top: auto;
-  padding: var(--space-3) var(--space-4);
-  border-top: 1px solid var(--border-subtle);
+  padding: var(--space-4);
+}
+
+/* 工作区状态 —— 两行事实，不加标题 */
+.app-scope {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+}
+
+.app-scope__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.app-scope dt {
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
+.app-scope dd {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
+.app-scope__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.app-scope__dot--ok {
+  background: var(--status-normal);
+}
+
+.app-scope__dot--p0 {
+  background: var(--status-p0);
 }
 
 .app-theme {
@@ -140,12 +213,20 @@
   background: var(--accent-text);
 }
 
-/* ---------- 内容区 ---------- */
+/* ---------- 内容区：冷灰外框里的一张白纸 ---------- */
 
 .app-content {
-  padding: var(--space-6);
+  padding: var(--layout-frame);
   background: var(--surface-canvas);
   min-height: 100vh;
+}
+
+.app-sheet {
+  min-height: calc(100vh - var(--layout-frame) * 2);
+  padding: 28px 32px 36px;
+  background: var(--surface-sheet);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
 }
 
 /* ---------- 手机顶栏（桌面端隐藏） ---------- */
@@ -156,7 +237,7 @@
   gap: var(--space-3);
   height: 52px;
   padding: 0 var(--space-4);
-  background: var(--surface-panel);
+  background: var(--surface-canvas);
   border-bottom: 1px solid var(--border-subtle);
 }
 
@@ -187,8 +268,8 @@
 
 .app-topbar__page {
   margin-left: auto;
-  color: var(--text-tertiary);
-  font-size: 13px;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
 }
 
 /* ---------- 手机导航抽屉 ---------- */
@@ -218,8 +299,15 @@
   }
 
   .app-content {
-    padding: var(--space-5);
+    padding: 0;
     min-height: 0;
+  }
+
+  .app-sheet {
+    min-height: 0;
+    padding: 20px 16px 28px;
+    border: 0;
+    border-radius: 0;
   }
 }
 

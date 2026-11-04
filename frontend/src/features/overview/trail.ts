@@ -52,6 +52,8 @@ export interface TrailGeometry {
   plotW: number
   plotH: number
   plotBottom: number
+  /** x 轴标签的基线 y（随图高变化） */
+  axisY: number
   /** x 轴刻度（毫秒时间戳） */
   ticks: number[]
   /** 是否显示 x 轴标签（窄屏只显示时间） */
@@ -131,14 +133,21 @@ export function buildTrail(
   for (const p of view) if (p.s > peak.s) peak = p
 
   /**
-   * y 轴上限：收到**参考线的两倍左右**。
+   * y 轴上限：让**阈值与峰值都落进画面**，而不是固定钉死 5。
    *
-   * ⚠️ 分数大多在 0-3 之间，峰值偶尔冲到 13 —— 若按峰值定标，
-   *    整条线会贴在底部，上面留一大片空白（app-screens §6.1）。
-   *    超出上限的峰值画在顶边上并标注真实数值，不假装它在刻度里。
+   * ⚠️ 阈值很低的序列（0.5σ）若按 5σ 定标，曲线会被压在最底下，
+   *    上面 80% 是空白（截图里看得很明显）。
+   *    这里取「两倍 P1、1.08 倍 P0、1.06 倍峰值」三者的最大值，
+   *    再向上取到 0.5 / 1 / 5 的整齐步长。
    */
-  const refLine = alertThreshold > 0 ? alertThreshold : criticalThreshold
-  const yMax = Math.max(5, Math.ceil((refLine * 2) / 5) * 5)
+  const top = Math.max(
+    1,
+    alertThreshold * 1.6,
+    criticalThreshold * 1.08,
+    peak.s * 1.06,
+  )
+  const step = top <= 2 ? 0.5 : top <= 6 ? 1 : 5
+  const yMax = Math.ceil(top / step) * step
   const clipped = peak.s > yMax
 
   // 版面：左轴标签 / 主图 / P0+P1 条带 / 整点标签
@@ -188,6 +197,7 @@ export function buildTrail(
     plotW,
     plotH,
     plotBottom,
+    axisY: height - 4,
     ticks,
     wideLabels,
     peak,

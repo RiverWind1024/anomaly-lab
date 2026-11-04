@@ -86,6 +86,106 @@ export interface AppLayoutProps {
 }
 
 /**
+ * 导航图标 —— 16px 线性图标，一笔画成，跟着文字的颜色走。
+ *
+ * ⚠️ 不用图标库：这里只有 9 个入口，手写路径比引依赖便宜，
+ *    也避免每个图标各带一套自己的圆角与粗细。
+ */
+const NAV_ICON_PATHS: Record<string, ReactNode> = {
+  // 概览：一条带峰值的轨迹
+  '/': <path d="M1.8 9.8h2.6l1.6-4.4 2.2 7 1.8-3.2h4.2" />,
+  // 数据：分层
+  data: (
+    <>
+      <path d="M8 2.2 14 5 8 7.8 2 5 8 2.2Z" />
+      <path d="M2 8.2 8 11l6-2.8M2 11.2 8 14l6-2.8" />
+    </>
+  ),
+  // 数据源：机架
+  '/sources': (
+    <>
+      <rect x="2.2" y="2.6" width="11.6" height="4.4" rx="1" />
+      <rect x="2.2" y="9" width="11.6" height="4.4" rx="1" />
+      <path d="M4.6 4.8h.01M4.6 11.2h.01" />
+    </>
+  ),
+  // 指标：滑杆
+  '/metrics': (
+    <>
+      <path d="M2 4.6h3.2M8.4 4.6H14M2 11.4h5.6M10.8 11.4H14" />
+      <circle cx="7" cy="4.6" r="1.4" />
+      <circle cx="9.4" cy="11.4" r="1.4" />
+    </>
+  ),
+  // 指标预览：表格
+  '/metrics/preview': (
+    <>
+      <rect x="2.2" y="2.8" width="11.6" height="10.4" rx="1" />
+      <path d="M2.2 6.2h11.6M6.4 6.2v7" />
+    </>
+  ),
+  // 告警：铃
+  alerting: (
+    <>
+      <path d="M8 2.2a3.8 3.8 0 0 0-3.8 3.8c0 2.8-1.1 3.8-1.1 3.8h9.8s-1.1-1-1.1-3.8A3.8 3.8 0 0 0 8 2.2Z" />
+      <path d="M6.6 12.6a1.5 1.5 0 0 0 2.8 0" />
+    </>
+  ),
+  // 告警任务：循环时钟
+  '/jobs': (
+    <>
+      <circle cx="8" cy="8" r="5.8" />
+      <path d="M8 4.8V8l2.2 1.4" />
+    </>
+  ),
+  // 告警记录：警示三角
+  '/alerts': (
+    <>
+      <path d="M8 2.2 14 13H2L8 2.2Z" />
+      <path d="M8 6.2v3.2M8 11.4h.01" />
+    </>
+  ),
+  // 评估报告：柱状图
+  '/evaluation': (
+    <>
+      <path d="M2.2 2v12h11.6" />
+      <path d="M5.2 11.2V8M8 11.2V5.4M10.8 11.2V7" />
+    </>
+  ),
+  // 检测记录：放大镜
+  '/detections': (
+    <>
+      <circle cx="7.2" cy="7.2" r="4.6" />
+      <path d="M10.6 10.6 14 14" />
+    </>
+  ),
+  // 标注：笔
+  '/annotate': (
+    <>
+      <path d="M3 13l.6-3 7-7a1.4 1.4 0 0 1 2 2l-7 6.9L3 13Z" />
+      <path d="M9.4 4.2 11.8 6.6" />
+    </>
+  ),
+}
+
+function NavIcon({ name }: { name: string }) {
+  return (
+    <span className="app-nav__icon" aria-hidden="true">
+      <svg
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        {NAV_ICON_PATHS[name] ?? null}
+      </svg>
+    </span>
+  )
+}
+
+/**
  * 品牌标记 —— 从产品自己的东西画出来：
  * 一条异常分数曲线，中间那个尖出来的点就是被抓住的异常。
  *
@@ -157,8 +257,10 @@ function NavMenu({
       return {
         key: item.key,
         label: item.label,
+        icon: <NavIcon name={item.key} />,
         children: item.children.map((child) => ({
           key: child.key,
+          icon: <NavIcon name={child.key} />,
           label: (
             <Link to={child.key} onClick={onNavigate}>
               {child.label}
@@ -177,6 +279,7 @@ function NavMenu({
     }
     return {
       key: item.key,
+      icon: <NavIcon name={item.key} />,
       label: (
         <Link to={item.key} onClick={onNavigate}>
           {item.label}
@@ -210,6 +313,69 @@ function ThemeToggle({ themeMode, onToggle }: { themeMode: ThemeMode; onToggle: 
       <span className="app-theme__dot" aria-hidden="true" />
       {dark ? '暗色主题' : '浅色主题'}
     </button>
+  )
+}
+
+/** 距上次运行多久 —— 侧栏页脚只报一个相对时间。 */
+function sinceLabel(iso: string | null | undefined): string {
+  if (!iso) return '还没有运行'
+  const then = Date.parse(iso)
+  if (Number.isNaN(then)) return '—'
+  const minutes = Math.round((Date.now() - then) / 60000)
+  if (minutes < 1) return '刚刚'
+  if (minutes < 60) return `${minutes} 分钟前`
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) return `${hours} 小时前`
+  return `${Math.round(hours / 24)} 天前`
+}
+
+/**
+ * 侧栏页脚 —— 这个工作区现在是什么状态。
+ *
+ * ⚠️ 只报**真实**的运行状态（最近一次运行的相对时间 + 成败），
+ *    不放版本号、版权这类占位信息。
+ */
+function WorkspaceFoot({
+  themeMode,
+  onToggleTheme,
+}: {
+  themeMode: ThemeMode
+  onToggleTheme: () => void
+}) {
+  const overview = useQuery({ queryKey: ['overview'], queryFn: getOverview })
+  const lastRun = (overview.data?.jobs ?? [])
+    .map((job) => job.last_run)
+    .filter((run): run is NonNullable<typeof run> => run !== null)
+    .sort((a, b) => Date.parse(b.started_at) - Date.parse(a.started_at))[0]
+
+  return (
+    <div className="app-sider__footer">
+      <dl className="app-scope">
+        <div className="app-scope__row">
+          <dt>工作区</dt>
+          <dd>本地 · SQLite</dd>
+        </div>
+        <div className="app-scope__row">
+          <dt>最近运行</dt>
+          <dd>
+            {lastRun ? (
+              <>
+                <span
+                  className={`app-scope__dot app-scope__dot--${
+                    lastRun.status === 'success' ? 'ok' : 'p0'
+                  }`}
+                  aria-hidden="true"
+                />
+                {sinceLabel(lastRun.started_at)}
+              </>
+            ) : (
+              '还没有运行'
+            )}
+          </dd>
+        </div>
+      </dl>
+      <ThemeToggle themeMode={themeMode} onToggle={onToggleTheme} />
+    </div>
   )
 }
 
@@ -259,9 +425,7 @@ export function AppLayout({ themeMode, onToggleTheme, children }: AppLayoutProps
           </Link>
         </div>
         <NavMenu selectedKey={selectedKey} />
-        <div className="app-sider__footer">
-          <ThemeToggle themeMode={themeMode} onToggle={onToggleTheme} />
-        </div>
+        <WorkspaceFoot themeMode={themeMode} onToggleTheme={onToggleTheme} />
       </Sider>
 
       <Layout>
@@ -290,7 +454,9 @@ export function AppLayout({ themeMode, onToggleTheme, children }: AppLayoutProps
           <span className="app-topbar__page">{pageLabel}</span>
         </header>
 
-        <Content className="app-content">{children}</Content>
+        <Content className="app-content">
+          <div className="app-sheet">{children}</div>
+        </Content>
       </Layout>
 
       {/* 手机导航抽屉 —— 桌面端不出现 */}

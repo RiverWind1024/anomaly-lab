@@ -79,31 +79,40 @@ export function ScoreTrail({
 
   const hours = WINDOWS.find((w) => w.key === windowKey)?.hours ?? null
 
+  // 图高随宽度收一档：手机上 220，桌面上 300
+  const chartH = width < 640 ? 220 : 300
+
   const geom: TrailGeometry | null = useMemo(() => {
     if (!preview || !width) return null
     return buildTrail(preview.timestamps, preview.scores, preview.values, {
       width,
-      height: 240,
+      height: chartH,
       windowHours: hours,
       alertThreshold: preview.alert_threshold,
       criticalThreshold: preview.critical_threshold,
     })
-  }, [preview, width, hours])
+  }, [preview, width, hours, chartH])
 
   const p1 = preview?.alert_threshold ?? 0
   const p0 = preview?.critical_threshold ?? 0
 
   return (
-    <section className="panel" aria-labelledby="trailTitle">
+    <section className="panel panel--trail" aria-labelledby="trailTitle">
       <div className="panel__head">
         <div>
           <h2 className="panel__title" id="trailTitle">
             异常分数轨迹
           </h2>
-          <p className="panel__meta mono">
-            {preview
-              ? `${preview.series_id} · run ${preview.run_id} · ${preview.detector} / ${preview.score_type}`
-              : '—'}
+          <p className="panel__meta">
+            {preview ? (
+              <>
+                <span className="num">{preview.series_id}</span> · run{' '}
+                <span className="num">{preview.run_id}</span> · {preview.detector} /{' '}
+                {preview.score_type}
+              </>
+            ) : (
+              '—'
+            )}
           </p>
         </div>
         <div className="seg" role="tablist" aria-label="时间窗口">
@@ -120,6 +129,17 @@ export function ScoreTrail({
           ))}
         </div>
       </div>
+
+      {/* 峰值读数：这屏的主角，先说数再给图 */}
+      {preview && geom?.peak ? (
+        <div className="trail__readout">
+          <span className="trail__peak num">{geom.peak.s.toFixed(2)}σ</span>
+          <span className="trail__peak-meta">
+            峰值 · {fmtUtcTime(preview.timestamps[geom.peak.i] ?? null)} ·{' '}
+            <span className="num">{preview.n_alerts}</span> 个告警点
+          </span>
+        </div>
+      ) : null}
 
       <div className="seriesbar">
         <span className="seriesbar__k">序列</span>
@@ -162,9 +182,10 @@ export function ScoreTrail({
             {isLoading ? '加载中…' : '这个任务还没有检测结果'}
           </p>
         ) : (
-          <svg            viewBox={`0 0 ${geom.padL + geom.plotW + geom.padR} 240`}
+          <svg
+            viewBox={`0 0 ${geom.padL + geom.plotW + geom.padR} ${chartH}`}
             width="100%"
-            height="240"
+            height={chartH}
             role="img"
             aria-label={`${preview?.series_id ?? ''} 异常分数轨迹：${geom.view.length} 个点，峰值 ${geom.peak?.s.toFixed(2) ?? '—'}σ，P1 阈值 ${p1}，P0 阈值 ${p0}`}
             onPointerLeave={() => setHover(null)}
@@ -189,7 +210,7 @@ export function ScoreTrail({
                       dominantBaseline="middle"
                       style={{ fill: 'var(--text-tertiary)', fontSize: 12 }}
                     >
-                      {Math.round(value)}
+                      {Math.round(value) === value ? Math.round(value) : value.toFixed(1)}
                     </text>
                   ) : null}
                 </g>
@@ -342,7 +363,7 @@ export function ScoreTrail({
                 <text
                   key={t}
                   x={geom.x(t)}
-                  y={236}
+                  y={geom.axisY}
                   textAnchor={anchor}
                   style={{ fill: 'var(--text-tertiary)', fontSize: 12 }}
                 >
@@ -413,13 +434,28 @@ export function ScoreTrail({
       </div>
 
       <div className="panel__foot">
-        <span className="mono">
-          {preview
-            ? `${preview.n_alerts} 个告警点 · ${preview.n_p0} 个 P0 点`
-            : '—'}
+        <span>
+          {preview ? (
+            <>
+              <span className="num">{preview.n_alerts}</span> 个告警点 ·{' '}
+              <span className="num">{preview.n_p0}</span> 个 P0 点
+            </>
+          ) : (
+            '—'
+          )}
         </span>
-        <span className="mono">
-          {preview ? `更新于 ${fmtUtcTime(preview.timestamps[preview.timestamps.length - 1])} UTC` : '—'}
+        <span>
+          {preview ? (
+            <>
+              更新于{' '}
+              <span className="num">
+                {fmtUtcTime(preview.timestamps[preview.timestamps.length - 1])}
+              </span>{' '}
+              UTC
+            </>
+          ) : (
+            '—'
+          )}
         </span>
       </div>
     </section>

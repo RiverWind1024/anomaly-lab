@@ -1,47 +1,124 @@
 /**
- * 概览页的样式 —— 分数轨迹、事件列表、任务健康、回测。
+ * 概览页的样式 —— 一张实验记录纸。
+ *
+ * 区块之间用 1px 线和留白分隔，不再给每块套一张卡片；
+ * 颜色只给数据与状态，其余全部走灰阶。
  *
  * ⚠️ 颜色一律取 tokens.css 的变量。
  */
+
+.page--overview {
+  gap: var(--space-6);
+}
+
+/* ---------- 发现句 ---------- */
+
+.finding {
+  max-width: 72ch;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.finding .num {
+  color: var(--text-primary);
+}
+
+.finding b {
+  color: var(--text-primary);
+  font-weight: var(--font-weight-medium);
+}
+
+/* ---------- 首屏与次屏的分栏 ---------- */
+
+.overview-primary {
+  display: grid;
+  grid-template-columns: minmax(0, 1.9fr) minmax(0, 1fr);
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.overview-secondary {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: var(--space-6);
+  align-items: start;
+}
+
+/* 概览页里的面板 = 无框区块：一条顶线 + 留白 */
+.page--overview .panel {
+  padding: var(--space-4) 0 0;
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+  border-radius: 0;
+}
+
+/* KPI 条自己已有下边线，别和下一块的顶线叠成双线 */
+.page--overview .kpis {
+  border-bottom: 0;
+}
+
+/* ---------- 峰值读数 ---------- */
+
+.trail__readout {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin: 0 0 var(--space-2);
+}
+
+.trail__peak {
+  color: var(--text-primary);
+  font-size: var(--text-lg);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.1;
+}
+
+.trail__peak-meta {
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+}
 
 /* ---------- 序列切换 + 图例 ---------- */
 
 .seriesbar {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: var(--space-4);
   flex-wrap: wrap;
-  margin: 2px 0 4px;
+  margin: 0 0 10px;
 }
 
 .seriesbar__k {
   color: var(--text-tertiary);
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 
-/* 序列切换与时间窗口共用一套控件语言，不新增颜色 */
+/* 选中 = 下划线；不铺底、不画胶囊 */
 .sery {
   display: inline-flex;
-  gap: 2px;
-  padding: 2px;
-  background: var(--surface-sunken);
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
+  gap: var(--space-4);
   flex-wrap: wrap;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
 }
 
 .sery button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 26px;
-  padding: 0 9px;
+  height: 28px;
+  padding: 0 0 2px;
   border: 0;
-  border-radius: 4px;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
   background: transparent;
   color: var(--text-tertiary);
   font-family: inherit;
-  font-size: 12px;
+  font-size: var(--text-xs);
   cursor: pointer;
 }
 
@@ -50,17 +127,19 @@
 }
 
 .sery button[aria-selected='true'] {
-  background: var(--surface-raised);
+  background: transparent;
   color: var(--text-primary);
+  border-bottom-color: var(--accent-text);
 }
 
 .sery__n {
-  color: var(--text-tertiary);
-  font-size: 11px;
+  color: inherit;
+  font-size: var(--text-xs);
+  opacity: 0.6;
 }
 
 .sery button[aria-selected='true'] .sery__n {
-  color: var(--text-secondary);
+  opacity: 1;
 }
 
 /* ---------- 图例：色块就是图上的那个记号 ---------- */
@@ -68,10 +147,9 @@
 .legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
-  margin-bottom: 2px;
+  gap: var(--space-4);
   color: var(--text-tertiary);
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 
 .seriesbar .legend {
@@ -103,11 +181,14 @@
   border-top: 2px dashed var(--status-p0);
 }
 
-/* ---------- 轨迹图 ---------- */
+/* ---------- 轨迹图：一张极淡的描图纸 ---------- */
 
 .trail__chart {
   position: relative;
-  height: 240px;
+  background: var(--chart-paper);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  overflow: hidden;
 }
 
 .trail__chart svg {
@@ -116,14 +197,14 @@
 
 .chart__tip {
   position: absolute;
-  top: 6px;
+  top: 8px;
   transform: translateX(-50%);
-  padding: 6px 9px;
+  padding: 5px 8px;
   border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  background: var(--surface-raised);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sheet);
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--text-xs);
   pointer-events: none;
   opacity: 0;
   transition: opacity var(--motion-fast) var(--ease);
@@ -152,23 +233,24 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 240px;
+  min-height: 300px;
+  margin: 0;
   color: var(--text-tertiary);
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 
 /* ---------- 告警事件列表 ---------- */
 
-.eventlist {
-  border-top: 1px solid var(--line-soft);
+.page--overview .eventlist {
+  border-top: 0;
 }
 
 .event {
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) auto;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
-  padding: 9px 0;
+  padding: 10px 0;
   border-bottom: 1px solid var(--line-soft);
 }
 
@@ -181,12 +263,12 @@
 
 .event__series {
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: var(--text-xs);
 }
 
 .event__time {
   color: var(--text-tertiary);
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 
 .event__score {
@@ -194,11 +276,12 @@
   flex-direction: column;
   align-items: flex-end;
   gap: 1px;
+  font-size: var(--text-sm);
 }
 
 .event__pts {
   color: var(--text-tertiary);
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 
 /* ---------- 任务健康表 ---------- */
@@ -209,17 +292,17 @@
 
 .jobrow {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) 64px repeat(4, minmax(0, 0.6fr));
+  grid-template-columns: minmax(0, 1.6fr) 60px 52px 52px 76px 74px;
   align-items: center;
-  gap: 8px;
-  padding: 9px 0;
+  gap: 10px;
+  padding: 10px 0;
   border-bottom: 1px solid var(--line-soft);
 }
 
 .jobrow__name {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
   min-width: 0;
 }
 
@@ -228,16 +311,16 @@
   color: var(--text-primary);
 }
 
-.jobrow__name .mono {
+.jobrow__name span {
   color: var(--text-tertiary);
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 
 /* 表头行：12px 灰字，无底色 —— 与下面的行同一条左边缘 */
 .jobrow--head {
-  padding: 6px 0;
-  color: var(--text-secondary);
-  font-size: 12px;
+  padding: 7px 0;
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
 }
 
 .jobrow--head span {
@@ -247,13 +330,8 @@
 .jobrow .r {
   text-align: right;
   color: var(--text-primary);
-  font-size: 13px;
-}
-
-.jobrow .k {
-  display: block;
-  color: var(--text-tertiary);
-  font-size: 11px;
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---------- 最近一次运行 ---------- */
@@ -271,7 +349,7 @@
   gap: 8px;
   margin-bottom: var(--space-2);
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 
 .runlog__grid {
@@ -283,7 +361,7 @@
 
 .runlog__grid dt {
   color: var(--text-tertiary);
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 
 .runlog__grid dd {
@@ -294,7 +372,7 @@
 .runlog__next {
   margin: var(--space-3) 0 0;
   color: var(--text-tertiary);
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 
 /* ---------- 回测 ---------- */
@@ -314,32 +392,33 @@
 
 .backtest__f1 {
   color: var(--text-primary);
-  font-size: 30px;
+  font-size: var(--text-xl);
   font-weight: var(--font-weight-medium);
-  line-height: 1.1;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
 }
 
 .backtest__note {
   color: var(--text-tertiary);
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 
 .backtest__grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-3);
   margin: 0;
 }
 
 .backtest__grid dt {
   color: var(--text-tertiary);
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 
 .backtest__grid dd {
   margin: 2px 0 0;
   color: var(--text-primary);
-  font-size: 16px;
+  font-size: var(--text-md);
 }
 
 .backtest__finding {
@@ -349,7 +428,7 @@
   padding-top: var(--space-3);
   border-top: 1px solid var(--line-soft);
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 
 .backtest__finding p {
@@ -369,9 +448,44 @@
   background: var(--status-p0);
 }
 
+/* ---------- 数据保留：页脚条 ---------- */
+
+.page--overview .retention-panel .panel__head {
+  margin-bottom: var(--space-2);
+}
+
+.page--overview .retention-panel .panel__title {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.page--overview .retention-panel .panel__meta {
+  font-size: var(--text-xs);
+}
+
+@media (max-width: 1080px) {
+  .overview-primary,
+  .overview-secondary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 @media (max-width: 640px) {
-  .trail__chart {
-    height: 200px;
+  .trail__empty {
+    min-height: 220px;
+  }
+
+  /* 序列多的时候横向滑动，不要让它们折成三行把图挤下去 */
+  .sery {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    max-width: 100%;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+  }
+
+  .sery::-webkit-scrollbar {
+    display: none;
   }
 
   .jobrow {
@@ -382,8 +496,12 @@
     display: none;
   }
 
-  .runlog__grid,
-  .backtest__grid {
+  .backtest__grid,
+  .runlog__grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .seriesbar .legend {
+    margin-left: 0;
   }
 }
