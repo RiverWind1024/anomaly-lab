@@ -58,9 +58,7 @@ export function MetricsPage() {
               指标
             </h2>
             <p className="panel__meta mono">
-              {catalog.data
-                ? `${catalog.data.metrics.length} 个指标 · 取数方式与分组`
-                : '加载中…'}
+              {catalog.data ? `${catalog.data.metrics.length} 个指标` : '加载中…'}
             </p>
           </div>
         </div>

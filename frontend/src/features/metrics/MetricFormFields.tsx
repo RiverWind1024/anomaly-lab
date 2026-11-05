@@ -1,4 +1,5 @@
 import { Form, Input, Select } from 'antd'
+import { hint } from '../../components/FieldHint'
 import type { CatalogSource } from '../../api/types'
 import { freqValidator } from './freq'
 
@@ -81,7 +82,8 @@ export function MetricFormFields({ sources }: MetricFormFieldsProps) {
           <Input placeholder="value" spellCheck={false} />
         </Form.Item>
 
-        <Form.Item name="group_column" label="分组列" extra="可空 —— 填了会按它拆成多条序列">
+        {/* ⚠️ 「可选」由 antd 的 requiredMark 自动标 —— 别再手写一遍 */}
+        <Form.Item name="group_column" label="分组列">
           <Input placeholder="host" spellCheck={false} />
         </Form.Item>
 
@@ -93,9 +95,8 @@ export function MetricFormFields({ sources }: MetricFormFieldsProps) {
             // 格式当场拦下，不等提交后的后端 400
             { validator: freqValidator },
           ]}
-          extra="数字 + 单位，单位可选 s / min / m / h / d（如 5min、1h、1d）"
         >
-          <Input placeholder="5min" spellCheck={false} />
+          <Input placeholder="5min / 1h / 1d" spellCheck={false} />
         </Form.Item>
 
         <Form.Item name="time_format" label="时间格式">
@@ -117,13 +118,11 @@ export function MetricFormFields({ sources }: MetricFormFieldsProps) {
 
       <Form.Item
         name="query"
-        label="查询语句"
+        label={hint(
+          '查询语句',
+          '$timefilter 是后端的占位符 —— 原样提交，不要替换成实际时间范围。',
+        )}
         rules={[{ required: true, message: '请输入查询语句' }]}
-        extra={
-          <>
-            <code>$timefilter</code> 是后端的占位符 —— 原样提交，不要替换成实际时间范围。
-          </>
-        }
       >
         <Input.TextArea rows={3} spellCheck={false} />
       </Form.Item>

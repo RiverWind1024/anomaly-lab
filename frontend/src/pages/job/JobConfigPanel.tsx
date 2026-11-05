@@ -1,5 +1,6 @@
 import { Alert, Button, Form, Input, InputNumber, Select, Space } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { hint } from '../../components/FieldHint'
 import { AlertRulesEditor } from '../../features/jobs/AlertRulesEditor'
 import { detectorLabel } from '../../lib/detectorLabels'
 import { useUpdateJob } from '../../features/jobs/queries'
@@ -149,18 +150,16 @@ export function JobConfigPanel({ job, metrics, detectors, enabled }: JobConfigPa
 
         <Form.Item
           name="metric_id"
-          label="检测指标"
+          label={hint('检测指标', '换了指标，历史运行记录仍然保留，但之后的结果按新指标计算。')}
           rules={[{ required: true, message: '请选择指标' }]}
-          extra="换了指标，历史运行记录仍然保留，但之后的结果按新指标计算。"
         >
           <Select options={metricOptions} placeholder="选择指标" showSearch optionFilterProp="label" />
         </Form.Item>
 
         <Form.Item
           name="detector"
-          label="检测算法"
+          label={hint('检测算法', '「自动推荐」由形态分类器挑算法，每次运行可能选到不同的算法。')}
           rules={[{ required: true, message: '请选择检测算法' }]}
-          extra="「自动推荐」由形态分类器挑算法，每次运行可能选到不同的算法。"
         >
           <Select
             options={detectorOptions}
@@ -187,12 +186,12 @@ export function JobConfigPanel({ job, metrics, detectors, enabled }: JobConfigPa
                 message: `窗口点数需在 ${WINDOW_POINTS_MIN} ~ ${WINDOW_POINTS_MAX} 之间`,
               },
             ]}
-            extra={`每次运行取最近 ${WINDOW_POINTS_MIN} ~ ${WINDOW_POINTS_MAX} 个点`}
           >
             <InputNumber
               min={WINDOW_POINTS_MIN}
               max={WINDOW_POINTS_MAX}
               step={100}
+              placeholder="500"
               style={{ width: 180 }}
             />
           </Form.Item>
@@ -207,9 +206,8 @@ export function JobConfigPanel({ job, metrics, detectors, enabled }: JobConfigPa
                 message: `执行间隔至少 ${INTERVAL_SECONDS_MIN} 秒`,
               },
             ]}
-            extra={`定时任务的执行周期，最少 ${INTERVAL_SECONDS_MIN} 秒`}
           >
-            <InputNumber min={INTERVAL_SECONDS_MIN} step={60} style={{ width: 180 }} />
+            <InputNumber min={INTERVAL_SECONDS_MIN} step={60} placeholder="300" style={{ width: 180 }} />
           </Form.Item>
         </Space>
 

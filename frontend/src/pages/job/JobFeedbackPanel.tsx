@@ -61,10 +61,15 @@ export function JobFeedbackPanel({ jobId, runId, enabled }: JobFeedbackPanelProp
 
   return (
     <div className="job-feedback">
-      <p className="muted feedback-section__hint">
-        反馈用于给出「用哪个算法 + 用哪个倍数」的建议 ——
-        漏报与误报才参与调参，「正确」「其他」只留档。
-      </p>
+      {/* ⚠️ 概念解释折起来 —— 它解释的是「反馈怎么被用」，
+          不是用户此刻要填的东西。 */}
+      <details className="rules-editor__extra">
+        <summary>反馈用来做什么？</summary>
+        <p className="muted feedback-section__hint">
+          反馈用于给出「用哪个算法 + 用哪个倍数」的建议 ——
+          漏报与误报才参与调参，「正确」「其他」只留档。
+        </p>
+      </details>
 
       <FeedbackPanel
         seriesId={effectiveSeriesId}

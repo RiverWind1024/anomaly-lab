@@ -44,13 +44,14 @@ afterEach(() => {
 })
 
 describe('导航结构', () => {
-  it('「数据」是分组，带数据源、指标与指标预览三个子项', () => {
+  it('「数据」是分组，带数据源、指标、指标预览与指标预检四个子项', () => {
     const data = NAV_ITEMS.find((item) => item.key === 'data')
     expect(data).toBeTruthy()
     expect(data?.children?.map((c) => c.key)).toEqual([
       '/sources',
       '/metrics',
       '/metrics/preview',
+      '/lab',
     ])
   })
 

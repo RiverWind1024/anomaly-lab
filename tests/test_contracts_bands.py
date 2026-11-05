@@ -5,15 +5,15 @@ from anomaly_lab.contracts import DetectionResult
 
 
 def _result(**kw):
-    base = dict(
-        series_id="s",
-        scores=np.zeros(5),
-        score_type="zscore",
-        is_anomaly=np.zeros(5, dtype=bool),
-        threshold=1.0,
-        detector="iqr",
-        elapsed_ms=1.0,
-    )
+    base = {
+        "series_id": "s",
+        "scores": np.zeros(5),
+        "score_type": "zscore",
+        "is_anomaly": np.zeros(5, dtype=bool),
+        "threshold": 1.0,
+        "detector": "iqr",
+        "elapsed_ms": 1.0,
+    }
     base.update(kw)
     return DetectionResult(**base)
 

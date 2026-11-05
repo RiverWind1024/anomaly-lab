@@ -241,9 +241,7 @@ export function SourceDetailPage() {
               <h2 className="panel__title" id="srcJobsTitle">
                 告警任务
               </h2>
-              <p className="panel__meta mono">
-                用这个源的指标跑着的任务 · {jobs.length} 个
-              </p>
+              <p className="panel__meta mono">{jobs.length} 个</p>
             </div>
           </div>
           <Table<CatalogJob>

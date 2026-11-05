@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from 'react'
 import { Button, Form, Input, Modal, Select, Space } from 'antd'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { hint } from '../../components/FieldHint'
 import { createSource, updateSource } from '../../api/platform'
 import { catalogKey } from '../jobs/queries'
 import type { CatalogSource, SourceConfig } from '../../api/types'
@@ -194,7 +195,6 @@ export function SourceForm({
           name="kind"
           label="类型"
           rules={[{ required: true, message: '请选择类型' }]}
-          extra="HTTP SQL 网关：把 SQL 透传给远端（如 ClickHouse HTTP 接口）。"
         >
           <Select options={KIND_OPTIONS} />
         </Form.Item>
@@ -205,7 +205,6 @@ export function SourceForm({
               name={['config', 'url']}
               label="URL"
               rules={[{ required: true, message: '请输入 URL' }]}
-              extra="请求 URL 模板，{sql} 是 SQL 占位符。例：https://ch:8123/?query={sql}"
             >
               <Input placeholder="https://ch:8123/?query={sql}" spellCheck={false} />
             </Form.Item>
@@ -222,7 +221,6 @@ export function SourceForm({
               name={['config', 'headers']}
               label="请求头"
               rules={[{ validator: jsonObjectValidator('请求头') }]}
-              extra="JSON 对象。值会是脱敏的，原样提交即可保留真值。"
             >
               <Input.TextArea rows={3} spellCheck={false} placeholder='{"X-Token": "••••"}' />
             </Form.Item>
@@ -231,15 +229,16 @@ export function SourceForm({
               name={['config', 'body']}
               label="请求体"
               rules={[{ validator: jsonObjectValidator('请求体') }]}
-              extra="JSON 对象，可空。POST 时作为请求体发出。"
             >
               <Input.TextArea rows={3} spellCheck={false} placeholder='{"query": "{sql}"}' />
             </Form.Item>
 
             <Form.Item
               name={['config', 'rows_path']}
-              label="行数组路径"
-              extra="JSON 响应是对象时，从里面取数组的点号路径。例：data.items"
+              label={hint(
+                '行数组路径',
+                'JSON 响应是对象时，从里面取数组的点号路径。例：data.items',
+              )}
             >
               <Input placeholder="data.items" spellCheck={false} />
             </Form.Item>
@@ -249,7 +248,6 @@ export function SourceForm({
             name="path"
             label="路径"
             rules={[{ required: true, message: '请输入路径' }]}
-            extra="相对数据目录，或绝对路径。"
           >
             <Input placeholder="platform/source.db" spellCheck={false} />
           </Form.Item>

@@ -251,10 +251,14 @@ export function AlertRulesEditor({
         </Button>
       </div>
 
-      <p className="muted rules-editor__hint">
-        倍数是「偏离基线多少倍算异常」。档位按倍数从小到大排，
-        命中多条时取最高档。
-      </p>
+      {/* ⚠️ 概念解释**折起来** —— 它解释的是规则语义，不是当前要填的东西，
+          常驻只会把本来就复杂的这块撑得更满。 */}
+      <details className="rules-editor__extra">
+        <summary>倍数怎么算？</summary>
+        <p className="muted rules-editor__hint">
+          倍数是「偏离基线多少倍算异常」。档位按倍数从小到大排，命中多条时取最高档。
+        </p>
+      </details>
 
       {/* ⚠️ 档位名与倍数顺序打架 —— 不说清楚，用户会以为 P0 比 P1 更容易触发。 */}
       {conflict && (
