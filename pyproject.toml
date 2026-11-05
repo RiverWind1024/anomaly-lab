@@ -1,6 +1,6 @@
 [project]
 name = "anomaly-lab"
-version = "0.1.0"
+version = "0.2.0"
 description = "时序异常检测全流程学习项目：形态分类 → 算法推荐 → 多类检测器 → 离线评测闭环"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
