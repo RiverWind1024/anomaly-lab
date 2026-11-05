@@ -44,6 +44,10 @@ interface NavLeaf {
  *    - 「告警记录」(`/alerts`) = 有告警的事件，跨任务汇总；
  *    - 「检测记录」(`/detections`) = 每次运行里每条序列 × 算法的检测明细，
  *      没有告警的序列也在里面。
+ *
+ * ⚠️ 「评估与标注」是**第三个分组** —— 这三页是一个闭环：
+ *    标注产真值 → 检测记录是预测 → 评估报告是两者对比。
+ *    平铺着放，用户得自己脑补这个闭环。
  */
 export const NAV_ITEMS: NavItem[] = [
   { key: '/', label: '概览' },
@@ -65,9 +69,15 @@ export const NAV_ITEMS: NavItem[] = [
       { key: '/alerts', label: '告警记录' },
     ],
   },
-  { key: '/evaluation', label: '评估报告' },
-  { key: '/detections', label: '检测记录' },
-  { key: '/annotate', label: '标注' },
+  {
+    key: 'evaluation',
+    label: '评估与标注',
+    children: [
+      { key: '/evaluation', label: '评估报告' },
+      { key: '/annotate', label: '标注' },
+      { key: '/detections', label: '检测记录' },
+    ],
+  },
 ]
 
 /**

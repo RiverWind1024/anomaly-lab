@@ -384,6 +384,23 @@ pre {
   font-size: var(--text-xs);
 }
 
+/* 字段说明 —— 收进 label 旁的问号，不占一行 */
+.field-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.field-hint__icon {
+  color: var(--text-tertiary);
+  font-size: 12px;
+  cursor: help;
+}
+
+.field-hint__icon:hover {
+  color: var(--text-secondary);
+}
+
 /* 空态 / 错误态 / 业务态的统一容器 */
 .empty-state {
   display: flex;

@@ -166,3 +166,25 @@ describe('「告警」分组', () => {
     expect(badge?.textContent).toBe('7')
   })
 })
+
+describe('「评估与标注」分组', () => {
+  it('是分组，带评估报告、标注、检测记录三个子项', () => {
+    /* ⚠️ 三页是一个闭环：标注产真值 → 检测记录是预测 → 评估报告是对比。
+       平铺着放，用户得自己脑补这层关系。 */
+    const group = NAV_ITEMS.find((item) => item.key === 'evaluation')
+    expect(group?.label).toBe('评估与标注')
+    expect(group?.children?.map((c) => c.key)).toEqual([
+      '/evaluation',
+      '/annotate',
+      '/detections',
+    ])
+  })
+
+  it('分组本身不是路由，三个子项仍是可路由的叶子', () => {
+    const keys = NAV_ROUTES.map((item) => item.key)
+    expect(keys).not.toContain('evaluation')
+    for (const key of ['/evaluation', '/annotate', '/detections']) {
+      expect(keys).toContain(key)
+    }
+  })
+})
