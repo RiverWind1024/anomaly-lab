@@ -576,6 +576,9 @@ html.theme-switching *::after {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  /* 标签多了要能折行 —— 右侧还有「这条记录正常」按钮 */
+  flex-wrap: wrap;
+  justify-content: space-between;
 }
 
 .annotate-page__actions {

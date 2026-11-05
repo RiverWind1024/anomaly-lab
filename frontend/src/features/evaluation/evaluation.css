@@ -211,3 +211,19 @@
     display: none;
   }
 }
+
+/* 生产检测记录分区 —— 两张表之间要有呼吸 */
+.production__section-title {
+  margin: var(--space-5) 0 var(--space-2);
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+/* 采样率控件 —— 放在面板头右侧 */
+.production__rate {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}

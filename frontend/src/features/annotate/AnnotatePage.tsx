@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, Button, Select, Space, Tag } from 'antd'
+import { Alert, Button, Select, Space, Tag, message } from 'antd'
 import ReactECharts from 'echarts-for-react'
 import type { ECharts } from 'echarts'
 import { StateBoundary } from '../../components/StateBoundary'
@@ -9,6 +9,8 @@ import type { Annotation, SeriesValues } from '../../api/types'
 import { useSeries } from '../series/queries'
 import {
   useAnnotations,
+  useProductionSamples,
+  useRunSeriesDetail,
   useSaveAnnotations,
   useSeriesValues,
 } from './queries'
@@ -70,10 +72,19 @@ export function buildAnnotateOption(
   // ⚠️ 主数据元素（信号本身）用**这一个数据色** —— 全用中性色就成了没有身份的 kit
   const chart = cssVar('--chart', '#6da8e3')
 
-  const areas = annotations.map((item) => [
-    { xAxis: item.start, itemStyle: { color: cssVarAlpha('--status-p0', 0.22, 'rgba(239,68,68,0.22)') } },
-    { xAxis: item.end },
-  ])
+  // ⚠️ 标注存的是**时间戳**，图上的 x 轴是**下标** —— 这里要换算回去。
+  //    换算不出来的（序列变了、时间对不上）直接跳过：画一个错位的区间比不画更糟。
+  const areas = annotations.flatMap((item) => {
+    const start = data.timestamps.indexOf(item.start)
+    const end = data.timestamps.indexOf(item.end)
+    if (start < 0 || end < 0) return []
+    return [
+      [
+        { xAxis: start, itemStyle: { color: cssVarAlpha('--status-p0', 0.22, 'rgba(239,68,68,0.22)') } },
+        { xAxis: end },
+      ],
+    ]
+  })
 
   return {
     series: [
@@ -171,22 +182,40 @@ function AnnotateChart({ data, annotations, onBrush }: AnnotateChartProps) {
  *
  * 流程：选序列 → 拉波形 → 拉已有标注 → 画波形 → 刷选区间 →
  *       选异常类型（**下拉，不是 prompt 弹窗**）→ 保存。
+ *
+ * ⚠️ **两类序列**：
+ *   - 基准集（合成序列）—— 真值本来就有，标注是补充；
+ *   - 生产检测记录 —— **真值只能靠人工标**，这是评估生产效果的唯一途径。
+ *     它的波形直接读那次 run 的产物，跟当时跑的那份完全一致。
  */
 export function AnnotatePage() {
   const series = useSeries()
-  const [seriesId, setSeriesId] = useState<string | undefined>(undefined)
+  const production = useProductionSamples()
+  const [target, setTarget] = useState<{ seriesId: string; runId?: number } | undefined>(
+    undefined,
+  )
   const [pending, setPending] = useState<{ start: number; end: number } | null>(null)
   const [anomalyType, setAnomalyType] = useState<string>('spike')
 
-  const values = useSeriesValues(seriesId)
+  const seriesId = target?.seriesId
+  const runId = target?.runId
+
+  // ⚠️ 两套取数：基准集读数据集，生产记录读那次 run 的产物。
+  const datasetValues = useSeriesValues(runId ? undefined : seriesId)
+  const runValues = useRunSeriesDetail(runId, runId ? seriesId : undefined)
+  const values = runId ? runValues : datasetValues
+
   const annotations = useAnnotations(seriesId)
-  const save = useSaveAnnotations(seriesId)
+  const save = useSaveAnnotations(seriesId, runId)
 
   // 默认选第一条序列（旧版行为）
   const seriesList = series.data ?? []
+  const productionList = production.data ?? []
   useEffect(() => {
-    if (!seriesId && seriesList.length > 0) setSeriesId(seriesList[0].series_id)
-  }, [seriesId, seriesList])
+    if (!target && seriesList.length > 0) {
+      setTarget({ seriesId: seriesList[0].series_id })
+    }
+  }, [target, seriesList])
 
   const handleBrush = (start: number, end: number) => {
     setPending({ start, end })
@@ -194,8 +223,40 @@ export function AnnotatePage() {
 
   const handleSave = async () => {
     if (!pending || !seriesId) return
+    const stamps = values.data?.timestamps ?? []
+    // ⚠️ 存**时间戳**而不是下标 —— 序列滚动后下标会指向别的时刻。
+    const start = stamps[pending.start]
+    const end = stamps[pending.end]
+    if (!start || !end) {
+      message.warning('选中的区间超出序列范围')
+      return
+    }
     save.mutate(
-      [{ start: pending.start, end: pending.end, type: anomalyType }],
+      [
+        {
+          start,
+          end,
+          type: anomalyType,
+          // ⚠️ **采样率跟着标注一起存** —— 采样率后来变了，
+          //    这条标注仍按它当初的权重反算总体。
+          ...(currentSample
+            ? { rate: currentSample.rate, layer_size: currentSample.layer_size }
+            : {}),
+        },
+        // ⚠️ **画了标注 = 看了整条波形** → 顺带声明这次运行核对过。
+        //    没有这条声明，评估只能把其余时段当正常 ——
+        //    窗口里几十个没看过的告警点会**凭空变成误报**。
+        ...(runId
+          ? [
+              {
+                type: 'reviewed',
+                ...(currentSample
+                  ? { rate: currentSample.rate, layer_size: currentSample.layer_size }
+                  : {}),
+              },
+            ]
+          : []),
+      ],
       {
         onSuccess: () => {
           setPending(null)
@@ -204,10 +265,70 @@ export function AnnotatePage() {
     )
   }
 
-  const seriesOptions = seriesList.map((item) => ({
-    value: item.series_id,
-    label: `${item.series_id} (${item.metric_class}, n=${item.n})`,
-  }))
+  /** 「这条记录正常」—— 不画区间，一键确认整个窗口没有异常。
+   *
+   *  ⚠️ 这是**负样本标签** —— 没有它，漏报（FN）永远测不出来。
+   */
+  const handleMarkNormal = () => {
+    if (!seriesId) return
+    save.mutate(
+      [
+        {
+          type: 'reviewed',
+          ...(currentSample
+            ? { rate: currentSample.rate, layer_size: currentSample.layer_size }
+            : {}),
+        },
+      ],
+      {
+        onSuccess: () => {
+          message.success('已记为「这条记录正常」')
+        },
+      },
+    )
+  }
+
+  // ⚠️ 下拉分两组 —— 基准集与生产记录是两回事，混在一列里没法找。
+  const seriesOptions = [
+    {
+      label: '基准集（合成序列）',
+      options: seriesList.map((item) => ({
+        value: `dataset:${item.series_id}`,
+        label: `${item.series_id} (${item.metric_class}, n=${item.n})`,
+      })),
+    },
+    {
+      label: '生产检测记录',
+      options: productionList.map((item) => ({
+        value: `run:${item.run_id}:${item.series_id}`,
+        // ⚠️ **检出结果（正常/异常）要写出来** —— 两层的采样率不同，
+        //    标注任务也不同：异常记录查误报，正常记录查漏报。
+        label:
+          `${item.series_id} · run ${item.run_id} · ` +
+          `${item.outcome_label} · 告警 ${item.n_alerts}` +
+          (item.n_annotations > 0 ? ' · 已标' : ' · 待标'),
+      })),
+    },
+  ]
+
+  /** 下拉的 value → 目标（序列 + 可选的 run）。 */
+  const parseTarget = (value: string) => {
+    if (value.startsWith('run:')) {
+      const [, runId, ...rest] = value.split(':')
+      return { runId: Number(runId), seriesId: rest.join(':') }
+    }
+    return { seriesId: value.replace(/^dataset:/, '') }
+  }
+
+  const targetValue = target
+    ? target.runId
+      ? `run:${target.runId}:${target.seriesId}`
+      : `dataset:${target.seriesId}`
+    : undefined
+
+  const currentSample = productionList.find(
+    (item) => item.run_id === runId && item.series_id === seriesId,
+  )
 
   return (
     <div className="page">
@@ -223,17 +344,17 @@ export function AnnotatePage() {
           <Select
             id="annotate-series"
             className="runs-view__select"
-            loading={series.isPending}
-            value={seriesId}
+            loading={series.isPending || production.isPending}
+            value={targetValue}
             placeholder="选择序列"
             options={seriesOptions}
             onChange={(value) => {
-              setSeriesId(value as string)
+              setTarget(parseTarget(value as string))
               setPending(null)
             }}
             showSearch
             optionFilterProp="label"
-            style={{ minWidth: 360 }}
+            style={{ minWidth: 520 }}
           />
         </div>
       </div>
@@ -252,13 +373,54 @@ export function AnnotatePage() {
               <Space size="small" wrap>
                 <Tag>{data.series_id}</Tag>
                 <Tag>{data.timestamps.length} 点</Tag>
-                <Tag>{annotations.data?.intervals.length ?? 0} 条标注</Tag>
+                {/* ⚠️ 「核对过」不是异常标注 —— 计数时排除掉，否则会虚高。 */}
+                <Tag>
+                  {(annotations.data?.intervals ?? []).filter(
+                    (item) => item.type !== 'reviewed',
+                  ).length}{' '}
+                  条异常标注
+                </Tag>
+                {currentSample ? (
+                  <>
+                    <Tag>{currentSample.source_name} / {currentSample.metric_name}</Tag>
+                    <Tag>run {currentSample.run_id}</Tag>
+                    <Tag
+                      color={currentSample.outcome === 'alert' ? 'volcano' : 'default'}
+                    >
+                      {currentSample.outcome_label}
+                    </Tag>
+                    <Tag>{currentSample.detector} · 告警 {currentSample.n_alerts}</Tag>
+                    <Tag color={currentSample.reviewed ? 'green' : 'default'}>
+                      {currentSample.reviewed ? '已核对' : '待核对'}
+                    </Tag>
+                  </>
+                ) : null}
               </Space>
+              {runId ? (
+                <Button size="small" loading={save.isPending} onClick={handleMarkNormal}>
+                  这条记录正常
+                </Button>
+              ) : null}
             </div>
 
             {save.error instanceof Error && (
               <Alert type="error" showIcon message={save.error.message} />
             )}
+
+            {/*
+              ⚠️ **标注按序列存，不按运行** —— 用户选一次运行只是为了看波形；
+                 标出来的区间会复用给所有覆盖该时段的检测记录。
+                 不说清楚的话，用户会以为自己只标了这一次运行。
+            */}
+            {runId ? (
+              <Alert
+                type="info"
+                showIcon
+                style={{ marginBottom: 12 }}
+                message="标注按序列保存，覆盖所有包含该时段的检测记录"
+                description="不用为每次运行重复标同一段异常 —— 一次标注，所有覆盖它的运行都复用。这条波形核对过就点「这条记录正常」；评估只在核对过的时间段里计分。"
+              />
+            ) : null}
 
             <AnnotateChart
               data={data}
@@ -270,7 +432,11 @@ export function AnnotatePage() {
               <div className="annotate-page__actions">
                 <Space wrap>
                   <span>
-                    已选区间：索引 {pending.start} ~ {pending.end}
+                    已选区间：
+                    <span className="mono">
+                      {values.data?.timestamps[pending.start] ?? pending.start} ~{' '}
+                      {values.data?.timestamps[pending.end] ?? pending.end}
+                    </span>
                   </span>
                   <Select
                     value={anomalyType}

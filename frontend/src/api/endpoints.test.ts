@@ -5,8 +5,8 @@
  * EXPECTED_PATHS，缺失即失败。
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { getCatalog, getOverview, createSource, createMetric, createJob, toggleJob, runJob, testRunJob, getRuns, getPreview, getCompare, createFeedback, getFeedback, getSuggestion, applySuggestion, getAlerts, deleteJob, deleteMetric, deleteSource, updateSource, updateMetric, querySource, getStorage, pruneData } from './platform'
-import { getSeries, getSeriesValues, getSummary, getBadcases, getExclusions, excludeEvaluationRow, restoreEvaluationRow } from './series'
+import { getCatalog, getOverview, createSource, createMetric, createJob, toggleJob, runJob, testRunJob, getRuns, getPreview, getCompare, createFeedback, getFeedback, getSuggestion, applySuggestion, getAlerts, deleteJob, deleteMetric, deleteSource, updateSource, updateMetric, querySource, getStorage, pruneData, inspectLab, runLab, saveLabExperiment, listLabExperiments, getLabExperiment, getLabJobDraft, getLabWindow, evaluateLab } from './platform'
+import { getSeries, getSeriesValues, getSummary, getBadcases, getExclusions, excludeEvaluationRow, restoreEvaluationRow, getProductionEvaluation, getProductionSamples, getRunSeriesDetail } from './series'
 import { getAnnotations, saveAnnotations } from './annotate'
 
 /**
@@ -27,6 +27,13 @@ const EXPECTED_PATHS = [
   '/api/platform/sources',
   '/api/platform/sources/{id}',
   '/api/platform/sources/{id}/query',
+  '/api/lab/inspect',
+  '/api/lab/run',
+  '/api/lab/evaluate',
+  '/api/lab/window',
+  '/api/lab/experiments',
+  '/api/lab/experiments/{id}',
+  '/api/lab/experiments/{id}/job-draft',
   '/api/platform/metrics',
   '/api/platform/metrics/{id}',
   '/api/platform/jobs',
@@ -47,6 +54,9 @@ const EXPECTED_PATHS = [
   '/api/summary',
   '/api/badcases',
   '/api/evaluation/exclusions',
+  '/api/evaluation/production',
+  '/api/evaluation/production/samples',
+  '/api/runs/{id}/series/{id}',
   '/api/evaluation/exclusions/{id}/{id}',
   '/api/annotate/{id}',
 ]
@@ -71,6 +81,13 @@ function normalize(url: string): string {
   path = path.replace(
     /\/api\/evaluation\/exclusions\/[^/]+\/[^/]+$/,
     '/api/evaluation/exclusions/{id}/{id}',
+  )
+  // 实验记录 id 不是数字（时间戳-随机串），单独归一
+  path = path.replace(/\/api\/lab\/experiments\/[^/]+/, '/api/lab/experiments/{id}')
+  // run 里的序列 id 含冒号（demo-metric:web-api），单独归一
+  path = path.replace(
+    /\/api\/runs\/\d+\/series\/[^/]+$/,
+    '/api/runs/{id}/series/{id}',
   )
   // 纯数字的路径段（job id 等）→ {id}
   path = path.replace(/\/\d+(?=\/|$)/g, '/{id}')
@@ -121,6 +138,30 @@ describe('端点封装层', () => {
     await updateSource(1, { name: 'x' })
     await updateMetric(1, { query: 'q' })
     await querySource(1, { sql: 'SELECT 1' })
+    await inspectLab({ kind: 'metric', metric_id: 1, start: '2026-01-01', end: '2026-01-02' })
+    await runLab({ kind: 'metric', metric_id: 1, start: '2026-01-01', end: '2026-01-02' })
+    await saveLabExperiment({
+      kind: 'metric',
+      metric_id: 1,
+      start: '2026-01-01',
+      end: '2026-01-02',
+      result: {} as never,
+    })
+    await listLabExperiments()
+    await getLabExperiment('20261104-120000-abc123')
+    await getLabJobDraft('20261104-120000-abc123')
+    await getLabWindow({
+      kind: 'metric',
+      metric_id: 1,
+      start: '2026-01-01',
+      end: '2026-01-02',
+      series_id: 'm:a',
+      window_index: 0,
+    })
+    await evaluateLab({ kind: 'synthetic', start: '2026-01-01', end: '2026-01-02' })
+    await getProductionEvaluation()
+    await getProductionSamples(50)
+    await getRunSeriesDetail(1, 'demo-metric:web-api')
     await getSeries()
     await getSeriesValues('a:b')
     await getSummary()
@@ -129,7 +170,9 @@ describe('端点封装层', () => {
     await excludeEvaluationRow('a:b', 'iqr')
     await restoreEvaluationRow('a:b', 'iqr')
     await getAnnotations('a:b')
-    await saveAnnotations('a:b', [{ start: 0, end: 1, type: 'anomaly' }])
+    await saveAnnotations('a:b', [
+      { start: '2026-01-01T00:00:00', end: '2026-01-01T01:00:00', type: 'anomaly' },
+    ])
 
     const seen = new Set(calls)
     console.log('\n实际请求路径：')

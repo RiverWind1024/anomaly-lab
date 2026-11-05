@@ -11,8 +11,9 @@ const data: SeriesValues = {
 
 const annotation = (over: Partial<Annotation> = {}): Annotation => ({
   series_id: 'demo-1',
-  start: 1,
-  end: 2,
+  // ⚠️ 标注存**时间戳**，不是下标 —— 图上要换算回去。
+  start: 't1',
+  end: 't2',
   type: 'spike',
   created_at: '2026-10-30T00:00:00+00:00',
   ...over,
@@ -38,16 +39,25 @@ describe('buildAnnotateOption', () => {
     expect(option.series[0].data).toEqual(data.values)
   })
 
-  it('已有标注画成 markArea', () => {
+  it('已有标注画成 markArea —— 时间戳换算成 x 轴下标', () => {
     const option = buildAnnotateOption({
       data,
-      annotations: [annotation({ start: 1, end: 2 })],
+      annotations: [annotation({ start: 't1', end: 't2' })],
       onBrush: () => {},
     })
     const areas = option.series[0].markArea?.data as Array<Array<{ xAxis: number }>>
     expect(areas).toHaveLength(1)
     expect(areas[0][0].xAxis).toBe(1)
     expect(areas[0][1].xAxis).toBe(2)
+  })
+
+  it('换算不出来的标注直接跳过 —— 画一个错位的区间比不画更糟', () => {
+    const option = buildAnnotateOption({
+      data,
+      annotations: [annotation({ start: '2026-01-01T00:00:00', end: '2026-01-01T01:00:00' })],
+      onBrush: () => {},
+    })
+    expect(option.series[0].markArea?.data).toEqual([])
   })
 
   it('没有标注时 markArea 是空数组（不画区间，但结构在）', () => {

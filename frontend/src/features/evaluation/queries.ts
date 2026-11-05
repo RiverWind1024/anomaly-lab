@@ -1,8 +1,36 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { excludeEvaluationRow, getSummary, restoreEvaluationRow } from '../../api/series'
+import {
+  excludeEvaluationRow,
+  getProductionEvaluation,
+  getSummary,
+  restoreEvaluationRow,
+} from '../../api/series'
 
 export function useSummary() {
   return useQuery({ queryKey: ['summary'], queryFn: getSummary })
+}
+
+/**
+ * 生产检测记录 × 人工标注的评估结果。
+ *
+ * ⚠️ `rate` 进 queryKey —— 采样率变了，抽中的记录就变了，结果必须重算。
+ */
+export function useProductionEvaluation(
+  jobId?: number,
+  rateAlert?: number,
+  rateNormal?: number,
+  maxPerLayer?: number,
+) {
+  return useQuery({
+    queryKey: [
+      'productionEvaluation',
+      jobId ?? null,
+      rateAlert ?? null,
+      rateNormal ?? null,
+      maxPerLayer ?? null,
+    ],
+    queryFn: () => getProductionEvaluation(jobId, rateAlert, rateNormal, maxPerLayer),
+  })
 }
 
 /**

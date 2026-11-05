@@ -652,15 +652,164 @@ export interface Badcases {
 
 export interface Annotation {
   series_id: string
-  start: number
-  end: number
+  /** 区间起点（naive ISO 字符串）—— 不是数组下标。 */
+  start: string
+  /** 区间终点（naive ISO 字符串）—— 不是数组下标。 */
+  end: string
   type: string
   created_at: string
 }
 
 export interface AnnotationList {
   series_id: string
+  run_id: number | null
   intervals: Annotation[]
+}
+
+// ───────────────────────────────────── 生产评估 /api/evaluation/production
+
+/** 一条可标注的生产检测记录。 */
+export interface ProductionSample {
+  run_id: number
+  series_id: string
+  group: string | null
+  job_id: number
+  detector: string
+  source_id: number
+  source_name: string
+  metric_id: number
+  metric_name: string
+  n: number
+  n_alerts: number
+  start_ts: string
+  end_ts: string
+  n_annotations: number
+  n_truth: number
+  /** 这次运行的时间段**用户核对过**吗 —— 没核对过就没法评估。 */
+  reviewed: boolean
+  /** 检出结果 —— 「报出了告警」还是「什么都没报」。 */
+  outcome: 'alert' | 'normal'
+  outcome_label: string
+  /** 它被抽中时所在层的采样率 —— 标注时要一起存下来。 */
+  rate: number
+  /** 它所在层的候选总量。 */
+  layer_size: number
+}
+
+/** 生产评估的一行 —— 一条检测记录 × 它的标注。 */
+export interface ProductionEvaluationRow {
+  run_id: number
+  series_id: string
+  group: string | null
+  job_id: number
+  detector: string
+  source_id: number
+  source_name: string
+  metric_id: number
+  metric_name: string
+  start_ts: string
+  end_ts: string
+  n: number
+  n_truth: number
+  n_pred: number
+  n_annotations: number
+  /** 检出结果 —— 「报出了告警」还是「什么都没报」。 */
+  outcome: 'alert' | 'normal'
+  outcome_label: string
+  /** 这条记录被抽中时所在层的采样率。 */
+  rate: number
+  /** 权重 = 1 / rate —— 这条代表总体里的多少条。 */
+  weight: number
+  /** 加权前的计数。 */
+  tp: number
+  fp: number
+  fn: number
+  precision: number
+  recall: number
+  f1: number
+  range_f1: number
+}
+
+/** 采样信息 —— 抽了多少、标了多少。 */
+export interface ProductionSampling {
+  /** 异常层（报出了告警）的采样比例。 */
+  rate_alert: number
+  /** 正常层（什么都没报）的采样比例 —— 正常记录远多于异常记录。 */
+  rate_normal: number
+  /** 候选总数（全部运行记录 × 全部序列）。 */
+  n_candidates: number
+  /** 采样选中的条数。 */
+  n_sampled: number
+  /** 采样选中且已标注的条数。 */
+  n_annotated: number
+  /** 每层抽样的条数上限（null = 不限）。 */
+  max_per_layer: number | null
+  /** 去重后的告警事件数 —— 同一区间被反复报出只算一个。 */
+  n_events: number
+  layers: ProductionLayer[]
+}
+
+/** 一层（数据源 → 指标 → 检出结果）的采样与成绩。 */
+export interface ProductionLayer {
+  source_id: number
+  source_name: string
+  metric_id: number
+  metric_name: string
+  /** 检出结果 —— 「异常」（报出了告警）或「正常」（什么都没报）。 */
+  outcome: 'alert' | 'normal'
+  outcome_label: string
+  /** 层内检测记录数 —— 总体的口径。 */
+  n_candidates: number
+  /** 层内不同检测内容数 —— 诊断用：活数据源每次检测都不同（两者相等）。 */
+  n_contents: number
+  /** 去重后的告警事件数 —— 同一区间被反复报出只算一个。 */
+  n_events: number
+  n_sampled: number
+  n_annotated: number
+  /** 这一层实际生效的采样率。 */
+  rate: number
+  precision: number | null
+  recall: number | null
+  f1: number | null
+  range_f1: number | null
+}
+
+/** 生产评估的完整结果 —— 按「数据源 → 指标」分层。 */
+export interface ProductionEvaluation {
+  rows: ProductionEvaluationRow[]
+  layers: ProductionLayer[]
+  sampling: ProductionSampling
+  overall: {
+    n_samples: number
+    n_layers: number
+    precision: number | null
+    recall: number | null
+    f1: number | null
+    range_f1: number | null
+    n_truth: number
+    n_alerts: number
+    /** 反算出来的总体量（加权后的计数之和）。 */
+    n_estimated: number
+    /** 加权后的命中 / 误报 / 漏报。 */
+    tp: number
+    fp: number
+    fn: number
+  }
+  n_candidates: number
+  warnings: string[]
+}
+
+/** 某次运行里一条序列的完整时序。 */
+export interface RunSeriesDetail {
+  run_id: number
+  series_id: string
+  detector: string
+  timestamps: string[]
+  values: number[]
+  scores: number[]
+  severity: number[]
+  /** 生产数据没有自带真值 —— 恒为空，真值来自人工标注。 */
+  labels: number[]
 }
 
 // ─────────────────────────────────────────── 序列 /api/series

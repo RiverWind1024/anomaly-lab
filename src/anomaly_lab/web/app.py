@@ -18,6 +18,15 @@ from anomaly_lab.contracts import DetectionResult
 from anomaly_lab.data.loader import load_dataset
 from anomaly_lab.evaluation.badcases import attribute_badcases
 from anomaly_lab.evaluation.exclusions import ExclusionStore, exclusion_key
+from anomaly_lab.evaluation.production import (
+    DEFAULT_MAX_PER_LAYER,
+    DEFAULT_RATE_ALERT,
+    DEFAULT_RATE_NORMAL,
+    OUTCOME_LABELS,
+    evaluate_production,
+    list_samples,
+)
+from anomaly_lab.lab.truth import REVIEWED_TYPE, annotations_path, load_annotations
 from anomaly_lab.platform.store import PlatformStore
 from anomaly_lab.platform.validation import validate_identifier
 from anomaly_lab.web.biz_state import biz_headers
@@ -38,9 +47,27 @@ def _dataset_dir() -> Path:
 
 
 class AnnotationInterval(BaseModel):
-    start: int
-    end: int
+    """一条标注。
+
+    两种形态：
+
+    - **异常区间**：填 `start` / `end`（时间戳，naive ISO），`type` 是异常类型；
+    - **整条记录核对过**：`type="reviewed"`，**不填** `start` / `end` ——
+      窗口从 `run_id` 对应的检测记录里取。用户点一下「这条记录正常」即可，
+      不用画区间。
+
+    ⚠️ `start` / `end` 是**时间戳**，不是数组下标 ——
+       序列一旦滚动，同一个下标就指向完全不同的时刻。
+    """
+
+    start: str | None = None
+    end: str | None = None
     type: str = "spike"
+    #: 标这条时**它所在层的采样率**（P3 的分层抽样反算要用）。
+    #: 不填 = 不知道采样率（老数据 / 手工标注）。
+    rate: float | None = None
+    #: 标这条时它所在层的候选总量。
+    layer_size: int | None = None
 
 
 class AnnotationPayload(BaseModel):
@@ -62,12 +89,23 @@ def _report_path() -> Path:
     return CONFIG.reports_dir / "latest" / "report.json"
 
 
+def _run_dir(data_root: Path, run_id: int) -> Path:
+    """某次运行的产物目录。"""
+    return Path(data_root) / "cache" / "platform" / "runs" / str(run_id)
+
+
 def _detections_root() -> Path:
     return _data_root() / "cache" / "detections"
 
 
 def _annotations_path(series_id: str) -> Path:
-    return _data_root() / "annotations" / f"{series_id}.jsonl"
+    """标注文件路径 —— **按序列存，不按运行**。
+
+    ⚠️ 真值是**数据的属性**，不是某次运行的属性。滚动窗口下同一个异常
+       会被连续几十次运行报出，按 run 存等于让用户把同一段标几十次。
+       `run_id` 只作为「标它时看的是哪次运行」存进记录，不进路径。
+    """
+    return annotations_path(_data_root(), series_id)
 
 
 def _series_map() -> dict:
@@ -149,31 +187,181 @@ def create_app(
         return rows
 
     @app.post("/api/annotate/{series_id}")
-    def save_annotation(series_id: str, payload: AnnotationPayload) -> dict:
+    def save_annotation(
+        series_id: str, payload: AnnotationPayload, run_id: int | None = None
+    ) -> dict:
+        """保存一条标注。
+
+        ⚠️ **按序列存** —— 一条标注覆盖所有时间轴包含该时段的检测记录。
+           `run_id` 只记进记录里做溯源，不影响存储路径。
+        """
         path = _annotations_path(series_id)
         path.parent.mkdir(parents=True, exist_ok=True)
         created_at = datetime.now(UTC).isoformat()
         with path.open("a", encoding="utf-8") as handle:
             for item in payload.intervals:
+                review = item.type == REVIEWED_TYPE
+                # ⚠️ 异常区间必须有边界；「整条记录核对过」不需要 ——
+                #    它的窗口从 run_id 对应的检测记录里取。
+                if not review and (not item.start or not item.end):
+                    raise HTTPException(
+                        status_code=422,
+                        detail=f"异常标注缺少时间边界：{item.type}",
+                    )
+                if review and run_id is None:
+                    raise HTTPException(
+                        status_code=422,
+                        detail="「整条记录核对过」必须带 run_id",
+                    )
                 record = {
                     "series_id": series_id,
-                    "start": item.start,
-                    "end": item.end,
                     "type": item.type,
                     "created_at": created_at,
                 }
+                if item.start and item.end:
+                    record["start"] = item.start
+                    record["end"] = item.end
+                if run_id is not None:
+                    record["run_id"] = run_id
+                # ⚠️ 采样率**跟着标注一起存** —— 采样率后来变了，
+                #    这条标注仍按它当初的权重反算总体。
+                if item.rate is not None:
+                    record["rate"] = float(item.rate)
+                if item.layer_size is not None:
+                    record["layer_size"] = int(item.layer_size)
                 handle.write(json.dumps(record, ensure_ascii=False) + "\n")
         return {"saved": len(payload.intervals), "path": str(path)}
 
     @app.get("/api/annotate/{series_id}")
-    def list_annotations(series_id: str) -> dict:
-        path = _annotations_path(series_id)
-        records = []
-        if path.exists():
-            for line in path.read_text(encoding="utf-8").splitlines():
-                if line.strip():
-                    records.append(json.loads(line))
-        return {"series_id": series_id, "intervals": records}
+    def list_annotations(series_id: str, run_id: int | None = None) -> dict:
+        """一条序列的全部标注（含旧的按 run 存的格式）。
+
+        ⚠️ `run_id` 保留在签名里只为兼容老前端 —— 标注不再按 run 分开。
+        """
+        records = load_annotations(_data_root(), series_id)
+        return {"series_id": series_id, "run_id": run_id, "intervals": records}
+
+    @app.get("/api/evaluation/production")
+    def production_evaluation(
+        job_id: int | None = None,
+        rate_alert: float = DEFAULT_RATE_ALERT,
+        rate_normal: float = DEFAULT_RATE_NORMAL,
+        max_per_layer: int | None = DEFAULT_MAX_PER_LAYER,
+    ) -> dict:
+        """生产检测记录 × 人工标注 → 分层的 P / R / F1。
+
+        ⚠️ **流程是「先采样、再标注、最后评估」** ——
+        `rate_alert` / `rate_normal` 决定各层抽多少比例的候选记录送去标注，
+        评估用**所有已标注**的记录按各自采样率反算。
+
+        ⚠️ **异常层与正常层分开采样** —— 正常记录远多于异常记录，
+        同一个采样率要么标不完，要么异常样本太少。
+
+        ⚠️ **只覆盖被标注过的那部分** —— 真值是人工标的，不是全集。
+        """
+        return evaluate_production(
+            get_store(),
+            data_root,
+            job_id=job_id,
+            rate_alert=rate_alert,
+            rate_normal=rate_normal,
+            max_per_layer=max_per_layer,
+        )
+
+    @app.get("/api/evaluation/production/samples")
+    def production_samples(
+        job_id: int | None = None,
+        limit: int = 50,
+        rate_alert: float = DEFAULT_RATE_ALERT,
+        rate_normal: float = DEFAULT_RATE_NORMAL,
+        max_per_layer: int | None = DEFAULT_MAX_PER_LAYER,
+        todo: bool = False,
+    ) -> list[dict]:
+        """采样后的生产检测记录清单 —— 标注页的下拉用它。
+
+        ⚠️ `todo=true` → 只给**还没标**的（待办队列）。
+        """
+        samples = list_samples(
+            get_store(),
+            data_root,
+            job_id=job_id,
+            rate_alert=rate_alert,
+            rate_normal=rate_normal,
+            max_per_layer=max_per_layer,
+            limit=limit,
+            todo_only=todo,
+        )
+        return [
+            {
+                "run_id": item.run_id,
+                "series_id": item.series_id,
+                "group": item.group,
+                "job_id": item.job_id,
+                "detector": item.detector,
+                "source_id": item.source_id,
+                "source_name": item.source_name,
+                "metric_id": item.metric_id,
+                "metric_name": item.metric_name,
+                "n": item.n,
+                "n_alerts": item.n_alerts,
+                "start_ts": item.start_ts,
+                "end_ts": item.end_ts,
+                "n_annotations": item.n_annotations,
+                "n_truth": item.n_truth,
+                # ⚠️ 「核对过」= 评估有没有资格给这次运行打分。
+                "reviewed": item.reviewed,
+                "outcome": item.outcome,
+                "outcome_label": OUTCOME_LABELS[item.outcome],
+                # ⚠️ 采样率要带到前端 —— 标注时一起存下来，反算时按它加权。
+                "rate": item.rate,
+                "layer_size": item.layer_size,
+            }
+            for item in samples
+        ]
+
+    @app.get("/api/runs/{run_id}/series/{series_id}")
+    def run_series_detail(run_id: int, series_id: str) -> dict:
+        """某次运行里一条序列的完整时序 —— 标注页画波形用。
+
+        ⚠️ **不用重新取数** —— run 的 npz 里已经存了 `timestamps / values /
+           scores / severity`，直接读最准（跟当时跑的那份完全一致）。
+        """
+        index_path = _run_dir(data_root, run_id) / "index.json"
+        if not index_path.is_file():
+            raise HTTPException(status_code=404, detail="该运行没有产物")
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+        file_name = next(
+            (
+                entry.get("file")
+                for entry in index.get("series", [])
+                if entry.get("series_id") == series_id
+            ),
+            None,
+        )
+        if not file_name:
+            raise HTTPException(status_code=404, detail="该运行里没有这条序列")
+        npz_path = _run_dir(data_root, run_id) / file_name
+        if not npz_path.is_file():
+            raise HTTPException(status_code=404, detail="该运行的检测结果文件缺失")
+
+        import numpy as np
+
+        with np.load(npz_path) as data:
+            stamps = np.asarray(data["timestamps"], dtype=np.int64)
+            # ⚠️ **先按 ns 解释，再降到秒** —— 直接 `astype("datetime64[s]")`
+            #    会把纳秒数值当成秒数，数值直接溢出。
+            seconds = stamps.astype("datetime64[ns]").astype("datetime64[s]")
+            return {
+                "run_id": run_id,
+                "series_id": series_id,
+                "detector": str(data["detector"]) if "detector" in data else "",
+                "timestamps": [str(ts)[:19] for ts in seconds],
+                "values": [float(v) for v in np.asarray(data["values"], dtype=float)],
+                "scores": [float(v) for v in np.asarray(data["scores"], dtype=float)],
+                "severity": [int(v) for v in np.asarray(data["severity"], dtype=int)],
+                # ⚠️ 生产数据没有自带真值 —— 恒为空，真值来自人工标注。
+                "labels": [],
+            }
 
     @app.get("/api/summary")
     def summary() -> dict:

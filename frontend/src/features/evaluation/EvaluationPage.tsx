@@ -8,6 +8,7 @@ import { detectorLabel } from '../../lib/detectorLabels'
 import './evaluation.css'
 import { aggregateBy } from './aggregate'
 import { FilterBar } from './FilterBar'
+import { ProductionEvaluationPanel } from './ProductionEvaluationPanel'
 import { DIMENSIONS, filterRows, type DimensionKey, type EvaluationFilters } from './filters'
 import { useExcludeEvaluationRow, useRestoreEvaluationRow, useSummary } from './queries'
 import { metricClassLabel } from '../jobs/ClassificationCard'
@@ -218,9 +219,7 @@ export function EvaluationTable({
             <div className="panel__head">
               <div>
                 <h2 className="panel__title">分组表现</h2>
-                <p className="panel__meta">
-                  按{dimensionLabel}汇总 · 按 F1 从高到低
-                </p>
+                <p className="panel__meta">按{dimensionLabel}汇总</p>
               </div>
               <div className="seg" role="tablist" aria-label="聚合维度">
                 {DIMENSIONS.map((item) => (
@@ -361,6 +360,8 @@ export function EvaluationPage() {
           {summary.data?.title ?? '回测'} · 生成于 {fmtUtcTime(summary.data?.generated_at)} UTC
         </p>
       </header>
+
+      <ProductionEvaluationPanel />
 
       <EvaluationTable
         isLoading={summary.isPending}
