@@ -1,12 +1,30 @@
 # anomaly-lab
 
 [![Python](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
+[![Node](https://img.shields.io/badge/node-20-339933)](https://nodejs.org/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-1220%20passed-brightgreen)]()
 
-一个端到端的时序异常检测实验室：**合成数据 → 形态分类 → 算法推荐 → 多类检测器 → 离线评测 → 回归报告 → Web 演示**，外加一条**平台切片**：SQLite 数据源 → SQL 指标 → 定时拉取 → 基线/上下界 → P1/P0 分级 → 前端预览。目标是完整走通工程闭环，并把每一步的取舍和数据都留下来。
+一个端到端的时序异常检测实验室：**合成数据 → 形态分类 → 算法推荐 → 多类检测器 → 离线评测 → 回归报告 → Web 演示**，外加一条**平台切片**：SQLite / HTTP 数据源 → SQL 指标 → 定时拉取 → 基线/上下界 → P1/P0 分级 → 前端预览。
+
+在此之上补了两层：
+
+- **指标预检实验台**（`/lab`）—— 建告警任务**之前**先验证「这个指标到底能不能上检测」；
+- **生产检测记录评估**（`/evaluation`）—— 线上跑的那次结果 × 人工标注，回答「上线之后到底准不准」。
+
+目标是完整走通工程闭环，并把每一步的取舍和数据都留下来。
 
 > 结论先行：在自建合成集上，分类器 120/120 全对；检测器里去趋势 IQR 的总体 F1 最高（0.510），LSTM 次之（0.458），TCN 未跑赢简单基线（0.279）。这些数字只代表合成分布，不代表真实业务效果。
+
+## 界面
+
+| 概览：告警、分数轨迹与回测总体 | 指标预检：有真值评估（校准 / 测试分离） |
+|---|---|
+| ![概览](docs/images/overview.png) | ![指标预检](docs/images/lab-truth-eval.png) |
+
+| 生产检测记录：分层采样与反算 | 标注：一条波形「核对过 / 有异常」 |
+|---|---|
+| ![生产评估](docs/images/production-eval.png) | ![标注](docs/images/annotate-reviewed.png) |
 
 ## 架构
 
@@ -20,16 +38,23 @@ flowchart LR
   F --> G[回测 + Bad Case 归因]
   G --> H[JSON / Markdown / 图]
   H --> I[FastAPI JSON API]
-  S[SQLite 数据源] --> SP[指标 SQL + $timefilter]
+  S[数据源：SQLite / HTTP SQL] --> SP[指标 SQL + $timefilter]
   SP --> SPL[按 group by 拆序列]
   SPL --> SCH[定时调度器]
   SCH --> RUN[检测 + 基线/上下界 + P1/P0]
+  RUN --> RS[(run_series / alert_events)]
+  S --> LAB[指标预检：采样 + 体检 + 形态推断]
+  LAB --> LBR[多算法对比 / 有真值 F1]
+  RS --> PE[生产检测记录评估]
+  AN[人工标注 + reviewed] --> PE
   RUN --> PV[任务详情页 /jobs/:id]
   I --> FE[React SPA（frontend/）]
+  LBR --> FE
+  PE --> FE
   PV --> FE
 ```
 
-详见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)、[docs/ALGORITHMS.md](docs/ALGORITHMS.md)、[docs/DATA.md](docs/DATA.md)、[docs/PLATFORM.md](docs/PLATFORM.md)。
+详见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)、[docs/ALGORITHMS.md](docs/ALGORITHMS.md)、[docs/DATA.md](docs/DATA.md)、[docs/PLATFORM.md](docs/PLATFORM.md)、[docs/LAB.md](docs/LAB.md)。
 
 ### 分层与契约
 
@@ -69,6 +94,15 @@ make compare      # 统计 + 自训深度 + Chronos（不可用则跳过）对�
 make serve        # 构建前端并起服务：http://127.0.0.1:8000
 ```
 
+起来之后建议按这个顺序看：
+
+| 页面 | 看什么 |
+|---|---|
+| `/` | 平台在跑：告警事件、分数轨迹、回测总体 |
+| `/lab` | 选「合成数据」→ 点「有真值评估」，看 校准 F1 / 测试 F1 分离 |
+| `/evaluation` | 顶部「生产检测记录」：分层采样、反算权重、核对覆盖率 |
+| `/annotate` | 选一条生产检测记录 → 看波形 → 点「这条记录正常」 |
+
 开发时前后端分开跑（vite 热更新 + `/api` 代理到 8000）：
 
 ```bash
@@ -100,18 +134,78 @@ MOCK_TSDB=1 make dev
 # 或离线模式：ANOMALY_LAB_OFFLINE=1 ./scripts/smoke.sh
 ```
 
-测试：
+测试（CI 每次推送都跑，见 `.github/workflows/ci.yml`）：
 
 ```bash
-.venv/bin/python -m pytest -p no:warnings   # 后端 590 passed
-cd frontend && npx vitest run                # 前端 292 passed / 35 files
+.venv/bin/python -m pytest -p no:warnings   # 后端 810 passed
+cd frontend && npx vitest run                # 前端 410 passed / 49 files
 ```
+
+## 指标预检实验台（`/lab`）
+
+**问题**：现有链路是「数据源 → 指标 → 告警任务」，缺了「**这个指标到底能不能上检测**」。
+`auto` 的形态推断要等任务跑完一次才发生，结果埋在产物里 —— 对新指标是倒序的。
+
+| 能力 | 做什么 |
+|---|---|
+| P0 切片与体检 | 四种来源（已有指标 / 临时 SQL / 合成 / 公开集）、跨窗采样、质量体检、形态推断，并在选算法**之前**给出周期可识别性（`period_capability`） |
+| P1 多算法实验 | 同一批窗口跑多个算法；检出画像、倍数敏感性、跨窗稳定性 |
+| P2 实验记录 | spec + env + result 落盘；指纹剔除 `elapsed_ms`，同 spec 两次结果一致；「一键建任务」把结论回填表单 |
+| P3 有真值 | 合成 / 公开集 / 人工标注 → P·R·F1 |
+
+两条硬约定：
+
+- **校准与测试按窗口时间顺序切**，绝不跨界 —— 跨界就是真值泄漏。校准集**逐窗搜阈值再取中位数**，判定用 `scores >= threshold`；
+- **产物隔离**在 `data/lab/experiments/`，永不写入 `reports/latest/`。
+
+验收：合成场景下 lab 的算法排名与离线评测一致，且 lab F1 不高于离线（`tests/lab/test_evaluate.py`）。
+
+> 无真值是主场景，产出是「证据 + 取舍」，不是 F1 —— 不假装有真值。
+
+## 生产检测记录评估
+
+**口径**：评估**线上跑的那次结果**（run 产物里的 `scores` / `severity`）× **人工标注过的记录**，
+**不重跑**。重跑得到的是「现在的算法在旧数据上」的成绩，不是线上真实效果。
+
+### 分层采样
+
+```
+数据源 → 指标 → 检出结果（异常 / 正常）
+```
+
+异常层与正常层**各自采样率**（默认 50% / 5%，另有每层上限）——
+正常记录远多于异常记录，同一个采样率要么标不完、要么异常样本太少。
+正常层是估**漏报**的唯一来源。
+
+### 「核对过」是一等标注
+
+| 类型 | 内容 | 作用 |
+|---|---|---|
+| 异常区间 | `type=spike/drift/…` + `start`/`end` | 真值 |
+| `reviewed` | 只有 `run_id`，**没有边界** | 负样本标签 + 覆盖率声明 |
+
+⚠️ **没有负样本标签，就没有分母**：一条 6 分钟的标注会让同一窗口里其余 23 个告警点
+**凭空变成误报**。所以评估只在核对过的时间段里计分；老标注没有 `reviewed` 记录时，
+退化成「只在标注区间内计分」（保守口径，不凭空产生误报）。
+
+### 反算
+
+每条标注带上它所在层的采样率，总体混淆矩阵 = Σ(1/rate)·单条计数。
+**比率不能平均**；区间级 F1 不能反算，只给加权平均并标为参考值。
+
+### 系统会说自己不可信
+
+只核对了一小段时，报告直接写出来：
+
+> 这些记录里只有 24/6000 个点被核对过（0.4%）—— 数字只代表核对过的那部分
+
+「25 个告警里 2 个真」和「25 个告警里 2 个被核对过」是两回事，界面不让人混。
 
 ## 数据
 
 - **合成集（主力）**：6 种形态（平稳、周期、趋势、阶梯、高零值、稀疏事件）× 6 种异常（尖峰、上下文、漂移、频率突变、方差突变、平台断流），共 120 条、每条 500 点，随机种子可复现，真值逐点标注。
 - **公开集（泛化验证）**：UCR 异常库按序列惰性加载，只读缓存，不拉全量 zip；离线时缺失缓存直接抛 `DatasetUnavailable`。公开集不参与调参。
-- **人工标注**：Web 刷选后追加到 `data/annotations/{series_id}.jsonl`，每行一条记录（含 `created_at`）。
+- **人工标注**：`data/annotations/<series_id>.jsonl`，**按序列存**（不绑定 run —— 滚动窗口下同一个异常会被连续几十次运行报出）。每行两种形态之一：异常区间（`start`/`end` 是时间戳），或 `reviewed`（整条记录核对过）。格式见 [docs/DATA.md](docs/DATA.md)。
 
 合成数据结论不等于真实分布结论，公开集仍需按场景校准。
 
@@ -124,7 +218,8 @@ cd frontend && npx vitest run                # 前端 292 passed / 35 files
 | 统计 | IQR / MAD / ZScore | 稳健基线 + 绝对偏差标准化 |
 | 统计 | Seasonal | 周期内同相位分组，组内中位数/MAD |
 | 统计 | STLResidual | STL 分解后的残差 / 残差 MAD |
-| 统计 | DeseasonalizedIQR | 先线性去趋势，再跑 IQR |
+| 统计 | `theil_sen` | Theil-Sen 稳健趋势线（点对斜率中位数）+ 残差 MAD |
+| 统计 | `trend_residual_iqr`（旧名 DeseasonalizedIQR） | 先线性去趋势，再跑 IQR |
 | 统计 | ChangePoint | 滑窗双样本 t 检验，`1 - p` 为概率 |
 | 统计 | EventCount | 窗口非零事件数 vs 泊松基线 |
 | 自训深度 | TCN / LSTM | 一维重构自编码器，重构误差归一为概率 |
@@ -201,26 +296,26 @@ print(diff_reports("reports/iteration/before/report.json",
 
 ## 平台切片（定时检测）
 
-一条可运行的链路：**SQLite 数据源 → 指标 SQL（`$timefilter`）→ 按 group by 拆序列 → 定时拉取 → 基线与双向上下界 → P1/P0 分级 → 前端预览**。
+一条可运行的链路：**数据源 → 指标 SQL（`$timefilter`）→ 按 group by 拆序列 → 定时拉取 → 基线与双向上下界 → P1/P0 分级 → 前端预览**。
 
 - 配置分三层：数据源 → 指标 → 检测任务，都存在 `data/platform.db`。
+- 数据源支持 SQLite 文件与 **HTTP SQL 透传**（InfluxDB 3 / ClickHouse / TDengine 的 SQL-over-HTTP 网关）；连接器只负责「SQL → DataFrame」，时间解析 / 排序 / group by / 缺失值策略全部共用。
 - 任务自己配告警规则：一张「条件 → 等级」表，如 `2.5, P1` / `3.75, P0`（倍数条件），也可混写 `>50, P0`（绝对值条件，只抬不压）。顺序即档位顺序（最后一行最严重），命中多条取最高档；「10 突增到 50 算 P0 还是 P1」没有通用答案，所以交给用户配置。
 - 调度器内置在 `serve` 里，重启后错过的窗口只补跑一次；`--no-scheduler` 可关闭。
-- group by 在加载层就拆好，检测器永远只面对一条序列。
-- **告警中心**（`/alerts`）：跨任务汇总告警事件，一条事件是一段连续告警点合并成的区间，可按任务/档位/时间筛选；取各任务最近一次运行的结果，没纳入统计的任务会说明原因。
+- **检测记录落库**：`run_series`（序列摘要 + 时间范围 + `content_hash`）与 `alert_events`（告警区间）；逐点数组仍留 npz。查询不再扫产物目录（实测 8700 多个目录 → 一条 SQL）。
+- **告警记录**（`/alerts`）：跨任务汇总告警事件，一条事件是一段连续告警点合并成的区间；取各任务最近一次运行的结果，没纳入统计的任务会说明原因。
 - **删除**：任务 / 指标 / 数据源支持级联删除，run 目录文件一并清理；运行中的任务删不掉（返回 409）。
+- **保留策略**：默认 180 天，最新一次运行永远保留、正在执行的不删；`anomaly-lab prune --dry-run` 先看会删什么。
 
 细节与限制见 [docs/PLATFORM.md](docs/PLATFORM.md)。
 
 ## 项目边界
 
-- 不接实时流、不做在线学习、不做告警编排；只做离线可复现的检测与评测。
+- 不接实时流、不做在线学习、不做告警编排；只做离线可复现的检测与评测。**重复告警是配置的函数**（检测窗口 / 运行间隔），去重与抑制归告警系统，不归评估。
 - 合成集的 100% 分类准确率不代表真实指标；真实场景需要重新标注、校准阈值。
 - 公开集只做泛化验证，UCR 单序列 URL 尚未校准，默认离线缓存模式。
-- Chronos 预训练模型已纳入本次对比（F1 0.259，第 9/11）—— 权重不可用时 `compare` 会显式记录跳过原因，不再静默。
-  平台的任务也能选它，但它比统计检测器慢三个数量级（约 2.2 秒/序列 vs 0.06 毫秒），
-  且分数量纲不同（[0,1] 的相对越界程度，不是「多少倍尺度」），详见 [docs/PLATFORM.md](docs/PLATFORM.md)。
-- 平台切片目前只有 SQLite 数据源、进程内预处理、无认证，不适合直接对外提供服务。
+- 生产评估的抽样假设标注覆盖与检出结果**无关**（MAR）。真实场景用户更愿意标异常，这个假设会偏 —— 时间分层是无偏估计的下一步。
+- 平台切片目前无认证、单进程调度，不适合直接对外提供服务。
 - 不使用任何现职公司的内部数据、代码、文档或系统命名；`compliance-check` 会扫描仓库。
 
 ## License
