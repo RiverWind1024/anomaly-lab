@@ -186,6 +186,16 @@ def _build_parser() -> argparse.ArgumentParser:
         "--dry-run", action="store_true", help="只报告要删什么，不真删"
     )
 
+    p = sub.add_parser(
+        "sync-detections", help="把产物目录里的检测结果补录进数据库"
+    )
+    p.add_argument("--data", type=Path, default=None, help="数据根目录，默认 data")
+    p.add_argument(
+        "--all",
+        action="store_true",
+        help="连已经同步过的运行也重跑一遍（默认只补没同步的）",
+    )
+
     sub.add_parser("compliance-check", help="合规自检")
 
     return parser
@@ -665,6 +675,26 @@ def _cmd_prune(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_sync_detections(args: argparse.Namespace) -> int:
+    """把产物目录里的检测结果补录进数据库。
+
+    ⚠️ **为什么需要**：检测记录（序列摘要 + 告警区间）现在落库，
+       但在这套机制之前产生的运行，产物只在磁盘上 —— 库里查不到。
+       这个命令把两边对齐（幂等，可以随时重跑）。
+    """
+    from anomaly_lab.platform.backfill import sync_detections
+    from anomaly_lab.platform.store import PlatformStore
+
+    data_root = Path(args.data) if args.data else CONFIG.data_dir
+    store = PlatformStore(data_root / "platform.db")
+    result = sync_detections(store, data_root, only_missing=not args.all)
+    print(
+        f"补录完成：{result['runs']} 次运行、{result['series']} 条检测记录进了数据库"
+        + ("（含重跑）" if args.all else "")
+    )
+    return 0
+
+
 def _cmd_compliance(args: argparse.Namespace) -> int:
     hits = scan_repo(Path.cwd())
     if hits:
@@ -703,6 +733,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_mock_demo(args)
     if args.command == "prune":
         return _cmd_prune(args)
+    if args.command == "sync-detections":
+        return _cmd_sync_detections(args)
     if args.command == "compliance-check":
         return _cmd_compliance(args)
     if args.command in _UNIMPLEMENTED:

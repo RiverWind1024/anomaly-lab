@@ -77,7 +77,10 @@ flowchart LR
   API --> UI[frontend<br/>JobsPage / PreviewChart]
 ```
 
-- 配置与结果分离：SQLite 只存配置与运行摘要，数组落 npz，避免大对象进数据库。
+- 配置与结果分离：SQLite 存配置、运行摘要与**检测记录**（序列摘要 + 告警区间），
+  逐点数组落 npz，避免大对象进数据库。
+- 检测记录落库让「有哪些检测记录」变成一条 SQL ——
+  扫产物目录实测 8700 多个目录 = 0.47s，且随运行数线性涨。
 - 取数与预处理第一版在进程内完成，边界是**连接器层**（`platform/sources/`）的
   `fetch` → `SeriesBundle` → 检测器，后续可把前者换成独立 worker。
 - **连接器只负责「SQL → DataFrame」，后处理方言无关、全部共用**：时间解析、排序、

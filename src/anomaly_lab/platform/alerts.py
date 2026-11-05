@@ -11,6 +11,10 @@
   它只能**抬高**等级、不会压低分数判定的结果。
 
 规则表的**顺序即档位顺序**（从低到高严重）；命中多条时取最高档。
+
+⚠️ `merge_alert_intervals` 放在这里而不是 `alert_events.py` ——
+   runner 要用它把告警区间**写进数据库**，而 `alert_events.py` 反过来
+   依赖 runner（读产物目录）。放这里就切断了循环依赖。
 """
 
 from __future__ import annotations
@@ -24,6 +28,32 @@ SEVERITY_NORMAL = 0
 
 #: 绝对值条件支持的比较符
 ABSOLUTE_OPS = (">", ">=", "<", "<=")
+
+
+def merge_alert_intervals(severity: np.ndarray) -> list[tuple[int, int, int]]:
+    """把逐点 severity 合并成连续区间。
+
+    返回 `[(起始下标, 结束下标, 区间内最高档位序号), ...]`（闭区间）。
+
+    - `severity > 0` 的点算告警；`0` 是正常。
+    - 连续的告警点合成一个区间；中间隔着正常点就断开。
+    - 区间里的档位取**最大值**（最严重的那一档代表这个区间）。
+    """
+    severity = np.asarray(severity)
+    if severity.size == 0:
+        return []
+    intervals: list[tuple[int, int, int]] = []
+    start: int | None = None
+    for index in range(len(severity)):
+        if severity[index] > SEVERITY_NORMAL:
+            if start is None:
+                start = index
+        elif start is not None:
+            intervals.append((start, index - 1, int(severity[start:index].max())))
+            start = None
+    if start is not None:
+        intervals.append((start, len(severity) - 1, int(severity[start:].max())))
+    return intervals
 
 
 @dataclass(frozen=True)

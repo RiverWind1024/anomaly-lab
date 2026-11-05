@@ -110,6 +110,55 @@ CREATE TABLE IF NOT EXISTS retention_state (
   deleted_runs INTEGER NOT NULL DEFAULT 0,
   freed_bytes INTEGER NOT NULL DEFAULT 0
 );
+-- 每次运行的每条序列 —— 检测记录的「清单」层。
+-- ⚠️ 以前这些只躺在 index.json 里，查询「有哪些检测记录」得扫整个
+--    产物目录（实测 8700 多个目录 = 0.47s，且随运行数线性涨）。
+--    落库之后那是一条 SQL。
+CREATE TABLE IF NOT EXISTS run_series (
+  run_id INTEGER NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+  series_id TEXT NOT NULL,
+  group_name TEXT,
+  n INTEGER NOT NULL DEFAULT 0,
+  n_valid INTEGER NOT NULL DEFAULT 0,
+  n_missing INTEGER NOT NULL DEFAULT 0,
+  n_alerts INTEGER NOT NULL DEFAULT 0,
+  n_p0 INTEGER NOT NULL DEFAULT 0,
+  sufficient INTEGER NOT NULL DEFAULT 1,
+  detector TEXT NOT NULL DEFAULT '',
+  metric_class TEXT NOT NULL DEFAULT '',
+  fallback INTEGER NOT NULL DEFAULT 0,
+  file TEXT NOT NULL DEFAULT '',
+  -- 内容指纹：同一份数据被反复检测时用来识别「这是同一次检测」。
+  content_hash TEXT NOT NULL DEFAULT '',
+  -- 这次检测覆盖的时间范围（naive ISO）。
+  -- ⚠️ 落库是为了**不读 npz 就能判断「哪条标注落在哪次检测里」** ——
+  --    标注按序列存，一条标注要复用给所有覆盖它的检测记录。
+  start_ts TEXT NOT NULL DEFAULT '',
+  end_ts TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (run_id, series_id)
+);
+CREATE INDEX IF NOT EXISTS idx_run_series_content ON run_series(content_hash);
+-- 告警区间 —— 检测记录的「明细」层。
+-- ⚠️ **每次运行报出的区间都记一行，不预先去重** ——
+--    「同一个异常被报过几次」本身就是事实（滚动窗口下会重复报），
+--    要不要合并由查询层决定。
+CREATE TABLE IF NOT EXISTS alert_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id INTEGER NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+  job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+  series_id TEXT NOT NULL,
+  group_name TEXT,
+  level TEXT NOT NULL,
+  level_index INTEGER NOT NULL,
+  start_ts TEXT NOT NULL,
+  end_ts TEXT NOT NULL,
+  n_points INTEGER NOT NULL DEFAULT 0,
+  max_score REAL NOT NULL DEFAULT 0,
+  detector TEXT NOT NULL DEFAULT '',
+  score_type TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_alert_events_run ON alert_events(run_id);
+CREATE INDEX IF NOT EXISTS idx_alert_events_span ON alert_events(series_id, start_ts);
 """
 
 
@@ -472,6 +521,16 @@ class PlatformStore:
             conn.execute(
                 "ALTER TABLE sources ADD COLUMN config TEXT NOT NULL DEFAULT '{}'"
             )
+        # 检测记录的时间范围是后加的列 —— 老库补上（空值由 sync-detections 回填）。
+        run_series_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(run_series)")
+        }
+        if run_series_columns:
+            for column in ("start_ts", "end_ts"):
+                if column not in run_series_columns:
+                    conn.execute(
+                        f"ALTER TABLE run_series ADD COLUMN {column} TEXT NOT NULL DEFAULT ''"
+                    )
 
     # ---------- 数据源 ----------
 
@@ -1106,6 +1165,161 @@ class PlatformStore:
                 ") m ON r.id = m.max_id"
             ).fetchall()
         return {int(row["job_id"]): Run(**dict(row)) for row in rows}
+
+    # ---------- 检测记录 ----------
+
+    def record_run_series(self, run_id: int, entries: Sequence[dict]) -> None:
+        """把一次运行的**序列摘要**写进库。
+
+        ⚠️ 用 `INSERT OR REPLACE` —— 同一次运行重复写入是幂等的
+           （回填脚本会重跑，不能写成重复行）。
+        """
+        rows = [
+            (
+                int(run_id),
+                str(entry.get("series_id", "")),
+                entry.get("group"),
+                int(entry.get("n", 0)),
+                int(entry.get("n_valid", 0)),
+                int(entry.get("n_missing", 0)),
+                int(entry.get("n_alerts", 0)),
+                int(entry.get("n_p0", 0)),
+                1 if entry.get("sufficient", True) else 0,
+                str(entry.get("detector") or ""),
+                str(entry.get("metric_class") or ""),
+                1 if entry.get("fallback") else 0,
+                str(entry.get("file") or ""),
+                str(entry.get("content_hash") or ""),
+                str(entry.get("start_ts") or ""),
+                str(entry.get("end_ts") or ""),
+            )
+            for entry in entries
+        ]
+        if not rows:
+            return
+        with self._conn() as conn:
+            conn.executemany(
+                "INSERT OR REPLACE INTO run_series (run_id, series_id, group_name, n,"
+                " n_valid, n_missing, n_alerts, n_p0, sufficient, detector, metric_class,"
+                " fallback, file, content_hash, start_ts, end_ts)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                rows,
+            )
+
+    def record_alert_events(self, run_id: int, job_id: int, rows: Sequence[dict]) -> None:
+        """把一次运行报出的**告警区间**写进库。"""
+        payload = [
+            (
+                int(run_id),
+                int(job_id),
+                str(row.get("series_id", "")),
+                row.get("group"),
+                str(row.get("level", "")),
+                int(row.get("level_index", 0)),
+                str(row.get("start_ts", "")),
+                str(row.get("end_ts", "")),
+                int(row.get("n_points", 0)),
+                float(row.get("max_score", 0.0)),
+                str(row.get("detector") or ""),
+                str(row.get("score_type") or ""),
+            )
+            for row in rows
+        ]
+        if not payload:
+            return
+        with self._conn() as conn:
+            # ⚠️ 先删这次运行旧区间再写 —— 重跑同一次运行不能留两份。
+            conn.execute("DELETE FROM alert_events WHERE run_id = ?", (int(run_id),))
+            conn.executemany(
+                "INSERT INTO alert_events (run_id, job_id, series_id, group_name, level,"
+                " level_index, start_ts, end_ts, n_points, max_score, detector, score_type)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                payload,
+            )
+
+    def alert_events_for_run(self, run_id: int) -> list[dict]:
+        """某次运行报出的全部告警区间。"""
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM alert_events WHERE run_id = ? ORDER BY start_ts, series_id",
+                (int(run_id),),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def has_run_series(self, run_id: int) -> bool:
+        """这次运行的检测结果有没有进库。
+
+        ⚠️ 「没有告警」和「没同步进库」必须能区分开 ——
+           前者是正常的，后者是数据缺失，报告里要说出来。
+        """
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM run_series WHERE run_id = ? LIMIT 1", (int(run_id),)
+            ).fetchone()
+        return row is not None
+
+    def detection_records(self, job_id: int | None = None) -> list[dict]:
+        """**检测记录清单** —— 每次运行的每条序列，带上指标 / 数据源维度。
+
+        ⚠️ **只返回真正跑出结果的记录**（`file` 非空）——
+           数据不足的序列没有检测产物，进总体只会稀释指标。
+        """
+        sql = (
+            "SELECT rs.run_id, rs.series_id, rs.group_name, rs.n, rs.n_alerts,"
+            " rs.n_p0, rs.sufficient, rs.detector, rs.metric_class, rs.fallback,"
+            " rs.file, rs.content_hash, rs.start_ts, rs.end_ts,"
+            " r.job_id, m.id AS metric_id, m.name AS metric_name,"
+            " s.id AS source_id, s.name AS source_name"
+            " FROM run_series rs"
+            " JOIN runs r ON r.id = rs.run_id"
+            " JOIN jobs j ON j.id = r.job_id"
+            " JOIN metrics m ON m.id = j.metric_id"
+            " JOIN sources s ON s.id = m.source_id"
+            " WHERE rs.file <> ''"
+        )
+        params: list[object] = []
+        if job_id is not None:
+            sql += " AND r.job_id = ?"
+            params.append(int(job_id))
+        sql += " ORDER BY rs.run_id, rs.series_id"
+        with self._conn() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [dict(row) for row in rows]
+
+    def distinct_alert_events(self) -> dict[tuple[int, str, str], int]:
+        """(metric_id, series_id, 检出结果) → **去重后**的告警事件数。
+
+        ⚠️ **去重键是 (level, start_ts, end_ts)** ——
+           滚动窗口下同一个异常区间会被连续多次运行反复报出
+           （尖峰在滑出窗口前一直被报），那在用户看来是**一个**告警。
+           检测记录数与告警事件数是两个不同的量，都得报出来。
+
+        ⚠️ **带检出结果** —— 同一条序列既有报出告警的记录，也有什么都没报的记录，
+           两层的告警事件数必须分开算。
+        """
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT m.id AS metric_id, ae.series_id,"
+                " CASE WHEN rs.n_alerts > 0 THEN 'alert' ELSE 'normal' END AS outcome,"
+                " COUNT(DISTINCT ae.level || '|' || ae.start_ts || '|' || ae.end_ts) AS n"
+                " FROM alert_events ae"
+                " JOIN runs r ON r.id = ae.run_id"
+                " JOIN jobs j ON j.id = r.job_id"
+                " JOIN metrics m ON m.id = j.metric_id"
+                " JOIN run_series rs ON rs.run_id = ae.run_id"
+                "  AND rs.series_id = ae.series_id"
+                " GROUP BY m.id, ae.series_id, outcome"
+            ).fetchall()
+        return {
+            (int(row["metric_id"]), str(row["series_id"]), str(row["outcome"])): int(row["n"])
+            for row in rows
+        }
+
+    def synced_run_ids(self) -> set[int]:
+        """已经把检测结果同步进库的运行。"""
+        with self._conn() as conn:
+            rows = conn.execute("SELECT DISTINCT run_id FROM run_series").fetchall()
+        return {int(row[0]) for row in rows}
 
     def feedback_stats(self) -> dict[str, int]:
         """人工反馈统计（按 kind 计数）。"""

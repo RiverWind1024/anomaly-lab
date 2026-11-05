@@ -23,6 +23,7 @@ from anomaly_lab.platform.alerts import (
     default_rules,
     highest_multiplier,
     level_labels,
+    merge_alert_intervals,
     parse_rules,
     rules_to_dicts,
     severity_from_conditions,
@@ -91,6 +92,62 @@ def inflight_run_ids() -> set[int]:
 def _file_name(series_id: str) -> str:
     digest = hashlib.sha1(series_id.encode("utf-8")).hexdigest()[:16]
     return f"{digest}.npz"
+
+
+def content_hash(series_id: str, timestamps: np.ndarray, severity: np.ndarray) -> str:
+    """**检测内容指纹** —— 识别「这是同一次检测」。
+
+    ⚠️ 滚动窗口下，同一段异常会被连续多次运行反复报出 ——
+       如果只用 run_id 区分，每次运行都是「一条新记录」，
+       抽样会抽到一堆内容完全相同的记录，人工要重复标同一件事。
+       指纹相同 = 检测内容相同（同样的序列、同样的时间轴、同样的告警分布）。
+    """
+    digest = hashlib.sha1()
+    digest.update(series_id.encode("utf-8"))
+    digest.update(np.asarray(timestamps, dtype=np.int64).tobytes())
+    digest.update(np.asarray(severity, dtype=np.int16).tobytes())
+    return digest.hexdigest()[:16]
+
+
+def _iso(ns: int) -> str:
+    """纳秒时间戳 → naive ISO 字符串（秒精度）。"""
+    return str(np.datetime64(int(ns), "ns").astype("datetime64[s]"))
+
+
+def _alert_rows(outcome: SeriesOutcome) -> list[dict]:
+    """一条序列报出的告警区间 —— 写进 `alert_events` 表的行。
+
+    ⚠️ **逐点的 severity 才是事实**；区间是它的合并视图。
+       区间边界取「连续告警点」的首尾，与告警页展示的口径一致。
+    """
+    severity = outcome.arrays.get("severity")
+    timestamps = outcome.arrays.get("timestamps")
+    if severity is None or timestamps is None:
+        return []
+    scores = outcome.arrays.get("scores")
+    levels = outcome.levels
+    detector = str(outcome.entry.get("detector") or "")
+    score_type = str(outcome.arrays.get("score_type") or "")
+
+    rows: list[dict] = []
+    for start, end, level_index in merge_alert_intervals(severity):
+        level = levels[level_index] if 0 < level_index < len(levels) else "未知"
+        window = scores[start : end + 1] if scores is not None else None
+        rows.append(
+            {
+                "series_id": str(outcome.entry.get("series_id", "")),
+                "group": outcome.entry.get("group"),
+                "level": level,
+                "level_index": level_index,
+                "start_ts": _iso(timestamps[start]),
+                "end_ts": _iso(timestamps[end]),
+                "n_points": end - start + 1,
+                "max_score": float(window.max()) if window is not None and window.size else 0.0,
+                "detector": detector,
+                "score_type": score_type,
+            }
+        )
+    return rows
 
 
 def execute_job(
@@ -305,18 +362,42 @@ def _run_job(
         target = run_dir(data_root, run.id)
         target.mkdir(parents=True, exist_ok=True)
         entries: list[dict] = []
+        db_entries: list[dict] = []
+        alert_rows: list[dict] = []
         total_alerts = 0
         n_insufficient = 0
 
         for outcome in outcomes:
             entry = dict(outcome.entry)
             file_name = entry.get("file")
+            fingerprint = ""
+            start_ts = end_ts = ""
             if file_name:
                 np.savez_compressed(target / file_name, **outcome.arrays)
+                stamps = outcome.arrays["timestamps"]
+                fingerprint = content_hash(
+                    str(entry.get("series_id", "")),
+                    stamps,
+                    outcome.arrays["severity"],
+                )
+                # ⚠️ 时间范围要落库 —— 标注按序列存，得靠它判断
+                #    「这条标注落在哪几次检测里」，逐条读 npz 太慢。
+                if len(stamps):
+                    start_ts = _iso(stamps[0])
+                    end_ts = _iso(stamps[-1])
+                alert_rows.extend(_alert_rows(outcome))
             else:
                 n_insufficient += 1
             total_alerts += int(entry.get("n_alerts", 0))
             entries.append(entry)
+            db_entries.append(
+                {
+                    **entry,
+                    "content_hash": fingerprint,
+                    "start_ts": start_ts,
+                    "end_ts": end_ts,
+                }
+            )
 
         index = {
             "run_id": run.id,
@@ -329,6 +410,10 @@ def _run_job(
         (target / "index.json").write_text(
             json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8"
         )
+        # ⚠️ **检测记录落库** —— 索引与告警区间都要进数据库，
+        #    否则「有哪些检测记录」只能扫产物目录（实测 8700 多个目录 = 0.47s）。
+        store.record_run_series(run.id, db_entries)
+        store.record_alert_events(run.id, job.id, alert_rows)
         status = "insufficient_data" if entries and n_insufficient == len(entries) else "success"
         store.finish_run(
             run.id, status, n_series=len(entries), n_alerts=total_alerts

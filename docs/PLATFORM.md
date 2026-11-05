@@ -125,7 +125,18 @@ TanStack Query + ECharts），后端只提供 JSON API 并托管构建产物。
 | 指标 Metric | `metrics` | 数据源、SQL、时间列、值列、分组列、时间格式、源时区、缺失值策略、采样频率 |
 | 告警任务 Job | `jobs` | 指标、算法（可填 `auto`）、告警规则表、窗口点数、执行间隔、启用状态 |
 
-运行记录在 `runs`，人工反馈在 `feedback`，详细数组在 `data/cache/platform/runs/<run_id>/`（`index.json` + 每条序列一个 npz）。
+运行记录在 `runs`，人工反馈在 `feedback`。
+
+⚠️ **检测记录也落库**（两张表）：
+
+| 表 | 内容 |
+|---|---|
+| `run_series` | 每次运行 × 每条序列的摘要 —— `n_alerts` / `detector` / `metric_class` / `content_hash` |
+| `alert_events` | 每次运行报出的**告警区间** —— `level` / `start_ts` / `end_ts` / `n_points` / `max_score` |
+
+⚠️ **但逐点数组仍在文件里**：`data/cache/platform/runs/<run_id>/`
+（`index.json` + 每条序列一个 npz）—— 那是图表回放与评估反算的原材料，
+350MB 塞进数据库没有好处。
 
 ## 时间语义：不猜，必须声明
 
@@ -639,8 +650,13 @@ make mock-tsdb              # 重新起
 > 事件里的 `level` 是**档位名**，来自任务的规则表 —— 可能是 P0/P1，
 > 也可能是自定义的「注意」。`level_index` 才是严重度序（越大越严重）。
 
-告警的**明细**不在数据库里：它躺在每次运行的 npz 里（逐点 `severity` 数组），
-由 `platform/alert_events.py` 在查询期读出并聚合。
+告警的**逐点明细**不在数据库里：它躺在每次运行的 npz 里（逐点 `severity` 数组）。
+但**区间级明细在库里**（`alert_events` 表）——
+runner 写库时就把连续告警点合并成区间存下来了，
+查询期直接读，不再现场扫 npz。
+
+⚠️ 保留策略 prune 掉运行目录时，`alert_events` 的行跟着外键级联删 ——
+告警历史与运行历史同生共死。
 
 ## 基线与告警分级
 

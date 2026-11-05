@@ -1,7 +1,9 @@
 """把一次运行的检测结果汇总成「告警事件」。
 
-定位：告警事件的**读侧模型**。告警明细不在数据库里 —— 它躺在每次运行的
-npz 里（逐点的 `severity` 数组），本模块负责把它读出来、聚合成区间。
+定位：告警事件的**读侧模型**。
+
+⚠️ **告警明细在数据库里**（`alert_events` 表）—— runner 写库时就记下了
+   每次运行报出的区间，这里只负责读出来、拼上任务 / 指标信息。
 
 ⚠️ **以任务的最新一次运行为准**：平台任务是滚动窗口，同一段异常会被
 连续多次运行重复报出。扫全部历史 run 会让同一个异常区间出现很多遍，
@@ -10,14 +12,19 @@ npz 里（逐点的 `severity` 数组），本模块负责把它读出来、聚�
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 
-from anomaly_lab.platform.alerts import SEVERITY_NORMAL
-from anomaly_lab.platform.runner import read_run_index, run_dir
+from anomaly_lab.platform.alerts import merge_alert_intervals
+
+__all__ = [
+    "AlertEvent",
+    "collect_alert_events",
+    "events_from_series",
+    "merge_alert_intervals",
+]
 
 
 @dataclass(frozen=True)
@@ -43,32 +50,6 @@ class AlertEvent:
     detector: str
     score_type: str
     run_id: int
-
-
-def merge_alert_intervals(severity: np.ndarray) -> list[tuple[int, int, int]]:
-    """把逐点 severity 合并成连续区间。
-
-    返回 `[(起始下标, 结束下标, 区间内最高档位序号), ...]`（闭区间）。
-
-    - `severity > 0` 的点算告警；`0` 是正常。
-    - 连续的告警点合成一个区间；中间隔着正常点就断开。
-    - 区间里的档位取**最大值**（最严重的那一档代表这个区间）。
-    """
-    severity = np.asarray(severity)
-    if severity.size == 0:
-        return []
-    intervals: list[tuple[int, int, int]] = []
-    start: int | None = None
-    for index in range(len(severity)):
-        if severity[index] > SEVERITY_NORMAL:
-            if start is None:
-                start = index
-        elif start is not None:
-            intervals.append((start, index - 1, int(severity[start:index].max())))
-            start = None
-    if start is not None:
-        intervals.append((start, len(severity) - 1, int(severity[start:].max())))
-    return intervals
 
 
 def _iso(ts: np.datetime64) -> str:
@@ -122,7 +103,7 @@ def events_from_series(
 def collect_alert_events(
     store, data_root: Path
 ) -> tuple[list[AlertEvent], list[dict]]:
-    """汇总所有任务的告警事件。
+    """汇总所有任务的告警事件 —— **从数据库读**。
 
     返回 `(events, skipped)`：
     - `events` 按开始时间**倒序**（新的在前）
@@ -130,6 +111,9 @@ def collect_alert_events(
 
     ⚠️ 以每个任务的**最新一次运行**为准 —— 滚动窗口下同一段异常会被
     连续多次运行重复报出。
+
+    ⚠️ 「这次运行没有告警」和「这次运行没同步进库」是两回事 ——
+       前者正常，后者是数据缺失，必须说出来，否则任务会静默消失。
     """
     events: list[AlertEvent] = []
     skipped: list[dict] = []
@@ -161,45 +145,36 @@ def collect_alert_events(
                 {"job_id": job.id, "name": job.name, "reason": "最近一次运行尚未结束"}
             )
             continue
-        try:
-            index = read_run_index(data_root, run.id)
-        except (FileNotFoundError, OSError):
-            skipped.append(
-                {"job_id": job.id, "name": job.name, "reason": "运行结果文件缺失"}
-            )
-            continue
-        for entry in index.get("series", []):
-            file_name = entry.get("file")
-            if file_name is None:
-                # 数据不足的序列没有检测结果 —— 不是告警，但也不是「一切正常」
-                continue
-            path = run_dir(data_root, run.id) / file_name
-            if not path.exists():
+        rows = store.alert_events_for_run(run.id)
+        if not rows:
+            if not store.has_run_series(run.id):
                 skipped.append(
                     {
                         "job_id": job.id,
                         "name": job.name,
-                        "reason": f"序列结果文件缺失：{entry.get('series_id')}",
+                        "reason": "最近一次运行的检测结果未同步进数据库",
                     }
                 )
-                continue
-            with np.load(path, allow_pickle=False) as payload:
-                events.extend(
-                    events_from_series(
-                        severity=payload["severity"],
-                        timestamps=payload["timestamps"].astype("datetime64[ns]"),
-                        scores=payload["scores"],
-                        levels=json.loads(str(payload["levels"])),
-                        job_id=job.id,
-                        job_name=job.name,
-                        metric_id=metric.id,
-                        metric_name=metric.name,
-                        series_id=str(payload["series_id"]),
-                        group=entry.get("group"),
-                        detector=str(payload["detector"]),
-                        score_type=str(payload["score_type"]),
-                        run_id=run.id,
-                    )
+            continue
+        for row in rows:
+            events.append(
+                AlertEvent(
+                    job_id=job.id,
+                    job_name=job.name,
+                    metric_id=metric.id,
+                    metric_name=metric.name,
+                    series_id=row["series_id"],
+                    group=row["group_name"],
+                    level=row["level"],
+                    level_index=int(row["level_index"]),
+                    start_ts=row["start_ts"],
+                    end_ts=row["end_ts"],
+                    n_points=int(row["n_points"]),
+                    max_score=float(row["max_score"]),
+                    detector=row["detector"],
+                    score_type=row["score_type"],
+                    run_id=run.id,
                 )
+            )
     events.sort(key=lambda item: (item.start_ts, item.job_id), reverse=True)
     return events, skipped

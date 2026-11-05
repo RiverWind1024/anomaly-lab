@@ -4,7 +4,8 @@ PIP_INDEX ?= https://pypi.tuna.tsinghua.edu.cn/simple
 NPM ?= npm
 
 .PHONY: setup test lint generate classify detect evaluate compare report validate-auto serve smoke platform-demo platform-smoke compliance-check clean \
-	frontend-install frontend-test frontend-build dev mock-tsdb mock-demo prune
+	frontend-install frontend-test frontend-build dev mock-tsdb mock-demo prune \
+	sync-detections
 
 setup:
 	uv python install 3.12
@@ -94,6 +95,13 @@ platform-smoke:
 # ⚠️ 调度器本来就会每小时自动清一次 —— 这个是手动入口（先看会删什么用 --dry-run）。
 prune:
 	$(PY) -m anomaly_lab.cli prune --data data
+
+# 把产物目录里的检测结果补录进数据库（幂等）。
+#
+# ⚠️ 老库升级后需要跑一次 —— 检测记录现在落库了，
+#    之前产生的运行只在磁盘上有产物。
+sync-detections:
+	$(PY) -m anomaly_lab.cli sync-detections --data data
 
 compliance-check:
 	$(PY) -m anomaly_lab.cli compliance-check
