@@ -41,10 +41,15 @@ function renderJobForm(onSubmit = vi.fn()) {
 }
 
 describe('新建任务表单的数值下限提示', () => {
-  it('窗口点数与执行间隔都写出后端下限', async () => {
+  it('窗口点数与执行间隔由控件自己守住下限', async () => {
     renderJobForm()
-    expect(await screen.findByText(new RegExp(`至少 ${WINDOW_POINTS_MIN} 点`))).toBeInTheDocument()
-    expect(await screen.findByText(new RegExp(`至少 ${INTERVAL_SECONDS_MIN} 秒`))).toBeInTheDocument()
+    // ⚠️ 不用一行小字去说下限 —— 控件自己钳制，用户超范围时当场就知道
+    const windowInput = screen.getByLabelText(/窗口点数/)
+    expect(windowInput).toHaveAttribute('aria-valuemin', String(WINDOW_POINTS_MIN))
+    expect(windowInput).toHaveAttribute('aria-valuemax', String(WINDOW_POINTS_MAX))
+
+    const intervalInput = screen.getByLabelText(/执行间隔/)
+    expect(intervalInput).toHaveAttribute('aria-valuemin', String(INTERVAL_SECONDS_MIN))
   })
 
   it('下限常量与后端 validation.py 一致（10 / 100000 / 10）', () => {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Alert, Form, Input, InputNumber, Modal, Select, Space } from 'antd'
 import type { AlertRule, CatalogDetector, CatalogMetric } from '../../api/types'
 import { AlertRulesEditor } from './AlertRulesEditor'
@@ -15,6 +15,16 @@ export interface JobFormValues {
   alert_rules: AlertRule[] | null
 }
 
+/**
+ * 表单回填值 —— 从实验记录跳转过来时带过来的草稿。
+ *
+ * ⚠️ `alert_rules` 单独放 —— 规则表由 `AlertRulesEditor` 持有，
+ *    不走 Form 的字段绑定。
+ */
+export type JobFormInitialValues = Omit<JobFormValues, 'alert_rules'> & {
+  alert_rules?: AlertRule[] | null
+}
+
 export interface JobFormProps {
   open: boolean
   metrics: CatalogMetric[]
@@ -23,6 +33,10 @@ export interface JobFormProps {
   onSubmit: (values: JobFormValues) => void
   submitting?: boolean
   error?: string
+  /** 打开时回填的值 —— 一键建任务时从实验记录带过来。 */
+  initialValues?: JobFormInitialValues
+  /** 表单顶部的说明 —— 从实验记录来时 telling 用户「这些值是怎么选出来的」。 */
+  note?: ReactNode
 }
 
 /**
@@ -42,14 +56,27 @@ export function JobForm({
   onSubmit,
   submitting = false,
   error,
+  initialValues,
+  note,
 }: JobFormProps) {
   const [form] = Form.useForm<JobFormValues>()
   const [rules, setRules] = useState<AlertRule[] | null>(null)
 
-  // 打开时重置上一次的输入
+  // ⚠️ 草稿用 ref 拿着 —— `initialValues` 每次渲染都是新对象，
+  //    直接进依赖数组会让 effect 每次都重置表单，用户打的字就没了。
+  const draftRef = useRef(initialValues)
+  draftRef.current = initialValues
+
+  // 打开时重置上一次的输入；有草稿就回填。
   useEffect(() => {
-    if (open) {
-      form.resetFields()
+    if (!open) return
+    form.resetFields()
+    const draft = draftRef.current
+    if (draft) {
+      const { alert_rules: draftRules, ...fields } = draft
+      form.setFieldsValue(fields)
+      setRules(draftRules ?? null)
+    } else {
       setRules(null)
     }
   }, [open, form])
@@ -137,6 +164,9 @@ export function JobForm({
       destroyOnClose
       width={640}
     >
+      {note && (
+        <Alert type="info" showIcon message={note} style={{ marginBottom: 16 }} />
+      )}
       {error && <Alert type="error" showIcon message={error} style={{ marginBottom: 16 }} />}
       <Form form={form} layout="vertical" requiredMark="optional">
         <Form.Item
@@ -155,7 +185,6 @@ export function JobForm({
           name="detector"
           label="检测算法"
           rules={[{ required: true, message: '请选择检测算法' }]}
-          extra="选算法后会按它的默认阈值自动预填告警规则。"
         >
           <Select options={detectorOptions} onChange={onDetectorChange} placeholder="选择算法" />
         </Form.Item>
@@ -173,9 +202,14 @@ export function JobForm({
                 message: `窗口点数需在 ${WINDOW_POINTS_MIN} ~ ${WINDOW_POINTS_MAX} 之间`,
               },
             ]}
-            extra={`至少 ${WINDOW_POINTS_MIN} 点（后端下限），最多 ${WINDOW_POINTS_MAX} 点`}
           >
-            <InputNumber min={WINDOW_POINTS_MIN} max={WINDOW_POINTS_MAX} step={100} style={{ width: 180 }} />
+            <InputNumber
+              min={WINDOW_POINTS_MIN}
+              max={WINDOW_POINTS_MAX}
+              step={100}
+              placeholder="500"
+              style={{ width: 180 }}
+            />
           </Form.Item>
           <Form.Item
             name="interval_seconds"
@@ -188,9 +222,8 @@ export function JobForm({
                 message: `执行间隔至少 ${INTERVAL_SECONDS_MIN} 秒`,
               },
             ]}
-            extra={`至少 ${INTERVAL_SECONDS_MIN} 秒（后端下限）`}
           >
-            <InputNumber min={INTERVAL_SECONDS_MIN} step={60} style={{ width: 180 }} />
+            <InputNumber min={INTERVAL_SECONDS_MIN} step={60} placeholder="300" style={{ width: 180 }} />
           </Form.Item>
         </Space>
 

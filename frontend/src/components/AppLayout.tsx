@@ -54,6 +54,7 @@ export const NAV_ITEMS: NavItem[] = [
       { key: '/sources', label: '数据源' },
       { key: '/metrics', label: '指标' },
       { key: '/metrics/preview', label: '指标预览' },
+      { key: '/lab', label: '指标预检' },
     ],
   },
   {
@@ -122,6 +123,13 @@ const NAV_ICON_PATHS: Record<string, ReactNode> = {
     <>
       <rect x="2.2" y="2.8" width="11.6" height="10.4" rx="1" />
       <path d="M2.2 6.2h11.6M6.4 6.2v7" />
+    </>
+  ),
+  // 指标预检：烧瓶
+  '/lab': (
+    <>
+      <path d="M6.2 2.2h3.6M7 2.2v3.2L3.4 12a1.4 1.4 0 0 0 1.2 2h6.8a1.4 1.4 0 0 0 1.2-2L9 5.4V2.2" />
+      <path d="M5.2 9.4h5.6" />
     </>
   ),
   // 告警：铃

@@ -5,6 +5,13 @@ import type {
   Catalog,
   Compare,
   FeedbackList,
+  LabExperiment,
+  LabExperimentSummary,
+  LabInspectResult,
+  LabJobDraft,
+  LabRunResult,
+  LabEvaluateResult,
+  LabWindowDetail,
   Overview,
   Preview,
   PruneResult,
@@ -272,3 +279,245 @@ export const getStorage = () => request<StorageUsage>('/api/platform/storage')
  * ⚠️ 调度器本来就会每小时自动清一次 —— 这个是「现在就清」的手动入口。
  */
 export const pruneData = () => postJson<PruneResult>('/api/platform/prune', {})
+
+/**
+ * 指标预检（Lab）—— 取一段真实数据，做采样 / 体检 / 形态推断。
+ *
+ * ⚠️ P0 不跑检测、不落盘、不建任务 —— 只是让用户在建任务前看清数据。
+ * ⚠️ `freq` 在 `kind="metric"` 时必须省略（继承指标）；
+ *    临时 SQL 必须显式给 `freq`，否则后端无法切窗。
+ */
+export const inspectLab = (payload: {
+  kind: 'metric' | 'sql' | 'synthetic' | 'public'
+  start: string
+  end: string
+  metric_id?: number
+  source_id?: number
+  sql?: string
+  time_column?: string
+  value_column?: string
+  group_column?: string | null
+  time_format?: string
+  source_timezone?: string
+  freq?: string
+  missing_policy?: string
+  max_series?: number
+  sampling?: Partial<{
+    mode: 'recent' | 'even' | 'stratified'
+    window_points: number
+    stride_points: number | null
+    max_points: number
+    max_windows: number
+    min_valid_ratio: number
+    seed: number
+  }>
+  /** 真值来源：`none` = 无真值；`annotation` = 读人工标注。 */
+  truth?: 'none' | 'annotation'
+  synthetic?: {
+    metric_class: string
+    n_points: number
+    n_anomalies: number
+    anomaly_types?: string[]
+    seed: number
+  }
+  public?: {
+    dataset: 'nab' | 'ucr'
+    name?: string | null
+    limit: number
+  }
+}) => postJson<LabInspectResult>('/api/lab/inspect', payload)
+
+/**
+ * 指标预检实验（Lab）—— 在同一批窗口上跑多个检测器，产出对比画像。
+ *
+ * ⚠️ **不落盘** —— 产物全在响应里。
+ * ⚠️ `detectors` 留空 → 后端用 `auto` + 形态推荐的候选。
+ */
+export const runLab = (payload: {
+  kind: 'metric' | 'sql' | 'synthetic' | 'public'
+  start: string
+  end: string
+  metric_id?: number
+  source_id?: number
+  sql?: string
+  time_column?: string
+  value_column?: string
+  group_column?: string | null
+  time_format?: string
+  source_timezone?: string
+  freq?: string
+  missing_policy?: string
+  max_series?: number
+  sampling?: Partial<{
+    mode: 'recent' | 'even' | 'stratified'
+    window_points: number
+    stride_points: number | null
+    max_points: number
+    max_windows: number
+    min_valid_ratio: number
+    seed: number
+  }>
+  /** 真值来源：`none` = 无真值；`annotation` = 读人工标注。 */
+  truth?: 'none' | 'annotation'
+  synthetic?: {
+    metric_class: string
+    n_points: number
+    n_anomalies: number
+    anomaly_types?: string[]
+    seed: number
+  }
+  public?: {
+    dataset: 'nab' | 'ucr'
+    name?: string | null
+    limit: number
+  }
+  detectors?: string[]
+  multipliers?: number[]
+}) => postJson<LabRunResult>('/api/lab/run', payload)
+
+/**
+ * 有真值的评估 —— 校准集选阈值，测试集报 F1。
+ *
+ * ⚠️ **与 `/api/lab/run` 的区别**：`run` 不需要真值，产出的是检出画像；
+ *    `evaluate` 需要点级真值，产出的是 P / R / F1。
+ */
+export const evaluateLab = (payload: {
+  kind: 'metric' | 'sql' | 'synthetic' | 'public'
+  start: string
+  end: string
+  metric_id?: number
+  source_id?: number
+  sql?: string
+  time_column?: string
+  value_column?: string
+  group_column?: string | null
+  time_format?: string
+  source_timezone?: string
+  freq?: string
+  missing_policy?: string
+  max_series?: number
+  sampling?: Partial<{
+    mode: 'recent' | 'even' | 'stratified'
+    window_points: number
+    stride_points: number | null
+    max_points: number
+    max_windows: number
+    min_valid_ratio: number
+    seed: number
+  }>
+  /** 真值来源：`none` = 无真值；`annotation` = 读人工标注。 */
+  truth?: 'none' | 'annotation'
+  synthetic?: {
+    metric_class: string
+    n_points: number
+    n_anomalies: number
+    anomaly_types?: string[]
+    seed: number
+  }
+  public?: {
+    dataset: 'nab' | 'ucr'
+    name?: string | null
+    limit: number
+  }
+  detectors?: string[]
+  multipliers?: number[]
+  /** 校准 / 测试的切分比例 —— 前一份校准，后一份测试。 */
+  split_ratio?: number
+}) => postJson<LabEvaluateResult>('/api/lab/evaluate', payload)
+
+/**
+ * 保存一条实验记录 —— spec + env + result 落盘，可复现。
+ *
+ * ⚠️ `result` 就是 `/api/lab/run` 的返回 —— 后端**不重跑**，
+ *    记录的就是屏幕上看到的那一份。
+ */
+export const saveLabExperiment = (payload: {
+  kind: 'metric' | 'sql' | 'synthetic' | 'public'
+  start: string
+  end: string
+  metric_id?: number
+  source_id?: number
+  sql?: string
+  time_column?: string
+  value_column?: string
+  group_column?: string | null
+  time_format?: string
+  source_timezone?: string
+  freq?: string
+  missing_policy?: string
+  max_series?: number
+  sampling?: Partial<{
+    mode: 'recent' | 'even' | 'stratified'
+    window_points: number
+    stride_points: number | null
+    max_points: number
+    max_windows: number
+    min_valid_ratio: number
+    seed: number
+  }>
+  /** 真值来源：`none` = 无真值；`annotation` = 读人工标注。 */
+  truth?: 'none' | 'annotation'
+  synthetic?: {
+    metric_class: string
+    n_points: number
+    n_anomalies: number
+    anomaly_types?: string[]
+    seed: number
+  }
+  public?: {
+    dataset: 'nab' | 'ucr'
+    name?: string | null
+    limit: number
+  }
+  detectors?: string[]
+  multipliers?: number[]
+  result: LabRunResult
+}) => postJson<LabExperimentSummary>('/api/lab/experiments', payload)
+
+/** 实验记录列表 —— 新的在前。 */
+export const listLabExperiments = () => request<LabExperimentSummary[]>('/api/lab/experiments')
+
+/** 实验记录详情（含完整结果）。 */
+export const getLabExperiment = (id: string) => request<LabExperiment>(`/api/lab/experiments/${id}`)
+
+/**
+ * 从实验记录生成任务草稿 —— **只回填表单，不创建任务**。
+ *
+ * ⚠️ 用 POST 而不是 GET：草稿要按记录里的结果算出来，不是静态资源。
+ */
+export const getLabJobDraft = (id: string) =>
+  postJson<LabJobDraft>(`/api/lab/experiments/${id}/job-draft`, {})
+
+/**
+ * 拉单个窗口的时序数据（画图用）。
+ *
+ * ⚠️ **按需拉取** —— 一次实验可能上百个窗口，全量带曲线会把响应撑爆。
+ */
+export const getLabWindow = (payload: {
+  kind: 'metric' | 'sql'
+  start: string
+  end: string
+  metric_id?: number
+  source_id?: number
+  sql?: string
+  time_column?: string
+  value_column?: string
+  group_column?: string | null
+  time_format?: string
+  source_timezone?: string
+  freq?: string
+  missing_policy?: string
+  max_series?: number
+  sampling?: Partial<{
+    mode: 'recent' | 'even' | 'stratified'
+    window_points: number
+    stride_points: number | null
+    max_points: number
+    max_windows: number
+    min_valid_ratio: number
+    seed: number
+  }>
+  series_id: string
+  window_index: number
+  detectors?: string[]
+}) => postJson<LabWindowDetail>('/api/lab/window', payload)

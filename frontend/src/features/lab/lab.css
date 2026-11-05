@@ -1,0 +1,129 @@
+/**
+ * 指标预检页 —— 表单与结果都沿用全局原语，这里只补布局。
+ *
+ * 设计语言与 ui.css 一致：扁平面、1px 分隔线、数字等宽、状态色只给状态。
+ */
+
+.lab-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-4);
+}
+
+.lab-form--sql {
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line-soft);
+}
+
+.lab-form__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.lab-form__field--wide {
+  flex: 1 1 100%;
+}
+
+.lab-form__label {
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
+/* 结果概览：一排字，不是卡片 */
+.lab-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) 0;
+  border-top: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
+  padding: var(--space-4) 0;
+}
+
+.lab-summary__item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 140px;
+  padding: 0 var(--space-5);
+}
+
+.lab-summary__item:first-child {
+  padding-left: 0;
+}
+
+.lab-summary__item + .lab-summary__item {
+  border-left: 1px solid var(--line-soft);
+}
+
+.lab-summary__k {
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+}
+
+.lab-summary__v {
+  color: var(--text-primary);
+  font-size: var(--text-lg);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.2;
+}
+
+.lab-summary__s {
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+}
+
+/* 序列头：身份在左，形态证据在右 */
+.lab-series__shape {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px 12px;
+  max-width: 560px;
+}
+
+/* 对比实验的图 —— 与其它图表同高，视觉上是一套 */
+.lab-chart {
+  margin-top: var(--space-2);
+}
+
+/* 展开行里的窗口时序图 */
+.lab-window {
+  padding: var(--space-2) 0;
+}
+
+.lab-window__loading {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-4) 0;
+}
+
+.lab-window__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-bottom: var(--space-1);
+}
+
+.lab-window__chip {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+/* 有真值评估 —— 面板头部的概况 */
+.lab-eval__facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
+/* `auto` 实际用哪个算法 —— 与算法名同一行，不另起一行 */
+.lab-eval__resolved {
+  color: var(--text-tertiary);
+}

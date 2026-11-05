@@ -14,6 +14,7 @@ data/smoke/
 data/platform/
 data/platform_smoke/
 data/mock_tsdb/
+data/lab/
 data/platform.db
 data/evaluation_exclusions.json
 .cache/
