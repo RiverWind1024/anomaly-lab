@@ -737,6 +737,8 @@ def build_router(
                 "detector_rationale": "",
                 "detector_fallback": False,
                 "score_type": "",
+                "scale_source": "",
+                "status": "ok",
                 "series_id": entry["series_id"],
                 "group": entry.get("group"),
                 "n": int(entry.get("n", 0)),
@@ -792,6 +794,9 @@ def build_router(
             "detector_rationale": str(payload["detector_rationale"]),
             "detector_fallback": bool(entry.get("fallback", False)),
             "score_type": str(payload["score_type"]),
+            # ⚠️ 老产物没有这两个键 —— 用 get 兜底，不能 KeyError。
+            "scale_source": entry.get("scale_source", ""),
+            "status": entry.get("status", "ok"),
             "series_id": entry["series_id"],
             "group": entry.get("group"),
             "n": entry["n"],

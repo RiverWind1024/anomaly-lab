@@ -1,4 +1,4 @@
-import { Alert, Button, Space, Tag } from 'antd'
+import { Alert, Button, Space, Tag, Tooltip } from 'antd'
 import { StateBoundary } from '../../components/StateBoundary'
 import type { Preview } from '../../api/types'
 import { AlertRulesView } from './AlertRulesView'
@@ -42,6 +42,12 @@ export function PreviewPanel({ isLoading, error, preview, onRun, running = false
             <Space size="small" wrap>
               <Tag>{detectorLabel(p.detector)}</Tag>
               <Tag>score_type: {p.score_type}</Tag>
+              {p.status === 'undetermined' && <Tag color="orange">无法判定</Tag>}
+              {p.scale_source === 'std' && (
+                <Tooltip title="IQR/MAD 为 0，本窗退回标准差">
+                  <Tag>尺度降级 · std</Tag>
+                </Tooltip>
+              )}
               <Tag>{p.n_valid}/{p.n} 有效点</Tag>
               {p.n_missing > 0 && <Tag color="warning">{p.n_missing} 缺点</Tag>}
               {p.sampled && (

@@ -312,6 +312,8 @@ def _compute_job(
                     "detector": resolution.detector,
                     "metric_class": resolution.metric_class,
                     "fallback": resolution.fallback,
+                    "scale_source": result.scale_source or "",
+                    "status": result.status,
                     "file": _file_name(series.series_id),
                 },
                 arrays={
@@ -333,6 +335,8 @@ def _compute_job(
                     "metric_class": np.array(resolution.metric_class or ""),
                     "detector_rationale": np.array(resolution.rationale),
                     "score_type": np.array(result.score_type),
+                    "scale_source": np.array(result.scale_source or ""),
+                    "status": np.array(result.status),
                     "series_id": np.array(series.series_id),
                     "group": np.array(
                         "" if series.meta.get("group") is None else str(series.meta["group"])

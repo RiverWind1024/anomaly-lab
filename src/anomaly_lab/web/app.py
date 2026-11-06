@@ -355,6 +355,9 @@ def create_app(
                 "run_id": run_id,
                 "series_id": series_id,
                 "detector": str(data["detector"]) if "detector" in data else "",
+                # ⚠️ 老产物没有这两个键 —— 缺失时按「正常尺度」兜底。
+                "scale_source": str(data["scale_source"]) if "scale_source" in data else "",
+                "status": str(data["status"]) if "status" in data else "ok",
                 "timestamps": [str(ts)[:19] for ts in seconds],
                 "values": [float(v) for v in np.asarray(data["values"], dtype=float)],
                 "scores": [float(v) for v in np.asarray(data["scores"], dtype=float)],
