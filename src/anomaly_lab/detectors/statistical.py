@@ -15,6 +15,14 @@ from anomaly_lab.detectors.scale import majority_source, numeric_floor, pick_sca
 #: 周期拿不准时的兜底值（点数）
 DEFAULT_PERIOD = 24
 
+#: 尺度来源的「降级程度」：数值越大越差。季节性的最终来源取最差的一档。
+_SOURCE_RANK = {"mad": 0, "std": 1, "none": 2}
+
+
+def _worse(a: str, b: str) -> str:
+    """两档来源里更差的那个（mad < std < none）。"""
+    return a if _SOURCE_RANK[a] >= _SOURCE_RANK[b] else b
+
 
 class _WindowedDetector(TimedDetector):
     """|x - center| / scale 型检测器的公共骨架（IQR / MAD / ZScore）。"""
@@ -23,9 +31,11 @@ class _WindowedDetector(TimedDetector):
     #: 降级链的起点（iqr / mad / std）
     prefer_scale = "iqr"
 
-    def __init__(self, k: float, window: int | None = None) -> None:
+    def __init__(self, k: float, window: int | None = None, floor: float | None = None) -> None:
         self.k = float(k)
         self.window = window
+        #: 数值噪声下限；None = 按输入值量级自动计算（见 `numeric_floor`）
+        self.floor = floor
         self.default_threshold = float(k)
 
     def fit(self, series: SeriesBundle) -> _WindowedDetector:
@@ -60,7 +70,7 @@ class _WindowedDetector(TimedDetector):
         scale, source = pick_scale(
             prefer=self.prefer_scale,
             candidates=cand,
-            floor=numeric_floor(values),
+            floor=numeric_floor(values) if self.floor is None else self.floor,
         )
         self._last_scale_source = majority_source(source)
         return center, scale
@@ -120,8 +130,8 @@ class IQRDetector(_WindowedDetector):
     name = "iqr"
     prefer_scale = "iqr"
 
-    def __init__(self, k: float = 2.5, window: int | None = None) -> None:
-        super().__init__(k=k, window=window)
+    def __init__(self, k: float = 2.5, window: int | None = None, floor: float | None = None) -> None:
+        super().__init__(k=k, window=window, floor=floor)
 
 
 class MADDetector(_WindowedDetector):
@@ -169,6 +179,8 @@ class SeasonalDetector(TimedDetector):
     name = "seasonal"
     score_type = "zscore"
     default_threshold = 2.5
+    #: 相位组内首选 MAD；退化到全局 std 时 `scale_fallback` 才能看出来
+    prefer_scale = "mad"
 
     def __init__(self, period: int | None = None, k: float = 2.5) -> None:
         if period is not None and period <= 1:
@@ -228,18 +240,23 @@ class SeasonalDetector(TimedDetector):
         if not self.seasonal:
             # 无季节性模式：全局中位数 + 全局 MAD（等价于一个稳健检测器）
             median = float(np.median(estimate))
-            scale = self._global_scale(estimate)
+            scale, source = self._global_scale(estimate)
             center = np.full(n, median)
             scale_arr = np.full(n, scale) if scale > 0 else np.zeros(n)
-            self._phase_cache = (values.copy(), center, scale_arr)
+            self._last_scale_source = source
+            self._phase_cache = (values.copy(), center, scale_arr, source)
             return center, scale_arr
         cached = self._phase_cache
         if cached is not None and np.array_equal(cached[0], values):
+            # ⚠️ 缓存命中时也必须恢复来源 —— `_timed_detect` 每次都会先清空
+            self._last_scale_source = cached[3]
             return cached[1], cached[2]
         center = np.full(n, np.nan)
         scale = np.full(n, np.nan)
         phases = np.arange(n) % self.period
-        global_scale = self._global_scale(estimate)
+        floor = numeric_floor(values)
+        global_scale, global_source = self._global_scale(estimate)
+        worst = "mad"                       # 相位组正常时用的是组内 MAD
         for phase in range(self.period):
             mask = phases == phase
             if mask.sum() < 2:
@@ -249,26 +266,33 @@ class SeasonalDetector(TimedDetector):
             mad = float(np.median(np.abs(group - med))) * 1.4826
             if mad <= 0:
                 mad = float(np.std(group))
+                if mad > floor:
+                    worst = _worse(worst, "std")
             if mad <= 0:
                 # 组内完全确定：用一个正的尺度兜底，避免除零与 NaN
                 mad = global_scale
+                worst = _worse(worst, global_source)
             if mad <= 0:
+                worst = "none"
                 continue
             center[mask] = med
             scale[mask] = mad
-        self._phase_cache = (values.copy(), center, scale)
+        self._last_scale_source = worst
+        self._phase_cache = (values.copy(), center, scale, worst)
         return center, scale
 
-    @staticmethod
-    def _global_scale(values: np.ndarray) -> float:
+    def _global_scale(self, values: np.ndarray) -> tuple[float, str]:
         """全局稳健尺度，作为相位组内尺度退化时的兜底。"""
         if len(values) == 0:
-            return 0.0
+            return 0.0, "none"
+        floor = numeric_floor(values)
         mad = float(np.median(np.abs(values - np.median(values)))) * 1.4826
-        if mad > 0:
-            return mad
+        if mad > floor:
+            return mad, "mad"
         std = float(np.std(values))
-        return std
+        if std > floor:
+            return std, "std"
+        return 0.0, "none"
 
     def bands(self, series: SeriesBundle, threshold: float) -> Bands:
         values = np.asarray(series.values, dtype=float)
@@ -293,6 +317,8 @@ class STLResidualDetector(TimedDetector):
     name = "stl_residual"
     score_type = "residual_ratio"
     default_threshold = 3.5
+    #: 残差首选 MAD；退化到 std 时 `scale_fallback` 才能看出来
+    prefer_scale = "mad"
 
     def __init__(self, period: int | None = None, k: float = 3.5) -> None:
         if period is not None and period <= 1:
@@ -312,7 +338,10 @@ class STLResidualDetector(TimedDetector):
         values = np.asarray(series.values, dtype=float)
         _, abs_resid, mad = self._residual_parts(values, self.estimate_values(values))
         if mad <= 0:
+            # 常数序列的残差只有浮点噪声 —— 不能当成「一切正常」
+            self._last_status = "undetermined"
             return np.zeros_like(values)
+        self._last_status = "ok"
         return abs_resid / mad
 
     def estimate_values(self, values: np.ndarray) -> np.ndarray:
@@ -329,6 +358,8 @@ class STLResidualDetector(TimedDetector):
         """返回 (拟合曲线, 残差绝对值, 残差尺度)。结果会缓存，score 与 bands 共用。"""
         cached = self._residual_cache
         if cached is not None and np.array_equal(cached[0], values):
+            # ⚠️ 缓存命中时也必须恢复来源（`_timed_detect` 每次都会先清空）
+            self._last_scale_source = cached[4]
             return cached[1], cached[2], cached[3]
         from statsmodels.tsa.seasonal import STL
 
@@ -338,10 +369,22 @@ class STLResidualDetector(TimedDetector):
         fitted = np.asarray(fit.trend + fit.seasonal, dtype=float)
         # 残差用原始值算：异常点必须体现在残差里
         abs_resid = np.abs(values - fitted)
+        # ⚠️ 数值噪声下限要按**原始值**的量级算：常数序列的残差是 1e-16，
+        #    按残差自身量级算下限会把它当成真实尺度。
+        floor = numeric_floor(values)
         mad = float(np.median(np.abs(abs_resid - np.median(abs_resid)))) * 1.4826
-        if mad <= 0:
+        if mad > floor:
+            source = "mad"
+        else:
             mad = float(np.std(abs_resid))
-        self._residual_cache = (values.copy(), fitted, abs_resid, mad)
+            if mad > floor:
+                source = "std"
+            else:
+                # ⚠️ 1e-16 的尺度会把数值噪声放大成假告警
+                mad = 0.0
+                source = "none"
+        self._last_scale_source = source
+        self._residual_cache = (values.copy(), fitted, abs_resid, mad, source)
         return fitted, abs_resid, mad
 
     def bands(self, series: SeriesBundle, threshold: float) -> Bands:
@@ -380,6 +423,8 @@ class TrendResidualIQRDetector(TimedDetector):
     name = "trend_residual_iqr"
     score_type = "zscore"
     default_threshold = 2.5
+    #: 残差交给内部 IQRDetector，首选尺度自然是 iqr
+    prefer_scale = "iqr"
 
     def __init__(self, k: float = 2.5) -> None:
         self.k = float(k)
@@ -391,7 +436,11 @@ class TrendResidualIQRDetector(TimedDetector):
     def score(self, series: SeriesBundle) -> np.ndarray:
         values = np.asarray(series.values, dtype=float)
         _, residuals = self._trend_and_residual(values)
-        return IQRDetector(k=self.k).score(
+        # ⚠️ 留着引用才能拿到内层实例记录的尺度来源
+        # ⚠️ 数值噪声下限按**原始值**量级算：常数序列去趋势后残差是 1e-16，
+        #    按残差自身量级算下限会把它当成真实尺度。
+        inner = IQRDetector(k=self.k, floor=numeric_floor(values))
+        scores = inner.score(
             SeriesBundle(
                 series_id=series.series_id,
                 values=residuals,
@@ -399,6 +448,8 @@ class TrendResidualIQRDetector(TimedDetector):
                 freq=series.freq,
             )
         )
+        self._last_scale_source = inner._last_scale_source
+        return scores
 
     def _trend_and_residual(self, values: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         t = np.arange(len(values), dtype=float)
@@ -410,7 +461,9 @@ class TrendResidualIQRDetector(TimedDetector):
     def bands(self, series: SeriesBundle, threshold: float) -> Bands:
         values = np.asarray(series.values, dtype=float)
         trend, residuals = self._trend_and_residual(values)
-        center, scale = IQRDetector(k=self.k)._center_scale(residuals)
+        center, scale = IQRDetector(k=self.k, floor=numeric_floor(values))._center_scale(
+            residuals
+        )
         baseline = trend + center
         return Bands(
             baseline=baseline,

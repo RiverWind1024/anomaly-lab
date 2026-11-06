@@ -237,3 +237,86 @@ def test_窗口超过半个序列时标记无法判定():
     )
     result = IQRDetector(window=50).detect(series)
     assert result.status == "undetermined"
+
+
+def test_趋势残差检测器透传尺度来源():
+    from anomaly_lab.contracts import SeriesBundle
+    from anomaly_lab.detectors.statistical import TrendResidualIQRDetector
+
+    # 全是同一个值 → 去趋势后残差恒为 0 → 不可判
+    series = SeriesBundle(
+        series_id="s",
+        values=np.full(100, 5.0),
+        timestamps=np.arange(100).astype("datetime64[m]"),
+        freq="1min",
+    )
+    result = TrendResidualIQRDetector().detect(series)
+    assert result.scale_source == "none"
+    assert result.status == "undetermined"
+
+
+def test_STL残差恒定时标记不可判():
+    from anomaly_lab.contracts import SeriesBundle
+    from anomaly_lab.detectors.statistical import STLResidualDetector
+
+    series = SeriesBundle(
+        series_id="s",
+        values=np.full(120, 5.0),
+        timestamps=np.arange(120).astype("datetime64[m]"),
+        freq="1min",
+    )
+    result = STLResidualDetector(period=24).detect(series)
+    assert result.scale_source == "none"
+    assert result.status == "undetermined"
+
+
+def test_季节性检测器在常数序列上标记不可判():
+    from anomaly_lab.contracts import SeriesBundle
+    from anomaly_lab.detectors.statistical import SeasonalDetector
+
+    series = SeriesBundle(
+        "s",
+        np.full(200, 5.0),
+        np.arange(200).astype("datetime64[m]"),
+        "1min",
+    )
+    result = SeasonalDetector(period=24).detect(series)
+    assert result.scale_source == "none"
+    assert result.status == "undetermined"
+    assert not result.is_anomaly.any()
+
+
+def test_季节性检测器重复检测不丢来源():
+    """⚠️ 缓存命中时也必须恢复来源 —— 否则第二次检测会报 ok。"""
+    from anomaly_lab.contracts import SeriesBundle
+    from anomaly_lab.detectors.statistical import SeasonalDetector
+
+    series = SeriesBundle(
+        "s",
+        np.full(200, 5.0),
+        np.arange(200).astype("datetime64[m]"),
+        "1min",
+    )
+    det = SeasonalDetector(period=24)
+    first = det.detect(series)
+    second = det.detect(series)          # 缓存命中
+    assert second.scale_source == first.scale_source == "none"
+    assert second.status == first.status == "undetermined"
+
+
+def test_趋势残差正常数据用iqr且不报降级():
+    from anomaly_lab.contracts import SeriesBundle
+    from anomaly_lab.detectors.statistical import TrendResidualIQRDetector
+
+    rng = np.random.default_rng(0)
+    values = np.linspace(0, 100, 300) + rng.normal(0, 1, 300)
+    series = SeriesBundle(
+        "s",
+        values,
+        np.arange(300).astype("datetime64[m]"),
+        "1min",
+    )
+    result = TrendResidualIQRDetector().detect(series)
+    assert result.scale_source == "iqr"
+    assert result.status == "ok"
+    assert result.scale_fallback is False
