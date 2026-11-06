@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Alert, Form, Input, InputNumber, Modal, Select, Space } from 'antd'
 import type { AlertDirection, AlertRule, CatalogDetector, CatalogMetric } from '../../api/types'
 import { AlertRulesEditor } from './AlertRulesEditor'
-import { ALERT_DIRECTION_OPTIONS } from '../../lib/alertDirection'
+import { directionHint, directionOptions, normalizeDirection } from '../../lib/alertDirection'
 import { detectorLabel } from '../../lib/detectorLabels'
 import { INTERVAL_SECONDS_MIN, WINDOW_POINTS_MAX, WINDOW_POINTS_MIN } from './limits'
 import { defaultRuleList } from './rules'
@@ -133,7 +133,7 @@ export function JobForm({
     () => detectors.find((d) => d.name === selectedDetectorName),
     [detectors, selectedDetectorName],
   )
-  /** 算法支持的方向 —— 没有基线（Chronos）只能报偏高。 */
+  /** 算法支持的方向 —— 没有基线（如 event_count）只能报偏高。 */
   const detectorDirection = selectedDetector?.direction ?? 'both'
 
   /**
@@ -143,12 +143,9 @@ export function JobForm({
    *    实际一条都不会报（后端会标 direction_applied=false）。
    */
   useEffect(() => {
-    if (
-      detectorDirection === 'above' &&
-      form.getFieldValue('alert_direction') === 'below'
-    ) {
-      form.setFieldValue('alert_direction', 'both')
-    }
+    const current = form.getFieldValue('alert_direction')
+    const next = normalizeDirection(current, detectorDirection)
+    if (next !== current) form.setFieldValue('alert_direction', next)
   }, [detectorDirection, form])
 
   /**
@@ -217,19 +214,9 @@ export function JobForm({
           name="alert_direction"
           label="告警方向"
           initialValue="both"
-          extra={
-            detectorDirection === 'above'
-              ? '当前算法没有基线，只能报「偏高」的异常。'
-              : '「双向」两侧都报；「只报偏高」忽略向下偏离；「只报偏低」忽略向上偏离。'
-          }
+          extra={directionHint(detectorDirection)}
         >
-          <Select
-            options={ALERT_DIRECTION_OPTIONS.map((option) =>
-              option.value === 'below'
-                ? { ...option, disabled: detectorDirection === 'above' }
-                : option,
-            )}
-          />
+          <Select options={directionOptions(detectorDirection)} />
         </Form.Item>
 
         <Space size="large" style={{ display: 'flex' }}>

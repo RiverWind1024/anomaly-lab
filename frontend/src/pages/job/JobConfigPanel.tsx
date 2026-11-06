@@ -6,7 +6,7 @@ import { detectorLabel } from '../../lib/detectorLabels'
 import { useUpdateJob } from '../../features/jobs/queries'
 import { INTERVAL_SECONDS_MIN, WINDOW_POINTS_MAX, WINDOW_POINTS_MIN } from '../../features/jobs/limits'
 import type { AlertRule, CatalogDetector, CatalogJob, CatalogMetric } from '../../api/types'
-import { ALERT_DIRECTION_OPTIONS } from '../../lib/alertDirection'
+import { directionHint, directionOptions, normalizeDirection } from '../../lib/alertDirection'
 
 export interface JobConfigPanelProps {
   job: CatalogJob
@@ -58,8 +58,7 @@ export function JobConfigPanel({ job, metrics, detectors, enabled }: JobConfigPa
         window_points: job.window_points,
         interval_seconds: job.interval_seconds,
         enabled: job.enabled,
-        // ⚠️ 旧后端没有这个字段 —— 缺省按「双向」显示。
-        alert_direction: job.alert_direction ?? 'both',
+        alert_direction: job.alert_direction,
       })
       setRules(job.alert_rules ?? null)
     }
@@ -71,12 +70,9 @@ export function JobConfigPanel({ job, metrics, detectors, enabled }: JobConfigPa
     detectors.find((d) => d.name === selectedDetectorName)?.direction ?? 'both'
 
   useEffect(() => {
-    if (
-      detectorDirection === 'above' &&
-      form.getFieldValue('alert_direction') === 'below'
-    ) {
-      form.setFieldValue('alert_direction', 'both')
-    }
+    const current = form.getFieldValue('alert_direction')
+    const next = normalizeDirection(current, detectorDirection)
+    if (next !== current) form.setFieldValue('alert_direction', next)
   }, [detectorDirection, form])
 
   const metricOptions = useMemo(
@@ -194,19 +190,9 @@ export function JobConfigPanel({ job, metrics, detectors, enabled }: JobConfigPa
         <Form.Item
           name="alert_direction"
           label="告警方向"
-          extra={
-            detectorDirection === 'above'
-              ? '当前算法没有基线，只能报「偏高」的异常。'
-              : '「双向」两侧都报；「只报偏高」忽略向下偏离；「只报偏低」忽略向上偏离。'
-          }
+          extra={directionHint(detectorDirection)}
         >
-          <Select
-            options={ALERT_DIRECTION_OPTIONS.map((option) =>
-              option.value === 'below'
-                ? { ...option, disabled: detectorDirection === 'above' }
-                : option,
-            )}
-          />
+          <Select options={directionOptions(detectorDirection)} />
         </Form.Item>
 
         {/* ⚠️ wrap：窄屏上这两项要能换行 —— 挤在一行会顶出屏幕右边 taste-skill-ignore */}

@@ -53,13 +53,13 @@ const METRICS: CatalogMetric[] = [
   },
 ]
 
-function renderPanel() {
+function renderPanel(job: CatalogJob = JOB) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
   return render(
     <QueryClientProvider client={qc}>
-      <JobConfigPanel job={JOB} metrics={METRICS} detectors={DETECTORS} enabled />
+      <JobConfigPanel job={job} metrics={METRICS} detectors={DETECTORS} enabled />
     </QueryClientProvider>,
   )
 }
@@ -145,6 +145,14 @@ describe('JobConfigPanel', () => {
       ])
     })
     vi.unstubAllGlobals()
+  })
+
+  it('加载「只报偏低」的任务时，下拉显示中文而不是原始值', async () => {
+    renderPanel({ ...JOB, alert_direction: 'below' })
+
+    await waitFor(() =>
+      expect(screen.getByText('只报偏低')).toBeInTheDocument(),
+    )
   })
 
   it('保存时带上告警方向（中文标签，提交原始值）', async () => {

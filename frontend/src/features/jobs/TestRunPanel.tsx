@@ -42,14 +42,16 @@ export function TestRunPanel({ jobId }: TestRunPanelProps) {
   )
 
   /**
-   * 配了「只报偏低」但算法没有基线 —— 本次实际上一条都不会报。
+   * 当前序列配了「只报偏低」，但它的算法没有基线 —— 这条序列一条都不会报。
    *
+   * ⚠️ `auto` 是逐序列选算法的，别的序列可能有基线、也真的报了。
+   *    所以判断必须跟着**当前选中的序列**走，不能看「任意一条」。
    * ⚠️ 不能让它静默显示「0 个告警点」：用户会以为「一切正常」，
    *    实际是方向根本没生效。
    */
   const directionUnsupported =
     result?.alert_direction === 'below' &&
-    result.series.some((item) => item.direction_applied === false)
+    currentEntry?.direction_applied === false
 
   const alertColumns: ColumnsType<TestRunAlert> = [
     {
@@ -180,7 +182,7 @@ export function TestRunPanel({ jobId }: TestRunPanelProps) {
             <Alert
               type="warning"
               showIcon
-              message="当前算法没有基线，无法判断「偏低」，本次没有产生告警。请改用双向或换一个支持基线的算法。"
+              message="当前序列的算法没有基线，无法判断「偏低」，这条序列没有产生告警。"
               style={{ marginBottom: 12 }}
             />
           ) : null}

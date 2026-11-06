@@ -239,6 +239,53 @@ describe('TestRunPanel', () => {
     )
   })
 
+  it('警告跟随当前序列 —— 别的序列方向没生效时不提示', async () => {
+    // auto 逐序列选算法：当前序列有基线、真的报了告警，
+    // 另一条没有基线 —— 不能因为「任意一条」就把警告挂到当前序列上。
+    const mixed = {
+      ...TEST_RUN,
+      alert_direction: 'below',
+      n_series: 2,
+      series: [
+        {
+          ...TEST_RUN.series[0],
+          alert_direction: 'below',
+          direction_applied: true,
+        },
+        {
+          ...TEST_RUN.series[0],
+          series_id: 'demo-metric:db',
+          group: 'db',
+          alert_direction: 'below',
+          direction_applied: false,
+        },
+      ],
+      results: [
+        TEST_RUN.results[0],
+        {
+          ...TEST_RUN.results[0],
+          series_id: 'demo-metric:db',
+          group: 'db',
+        },
+      ],
+    }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify(mixed), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderPanel()
+    await user.click(screen.getByText('试跑一次'))
+
+    await waitFor(() => expect(screen.getByText(/再试一次/)).toBeTruthy())
+    expect(screen.queryByText(/无法判断「偏低」/)).toBeNull()
+  })
+
   it('试跑失败时把原因显示出来', async () => {
     vi.stubGlobal(
       'fetch',

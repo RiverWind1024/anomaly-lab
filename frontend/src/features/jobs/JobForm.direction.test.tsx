@@ -1,7 +1,7 @@
 /**
  * 告警方向：默认双向、无基线算法禁用「只报偏低」、提交时带上方向。
  *
- * ⚠️ 背景：Chronos 这类算法没有基线，只能报「偏高」。
+ * ⚠️ 背景：event_count / poisson_count 这类算法没有基线，只能报「偏高」。
  *    配成「只报偏低」等于让它一条都不报 —— 界面必须当场拦住，
  *    而不是等提交后看到「0 个告警点」以为一切正常。
  */
@@ -36,12 +36,15 @@ const IQR: CatalogDetector = {
   direction: 'both',
 }
 
-/** 没有基线、只能报偏高的算法。 */
-const CHRONOS: CatalogDetector = {
-  name: 'chronos',
-  default_threshold: 0.5,
-  score_type: 'prob',
-  label: 'chronos',
+/**
+ * 无基线算法的占位 —— 真实对应 event_count / poisson_count。
+ * 它们没有基线，只能报偏高，`direction` 为 `above`。
+ */
+const NO_BASELINE: CatalogDetector = {
+  name: 'event_count',
+  default_threshold: 3,
+  score_type: 'zscore',
+  label: 'event_count',
   direction: 'above',
 }
 
@@ -50,7 +53,7 @@ function renderForm(onSubmit = vi.fn()) {
     <JobForm
       open
       metrics={[METRIC]}
-      detectors={[IQR, CHRONOS]}
+      detectors={[IQR, NO_BASELINE]}
       onCancel={() => {}}
       onSubmit={onSubmit}
     />,
@@ -86,7 +89,7 @@ describe('新建任务的告警方向', () => {
     const user = userEvent.setup({ delay: null })
     renderForm()
 
-    await pick(/检测算法/, detectorLabel('chronos'), user)
+    await pick(/检测算法/, detectorLabel('event_count'), user)
     await waitFor(() =>
       expect(screen.getByText(/当前算法没有基线/)).toBeInTheDocument(),
     )
@@ -105,7 +108,7 @@ describe('新建任务的告警方向', () => {
     await pick(/告警方向/, '只报偏低', user)
     expect(directionSelectionText()).toBe('只报偏低')
 
-    await pick(/检测算法/, detectorLabel('chronos'), user)
+    await pick(/检测算法/, detectorLabel('event_count'), user)
 
     await waitFor(() => expect(directionSelectionText()).toBe('双向（默认）'))
   })
