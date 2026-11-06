@@ -67,4 +67,15 @@ describe('DecisionTraceTimeline', () => {
     const { container } = render(<DecisionTraceTimeline trace={{}} />)
     expect(container).toBeEmptyDOMElement()
   })
+
+  it('序号按固定步骤位置给，缺段不前移', () => {
+    // ⚠️ 老数据可能缺中间某段；缺一步不该让后面的编号全部前移
+    const { container } = render(
+      <DecisionTraceTimeline trace={{ detect: { n_alerts: 1, n_p0: 0 } }} />,
+    )
+    const indexes = [...container.querySelectorAll('.decision-trace__index')].map(
+      (node) => node.textContent,
+    )
+    expect(indexes).toEqual(['6'])
+  })
 })

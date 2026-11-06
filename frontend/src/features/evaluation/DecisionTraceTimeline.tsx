@@ -59,18 +59,23 @@ function isWarn(key: StepKey, step: Record<string, unknown>): boolean {
  * `trace` 为空（老数据）时整块不渲染。
  */
 export function DecisionTraceTimeline({ trace }: { trace: DecisionTraceData }) {
-  const steps = STEPS.filter(([key]) => trace[key])
-  if (steps.length === 0) return null
+  if (STEPS.every(([key]) => !trace[key])) return null
 
   return (
     <ol className="decision-trace">
-      {steps.map(([key, title]) => {
-        const step = trace[key] as Record<string, unknown>
+      {STEPS.map(([key, title], index) => {
+        const step = trace[key] as Record<string, unknown> | undefined
+        if (!step) return null
         return (
           <li
             key={key}
             className={`decision-trace__step${isWarn(key, step) ? ' decision-trace__step--warn' : ''}`}
           >
+            {/* ⚠️ 序号按 STEPS 的原始位置算，不是过滤后的下标 ——
+                老数据可能缺中间某段，缺一步不该让后面的编号全部前移 */}
+            <span className="decision-trace__index" aria-hidden="true">
+              {index + 1}
+            </span>
             <strong>{title}</strong>
             <span className="decision-trace__summary">{summary(key, step)}</span>
             <details>

@@ -11,6 +11,21 @@
   border-top: 1px solid var(--border-subtle);
 }
 
+/* 步骤序号 —— 让「流程」有方向感，而不是一串并列的标题 */
+.decision-trace__index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-right: var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: 50%;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1;
+}
+
 .decision-trace__step strong {
   margin-right: var(--space-3);
 }
