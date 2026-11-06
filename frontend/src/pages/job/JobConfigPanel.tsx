@@ -6,6 +6,7 @@ import { detectorLabel } from '../../lib/detectorLabels'
 import { useUpdateJob } from '../../features/jobs/queries'
 import { INTERVAL_SECONDS_MIN, WINDOW_POINTS_MAX, WINDOW_POINTS_MIN } from '../../features/jobs/limits'
 import type { AlertRule, CatalogDetector, CatalogJob, CatalogMetric } from '../../api/types'
+import { ALERT_DIRECTION_OPTIONS } from '../../lib/alertDirection'
 
 export interface JobConfigPanelProps {
   job: CatalogJob
@@ -22,6 +23,7 @@ interface ConfigFormValues {
   window_points: number
   interval_seconds: number
   enabled: boolean
+  alert_direction: 'both' | 'above' | 'below'
 }
 
 /**
@@ -56,10 +58,26 @@ export function JobConfigPanel({ job, metrics, detectors, enabled }: JobConfigPa
         window_points: job.window_points,
         interval_seconds: job.interval_seconds,
         enabled: job.enabled,
+        // ⚠️ 旧后端没有这个字段 —— 缺省按「双向」显示。
+        alert_direction: job.alert_direction ?? 'both',
       })
       setRules(job.alert_rules ?? null)
     }
   }, [enabled, job, form])
+
+  /** 当前选中的算法支持哪一侧 —— 没基线只能报偏高。 */
+  const selectedDetectorName = Form.useWatch('detector', form)
+  const detectorDirection =
+    detectors.find((d) => d.name === selectedDetectorName)?.direction ?? 'both'
+
+  useEffect(() => {
+    if (
+      detectorDirection === 'above' &&
+      form.getFieldValue('alert_direction') === 'below'
+    ) {
+      form.setFieldValue('alert_direction', 'both')
+    }
+  }, [detectorDirection, form])
 
   const metricOptions = useMemo(
     () => metrics.map((m) => ({ value: m.id, label: m.name })),
@@ -131,6 +149,7 @@ export function JobConfigPanel({ job, metrics, detectors, enabled }: JobConfigPa
       enabled: values.enabled,
       // ⚠️ 规则表**有值才传** —— 传 null 会被后端当成「显式置空」。
       alert_rules: rules && rules.length > 0 ? rules : undefined,
+      alert_direction: values.alert_direction ?? 'both',
     })
   }
 
@@ -171,6 +190,24 @@ export function JobConfigPanel({ job, metrics, detectors, enabled }: JobConfigPa
         {familyHint ? (
           <Alert type="info" showIcon message={familyHint} style={{ marginBottom: 16 }} />
         ) : null}
+
+        <Form.Item
+          name="alert_direction"
+          label="告警方向"
+          extra={
+            detectorDirection === 'above'
+              ? '当前算法没有基线，只能报「偏高」的异常。'
+              : '「双向」两侧都报；「只报偏高」忽略向下偏离；「只报偏低」忽略向上偏离。'
+          }
+        >
+          <Select
+            options={ALERT_DIRECTION_OPTIONS.map((option) =>
+              option.value === 'below'
+                ? { ...option, disabled: detectorDirection === 'above' }
+                : option,
+            )}
+          />
+        </Form.Item>
 
         {/* ⚠️ wrap：窄屏上这两项要能换行 —— 挤在一行会顶出屏幕右边 taste-skill-ignore */}
         <Space size="large" wrap style={{ display: 'flex' }}>

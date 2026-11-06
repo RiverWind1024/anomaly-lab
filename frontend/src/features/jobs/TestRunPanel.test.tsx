@@ -202,6 +202,43 @@ describe('TestRunPanel', () => {
     expect(screen.queryByText(/正常带里/)).toBeNull()
   })
 
+  it('配了「只报偏低」但算法没有基线时给出警告', async () => {
+    // 无基线算法：direction_applied=false，本次一条都不会报 ——
+    // 不能静默显示「0 个告警点」让人以为一切正常。
+    const unsupported = {
+      ...TEST_RUN,
+      alert_direction: 'below',
+      n_alerts: 0,
+      n_p0: 0,
+      alerts: [],
+      series: [
+        {
+          ...TEST_RUN.series[0],
+          n_alerts: 0,
+          n_p0: 0,
+          alert_direction: 'below',
+          direction_applied: false,
+        },
+      ],
+    }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify(unsupported), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderPanel()
+    await user.click(screen.getByText('试跑一次'))
+
+    await waitFor(() =>
+      expect(screen.getByText(/无法判断「偏低」/)).toBeTruthy(),
+    )
+  })
+
   it('试跑失败时把原因显示出来', async () => {
     vi.stubGlobal(
       'fetch',

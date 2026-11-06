@@ -33,6 +33,7 @@ const JOB: CatalogJob = {
   next_run_at: null,
   created_at: '2026-10-30T00:00:00+00:00',
   alert_rules: [],
+  alert_direction: 'both',
 }
 
 const METRICS: CatalogMetric[] = [
@@ -86,6 +87,20 @@ function pickDetector(name: string) {
   fireEvent.click(option as HTMLElement)
 }
 
+function pickDirection(label: string) {
+  const item = [...document.querySelectorAll('.ant-form-item')].find((el) =>
+    el.textContent?.includes('告警方向'),
+  )
+  expect(item, '找不到「告警方向」表单项').toBeTruthy()
+  const select = item?.querySelector('.ant-select') as HTMLElement
+  fireEvent.mouseDown(select.querySelector('.ant-select-selector') as HTMLElement)
+  const option = [...document.querySelectorAll('.ant-select-item-option')].find(
+    (el) => el.textContent === label,
+  )
+  expect(option, `找不到告警方向选项 ${label}`).toBeTruthy()
+  fireEvent.click(option as HTMLElement)
+}
+
 describe('JobConfigPanel', () => {
   it('换算法时提示阈值会自动换', async () => {
     renderPanel()
@@ -128,6 +143,25 @@ describe('JobConfigPanel', () => {
         { multiplier: 4, level: 'P0' },
         { multiplier: 5, level: 'P1' },
       ])
+    })
+    vi.unstubAllGlobals()
+  })
+
+  it('保存时带上告警方向（中文标签，提交原始值）', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(JSON.stringify({ id: 7 }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderPanel()
+    pickDirection('只报偏高')
+    fireEvent.click(screen.getByRole('button', { name: /保\s*存\s*配\s*置/ }))
+
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find((c) => c[1]?.method === 'PATCH')
+      expect(call, '没有发出 PATCH').toBeTruthy()
+      const body = JSON.parse((call?.[1] as RequestInit).body as string)
+      expect(body.alert_direction).toBe('above')
     })
     vi.unstubAllGlobals()
   })

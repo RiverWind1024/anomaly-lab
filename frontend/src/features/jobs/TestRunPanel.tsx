@@ -41,6 +41,16 @@ export function TestRunPanel({ jobId }: TestRunPanelProps) {
     (item) => item.series_id === current?.series_id,
   )
 
+  /**
+   * 配了「只报偏低」但算法没有基线 —— 本次实际上一条都不会报。
+   *
+   * ⚠️ 不能让它静默显示「0 个告警点」：用户会以为「一切正常」，
+   *    实际是方向根本没生效。
+   */
+  const directionUnsupported =
+    result?.alert_direction === 'below' &&
+    result.series.some((item) => item.direction_applied === false)
+
   const alertColumns: ColumnsType<TestRunAlert> = [
     {
       title: '时间',
@@ -165,6 +175,15 @@ export function TestRunPanel({ jobId }: TestRunPanelProps) {
           ) : (
             <Empty description="没有足够的点来做检测" />
           )}
+
+          {directionUnsupported ? (
+            <Alert
+              type="warning"
+              showIcon
+              message="当前算法没有基线，无法判断「偏低」，本次没有产生告警。请改用双向或换一个支持基线的算法。"
+              style={{ marginBottom: 12 }}
+            />
+          ) : null}
 
           <section className="test-run__alerts">
             <h3 className="section__title">告警点（{result.alerts.length}）</h3>

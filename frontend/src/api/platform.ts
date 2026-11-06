@@ -149,6 +149,7 @@ export const createJob = (payload: {
   interval_seconds?: number
   enabled?: boolean
   alert_rules?: AlertRule[] | null
+  alert_direction?: 'both' | 'above' | 'below'
 }) => postJson<{ id: number }>('/api/platform/jobs', payload)
 
 /**
@@ -172,6 +173,7 @@ export const updateJob = (
     window_points?: number
     interval_seconds?: number
     alert_rules?: AlertRule[]
+    alert_direction?: 'both' | 'above' | 'below'
   },
 ) =>
   request<unknown>(`/api/platform/jobs/${jobId}`, {

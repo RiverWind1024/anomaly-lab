@@ -60,6 +60,9 @@ export interface CatalogMetric {
   created_at: string
 }
 
+/** 告警方向：双向 / 只报偏高 / 只报偏低。 */
+export type AlertDirection = 'both' | 'above' | 'below'
+
 export interface CatalogJob {
   id: number
   metric_id: number
@@ -74,6 +77,8 @@ export interface CatalogJob {
   next_run_at: string | null
   created_at: string
   alert_rules: AlertRule[]
+  /** 报哪一侧的异常。旧后端没有这个字段时按 `both` 处理。 */
+  alert_direction: AlertDirection
 }
 
 export interface CatalogDetector {
@@ -92,6 +97,13 @@ export interface CatalogDetector {
   reason?: string | null
   /** 慢算法（秒级/序列）—— 定时任务要留足间隔。 */
   slow?: boolean
+  /**
+   * 这个算法支持报哪一侧。
+   *
+   * `above` = 没有基线，只能报偏高（如 Chronos）。
+   * ⚠️ 可选 —— 旧后端没有这个字段，按 `both` 处理。
+   */
+  direction?: 'both' | 'above'
 }
 
 export interface Catalog {
@@ -334,6 +346,13 @@ export interface SeriesEntry {
   status?: 'ok' | 'undetermined'
   /** 尺度是否降级过；老产物没有这个键。 */
   scale_fallback?: boolean
+  /** 本次运行的告警方向（老产物没有这个键）。 */
+  alert_direction?: AlertDirection
+  /**
+   * 方向是否真的生效了。
+   * `false` = 配了 `below` 但算法没有基线，本次一条没报。
+   */
+  direction_applied?: boolean
   file: string | null
 }
 
@@ -460,6 +479,8 @@ export interface TestRunResult {
   alert_rules: AlertRule[]
   /** 档位名（["正常", "P1", "P0"]）。 */
   levels: string[]
+  /** 本次试跑用的告警方向（旧后端没有这个字段）。 */
+  alert_direction?: AlertDirection
   /** 每条序列的概要。 */
   series: SeriesEntry[]
   /** 每条序列的完整检测结果 —— 前端画图用。 */

@@ -46,6 +46,7 @@ const catalog: Catalog = {
       next_run_at: null,
       created_at: '2026-10-30T00:00:00+00:00',
       alert_rules: [],
+      alert_direction: 'both',
     },
   ],
   detectors: [],

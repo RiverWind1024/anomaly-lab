@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Alert, Form, Input, InputNumber, Modal, Select, Space } from 'antd'
-import type { AlertRule, CatalogDetector, CatalogMetric } from '../../api/types'
+import type { AlertDirection, AlertRule, CatalogDetector, CatalogMetric } from '../../api/types'
 import { AlertRulesEditor } from './AlertRulesEditor'
+import { ALERT_DIRECTION_OPTIONS } from '../../lib/alertDirection'
 import { detectorLabel } from '../../lib/detectorLabels'
 import { INTERVAL_SECONDS_MIN, WINDOW_POINTS_MAX, WINDOW_POINTS_MIN } from './limits'
 import { defaultRuleList } from './rules'
@@ -13,6 +14,7 @@ export interface JobFormValues {
   window_points: number
   interval_seconds: number
   alert_rules: AlertRule[] | null
+  alert_direction: AlertDirection
 }
 
 /**
@@ -20,9 +22,14 @@ export interface JobFormValues {
  *
  * ⚠️ `alert_rules` 单独放 —— 规则表由 `AlertRulesEditor` 持有，
  *    不走 Form 的字段绑定。
+ * ⚠️ `alert_direction` 可省略 —— 旧草稿没有这个字段，表单按「双向」兜底。
  */
-export type JobFormInitialValues = Omit<JobFormValues, 'alert_rules'> & {
+export type JobFormInitialValues = Omit<
+  JobFormValues,
+  'alert_rules' | 'alert_direction'
+> & {
   alert_rules?: AlertRule[] | null
+  alert_direction?: AlertDirection
 }
 
 export interface JobFormProps {
@@ -126,6 +133,23 @@ export function JobForm({
     () => detectors.find((d) => d.name === selectedDetectorName),
     [detectors, selectedDetectorName],
   )
+  /** 算法支持的方向 —— 没有基线（Chronos）只能报偏高。 */
+  const detectorDirection = selectedDetector?.direction ?? 'both'
+
+  /**
+   * 切到不支持「只报偏低」的算法时，把已经选中的 below 改回 both。
+   *
+   * ⚠️ 否则提交的是一个**必然不生效**的配置：用户以为在只报偏低，
+   *    实际一条都不会报（后端会标 direction_applied=false）。
+   */
+  useEffect(() => {
+    if (
+      detectorDirection === 'above' &&
+      form.getFieldValue('alert_direction') === 'below'
+    ) {
+      form.setFieldValue('alert_direction', 'both')
+    }
+  }, [detectorDirection, form])
 
   /**
    * 选算法 → 自动预填默认规则。
@@ -189,6 +213,25 @@ export function JobForm({
           <Select options={detectorOptions} onChange={onDetectorChange} placeholder="选择算法" />
         </Form.Item>
 
+        <Form.Item
+          name="alert_direction"
+          label="告警方向"
+          initialValue="both"
+          extra={
+            detectorDirection === 'above'
+              ? '当前算法没有基线，只能报「偏高」的异常。'
+              : '「双向」两侧都报；「只报偏高」忽略向下偏离；「只报偏低」忽略向上偏离。'
+          }
+        >
+          <Select
+            options={ALERT_DIRECTION_OPTIONS.map((option) =>
+              option.value === 'below'
+                ? { ...option, disabled: detectorDirection === 'above' }
+                : option,
+            )}
+          />
+        </Form.Item>
+
         <Space size="large" style={{ display: 'flex' }}>
           <Form.Item
             name="window_points"
@@ -248,5 +291,7 @@ export function buildJobPayload(values: JobFormValues) {
     window_points: values.window_points,
     interval_seconds: values.interval_seconds,
     alert_rules: values.alert_rules,
+    // ⚠️ 兜底 both —— 旧草稿 / 旧表单值可能没有这个字段。
+    alert_direction: values.alert_direction ?? 'both',
   }
 }
