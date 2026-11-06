@@ -47,3 +47,42 @@ def test_非零点太少时提示零膨胀IQR也估不准():
     cap = probe(values)
     names = {w.detector for w in cap.warnings}
     assert "zero_inflated_iqr" in names
+
+
+def test_恰好75百分比零不误报iqr():
+    """⚠️ 75% 零时 q75 落在非零区，IQR > 0 —— 百分比阈值会误报。"""
+    rng = np.random.default_rng(0)
+    values = np.zeros(200)
+    values[50:] = rng.uniform(1, 2, 150)   # 75% 零，非零值是连续正值
+    cap = probe(values)
+    names = {w.detector for w in cap.warnings}
+    assert "iqr" not in names
+
+
+def test_恰好50百分比零不误报mad():
+    rng = np.random.default_rng(0)
+    values = np.concatenate([np.zeros(100), rng.uniform(1, 2, 100)])  # 50% 零
+    cap = probe(values)
+    names = {w.detector for w in cap.warnings}
+    assert "mad" not in names
+
+
+def test_76百分比零才报iqr失效():
+    rng = np.random.default_rng(0)
+    values = np.zeros(200)
+    values[152:] = rng.uniform(1, 2, 48)   # 76% 零
+    cap = probe(values)
+    names = {w.detector for w in cap.warnings}
+    assert "iqr" in names
+
+
+def test_catalog_每个检测器都带首选尺度():
+    from anomaly_lab.platform.detectors import detector_catalog
+
+    rows = {row["name"]: row for row in detector_catalog()}
+    assert rows["iqr"]["prefer_scale"] == "iqr"
+    assert rows["mad"]["prefer_scale"] == "mad"
+    assert rows["zscore"]["prefer_scale"] == "std"
+    for row in rows.values():
+        assert "prefer_scale" in row
+

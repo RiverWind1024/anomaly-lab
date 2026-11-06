@@ -10,10 +10,8 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from anomaly_lab.detectors.scale import robust_scale
+from anomaly_lab.detectors.scale import numeric_floor, robust_scale
 
-IQR_MIN_NONZERO = 0.25      # 非零比例低于它 → IQR=0
-MAD_MIN_NONZERO = 0.50      # 非零比例低于它 → MAD=0
 MIN_NONZERO_SAMPLES = 30    # 非零样本少于它 → 幅度估不准
 
 
@@ -50,6 +48,7 @@ def probe(values: np.ndarray) -> Capability:
     #    两份同源实现迟早会因为一处改动而给出不同的诊断结论。
     est = robust_scale(v)
     probe_scales = dict(est.probe)
+    floor = numeric_floor(v)
     looks_like_counts = bool(
         n_nonzero > 0
         and np.all(v >= 0)
@@ -57,24 +56,29 @@ def probe(values: np.ndarray) -> Capability:
         and n_nonzero < n
     )
 
-    if n_nonzero == 0 or all(x == 0 for x in probe_scales.values()):
+    # ⚠️ `none` 意味着所有候选都低于浮点噪声 —— 不是「没算出尺度」，是「没有可分辨的变化」。
+    if est.source == "none":
         return Capability(
             n, zero_ratio, n_nonzero, looks_like_counts, probe_scales,
-            "undetermined", [], "整段没有变化（或全为 0），无法判定",
+            "undetermined", [], "整段没有可分辨的变化（或全为 0），无法判定",
         )
 
     warnings: list[CapabilityWarning] = []
-    if zero_ratio >= 1 - IQR_MIN_NONZERO:
+    # ⚠️ 判据用**实际算出来的尺度**，不用百分比近似 ——
+    #    恰好 75% 零时 q75 会落在非零区，IQR > 0，百分比阈值会误报；
+    #    恰好 50% 零时 median 也可能落在非零值上，MAD 同样 > 0。
+    if probe_scales["iqr"] <= floor:
         warnings.append(
             CapabilityWarning(
                 "iqr",
-                f"零值占 {zero_ratio:.1%}，Q3−Q1 = 0，会退回标准差（对零膨胀不稳健）",
+                f"IQR = {probe_scales['iqr']:.3g}（零值占 {zero_ratio:.1%}），分母为 0，会退回标准差",
             )
         )
-    if zero_ratio >= 1 - MAD_MIN_NONZERO:
+    if probe_scales["mad"] <= floor:
         warnings.append(
             CapabilityWarning(
-                "mad", f"零值占 {zero_ratio:.1%}，MAD = 0（比 IQR 更早退回标准差）"
+                "mad",
+                f"MAD = {probe_scales['mad']:.3g}（零值占 {zero_ratio:.1%}），比 IQR 更早失效",
             )
         )
     if n_nonzero < MIN_NONZERO_SAMPLES:

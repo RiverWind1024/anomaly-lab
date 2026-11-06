@@ -377,12 +377,11 @@ DIRECTION_BOTH_DETECTORS = {
 
 def detector_catalog() -> list[dict]:
     """给前端用的检测器清单，含默认阈值与可用性。"""
+    default_detector = create_detector(DEFAULT_DETECTOR)
     rows = [
         {
             "name": AUTO_DETECTOR,
-            "default_threshold": float(
-                create_detector(DEFAULT_DETECTOR).default_threshold
-            ),
+            "default_threshold": float(default_detector.default_threshold),
             "score_type": "auto",
             "label": "自动推荐（按形态推断）",
             "available": True,
@@ -390,6 +389,7 @@ def detector_catalog() -> list[dict]:
             "slow": False,
             "direction": "both",
             "guide": DETECTOR_GUIDE[AUTO_DETECTOR],
+            "prefer_scale": getattr(default_detector, "prefer_scale", None),
         }
     ]
     for name in DETECTOR_FACTORIES:
@@ -406,6 +406,7 @@ def detector_catalog() -> list[dict]:
                 "slow": name in SLOW_DETECTORS,
                 "direction": "both" if name in DIRECTION_BOTH_DETECTORS else "above",
                 "guide": DETECTOR_GUIDE.get(name, {}),
+                "prefer_scale": getattr(detector, "prefer_scale", None),
             }
         )
     return rows
