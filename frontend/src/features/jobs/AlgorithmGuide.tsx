@@ -17,8 +17,8 @@ export function AlgorithmGuide({ guide }: AlgorithmGuideProps) {
     <Tooltip
       title={
         <div className="algorithm-guide">
-          <div><b>适合</b>　{guide.good_for}</div>
-          <div><b>失效</b>　{guide.bad_for}</div>
+          {guide.good_for ? <div><b>适合</b>　{guide.good_for}</div> : null}
+          {guide.bad_for ? <div><b>失效</b>　{guide.bad_for}</div> : null}
           {guide.score ? <div><b>分数</b>　{guide.score}</div> : null}
           {guide.needs ? <div><b>要求</b>　{guide.needs}</div> : null}
         </div>

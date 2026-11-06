@@ -38,20 +38,47 @@ describe('CapabilityWarning', () => {
     expect(container).toBeEmptyDOMElement()
   })
 
-  it('detector 为 auto 时把全部结论合成一条', () => {
+  it('尺度真的降级时，按尺度族命中复用该尺度的算法', () => {
     render(
       <CapabilityWarning
-        detector="auto"
+        detector="seasonal"
+        preferScale="mad"
+        scaleFallback
         capability={{
           verdict: 'unsuitable',
-          warnings: [
-            { detector: 'iqr', reason: 'IQR 退化为 0' },
-            { detector: 'mad', reason: 'MAD 退化为 0' },
-          ],
+          warnings: [{ detector: 'mad', reason: 'MAD 退化为 0' }],
         }}
       />,
     )
-    expect(screen.getByText(/IQR 退化为 0/)).toBeTruthy()
     expect(screen.getByText(/MAD 退化为 0/)).toBeTruthy()
+  })
+
+  it('尺度没降级时，不按尺度族硬匹配', () => {
+    const { container } = render(
+      <CapabilityWarning
+        detector="stl_residual"
+        preferScale="mad"
+        scaleFallback={false}
+        capability={{
+          verdict: 'unsuitable',
+          warnings: [{ detector: 'mad', reason: 'MAD 退化为 0' }],
+        }}
+      />,
+    )
+    expect(container).toBeEmptyDOMElement()
+  })
+
+  it('说明文案不断言会退回标准差兜底', () => {
+    render(
+      <CapabilityWarning
+        detector="zscore"
+        capability={{
+          verdict: 'unsuitable',
+          warnings: [{ detector: 'zscore', reason: '零值占比过高' }],
+        }}
+      />,
+    )
+    expect(screen.getByText(/不符合该算法的假设/)).toBeInTheDocument()
+    expect(screen.queryByText(/退回标准差兜底/)).not.toBeInTheDocument()
   })
 })

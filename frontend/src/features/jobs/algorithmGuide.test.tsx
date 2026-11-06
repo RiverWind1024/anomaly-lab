@@ -12,4 +12,9 @@ describe('AlgorithmGuide', () => {
     const { container } = render(<AlgorithmGuide guide={{}} />)
     expect(container).toBeEmptyDOMElement()
   })
+
+  it('只有 bad_for 时不渲染空的「适合」行', () => {
+    render(<AlgorithmGuide guide={{ bad_for: '零值 >75%' }} />)
+    expect(screen.queryByText('适合')).not.toBeInTheDocument()
+  })
 })

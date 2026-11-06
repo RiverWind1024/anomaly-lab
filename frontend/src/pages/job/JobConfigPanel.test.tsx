@@ -15,7 +15,13 @@ import type { CatalogDetector, CatalogJob, CatalogMetric } from '../../api/types
 import { detectorLabel } from '../../lib/detectorLabels'
 
 const DETECTORS: CatalogDetector[] = [
-  { name: 'iqr', default_threshold: 2.5, score_type: 'zscore', label: 'iqr' },
+  {
+    name: 'iqr',
+    default_threshold: 2.5,
+    score_type: 'zscore',
+    label: 'iqr',
+    guide: { good_for: '平稳连续值', bad_for: '零值 > 75%' },
+  },
   { name: 'chronos', default_threshold: 0.5, score_type: 'prob', label: 'chronos' },
 ]
 
@@ -116,6 +122,14 @@ describe('JobConfigPanel', () => {
     pickDetector('iqr')
 
     expect(screen.queryByText(/告警阈值会自动换成/)).toBeNull()
+  })
+
+  it('算法 label 旁只有一个适用性图标', async () => {
+    renderPanel()
+
+    await waitFor(() =>
+      expect(screen.getAllByLabelText('算法适用性')).toHaveLength(1),
+    )
   })
 
   it('⚠️ 告警规则**可以改** —— 改完保存时带上新的规则表', async () => {

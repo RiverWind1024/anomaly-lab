@@ -104,6 +104,8 @@ export interface CatalogDetector {
    * ⚠️ 可选 —— 旧后端没有这个字段，按 `both` 处理。
    */
   direction?: 'both' | 'above'
+  /** 首选尺度（iqr / mad / std）；没有尺度概念的算法为 null 或缺失。 */
+  prefer_scale?: string | null
   /** 适用性说明；老后端可能没有。 */
   guide?: {
     good_for?: string
@@ -370,6 +372,8 @@ export interface SeriesEntry {
   status?: 'ok' | 'undetermined'
   /** 尺度是否降级过；老产物没有这个键。 */
   scale_fallback?: boolean
+  /** 检测器的首选尺度（iqr / mad / std）；没有该属性的算法为空串。 */
+  scale_prefer?: string
   /** 本次运行的告警方向（老产物没有这个键）。 */
   alert_direction?: AlertDirection
   /**

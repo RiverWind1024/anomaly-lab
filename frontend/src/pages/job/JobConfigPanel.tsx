@@ -179,7 +179,7 @@ export function JobConfigPanel({ job, metrics, detectors, enabled }: JobConfigPa
           name="detector"
           label={
             <span className="field-hint">
-              {hint('检测算法', '「自动推荐」由形态分类器挑算法，每次运行可能选到不同的算法。')}
+              检测算法
               <AlgorithmGuide guide={selectedDetector?.guide} />
             </span>
           }

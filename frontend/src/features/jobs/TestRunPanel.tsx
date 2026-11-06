@@ -165,6 +165,8 @@ export function TestRunPanel({ jobId }: TestRunPanelProps) {
               <CapabilityWarning
                 detector={currentEntry?.detector ?? result.detector}
                 capability={currentEntry?.capability}
+                preferScale={currentEntry?.scale_prefer}
+                scaleFallback={currentEntry?.scale_fallback}
               />
               <PreviewChart
                 timestamps={current.timestamps}
