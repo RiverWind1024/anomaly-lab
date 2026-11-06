@@ -58,20 +58,22 @@ _RULES: dict[str, tuple[list[str], dict[str, dict], str]] = {
         ),
     ),
     "high_zero_ratio": (
-        ["iqr"],
-        {"iqr": {"k": [2.0, 4.0]}},
-        "大量零值会破坏均值/标准差，用分位数法更稳；零值专门建模留待 v2",
-    ),
-    "sparse_event": (
-        ["event_count", "iqr"],
+        ["zero_inflated_iqr", "event_count", "iqr"],
         {
+            "zero_inflated_iqr": {"k": [2.0, 4.0]},
             "event_count": {"window": [20, 100]},
             "iqr": {"k": [2.0, 4.0]},
         },
-        (
-            "稀疏事件应看窗口内事件计数相对泊松期望的偏离，而不是单点幅度"
-            "（平台不支持该检测器，退而用 IQR）"
-        ),
+        "零值会破坏 IQR/MAD 的分母；先看非零部分的幅度，或看事件频率",
+    ),
+    "sparse_event": (
+        ["poisson_count", "event_count", "zero_inflated_iqr"],
+        {
+            "poisson_count": {"window": [10, 100]},
+            "event_count": {"window": [20, 100]},
+            "zero_inflated_iqr": {"k": [2.0, 4.0]},
+        },
+        "稀疏事件先看「发生了多少次」（泊松），幅度只有在非零点足够多时才估得准",
     ),
 }
 
