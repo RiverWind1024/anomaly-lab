@@ -558,16 +558,37 @@ class EventCountDetector(TimedDetector):
     def score(self, series: SeriesBundle) -> np.ndarray:
         from scipy.stats import poisson
 
+        # ⚠️ `_timed_detect` 会在调用 score() 前清空尺度来源，这里必须重写
+        self._last_scale_source = "poisson"
+
         values = np.asarray(series.values, dtype=float)
         nonzero = (values != 0).astype(float)
+        # ⚠️ 窗口必须是**因果**的：t 点只看 t-w+1…t。
+        #    用 `center=True` 会把 t+1…t+w/2 算进来 —— 离线评估虚高，
+        #    上线后最后 w/2 点行为不一致。
         counts = (
             pd.Series(nonzero)
-            .rolling(window=self.window, center=True, min_periods=1)
+            .rolling(window=self.window, min_periods=1)
             .sum()
             .to_numpy()
         )
-        lam = max(1e-6, float(nonzero.mean()) * self.window)
-        return poisson.cdf(counts - 1, lam)
+        effective = (
+            pd.Series(nonzero)
+            .rolling(window=self.window, min_periods=1)
+            .count()
+            .to_numpy()
+        )
+        # λ 也必须是因果的：扩张均值 + shift(1)，第一个点用全局率兜底
+        fallback = float(nonzero.mean())
+        rate = (
+            pd.Series(nonzero)
+            .expanding(min_periods=2)
+            .mean()
+            .shift(1)
+            .fillna(fallback)
+            .to_numpy()
+        )
+        return poisson.cdf(counts - 1, np.maximum(rate * effective, 1e-6))
 
     def detect(
         self, series: SeriesBundle, threshold: float | None = None
