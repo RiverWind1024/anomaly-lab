@@ -33,7 +33,85 @@
 /* 生成时间这类出处信息：小一号、不抢注意力 */
 .evaluation__provenance {
   margin: 0;
+  min-height: 1.5em; /* 数据到达前占住一行，避免页头高度跳变 */
+  color: var(--text-tertiary);
   font-size: var(--text-xs);
+  line-height: 1.5;
+}
+
+/* ---------- 两个视图的切换 ---------- */
+
+.evaluation__tabs {
+  margin-bottom: calc(-1 * var(--space-3)); /* 与下方内容共用一个留白节奏 */
+}
+
+/* ---------- 总体结论：一行数字 + 一句话，不做 KPI 卡片 ---------- */
+
+.evaluation__conclusion {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-6);
+  padding-bottom: var(--space-1);
+}
+
+.evaluation__metrics {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-5);
+}
+
+.evaluation__metric {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.evaluation__metric-k {
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+}
+
+.evaluation__metric-v {
+  color: var(--text-primary);
+  font-size: var(--text-md);
+  font-weight: var(--font-weight-medium);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 最好 / 最差形态 —— 正常字号，不塞进灰字里 */
+.evaluation__verdict {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.evaluation__verdict b {
+  color: var(--text-primary);
+  font-weight: var(--font-weight-medium);
+}
+
+.evaluation__verdict .num {
+  color: var(--text-primary);
+}
+
+.evaluation__verdict-sep {
+  margin: 0 var(--space-2);
+  color: var(--text-tertiary);
+}
+
+/* ---------- 生产评估：先说明口径，再交给面板 ---------- */
+
+.evaluation__production-note {
+  margin: 0 0 var(--space-4);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.evaluation__production-note b {
+  color: var(--text-primary);
+  font-weight: var(--font-weight-medium);
 }
 
 /* ---------- 总体指标：KPI 是字，不是卡片 ---------- */
@@ -45,7 +123,7 @@
 /* ---------- 筛选条：计数放右端，不另起一行 ---------- */
 
 .evaluation__filters {
-  margin: 0;
+  margin: 0 0 var(--space-3);
 }
 
 .evaluation__filters .filter-bar__count {

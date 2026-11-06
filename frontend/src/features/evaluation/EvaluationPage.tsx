@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
-import { Button, Drawer, Popconfirm, Space, Table, Tag } from 'antd'
+import { Button, Drawer, Popconfirm, Space, Table, Tabs, Tag } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { StateBoundary } from '../../components/StateBoundary'
 import { fmtMetric, fmtUtcTime } from '../../lib/format'
 import { detectorLabel } from '../../lib/detectorLabels'
@@ -45,6 +45,12 @@ export function EvaluationTable({
   const filtered = useMemo(() => filterRows(rows, filters), [rows, filters])
   const buckets = useMemo(() => aggregateBy(filtered, dimension), [filtered, dimension])
   const overall = summary?.summary?.overall
+  // 最好 / 最差形态：与结论句同源（都取整份报告，不随筛选变化）
+  const ranked = Object.entries(summary?.summary.by_metric_class ?? {}).sort(
+    (a, b) => b[1].f1 - a[1].f1,
+  )
+  const best = ranked[0]
+  const worst = ranked[ranked.length - 1]
 
   const columns: ColumnsType<EvaluationRow> = useMemo(
     () => [
@@ -179,41 +185,42 @@ export function EvaluationTable({
       {(data) => (
         <div className="evaluation">
           {overall && (
-            <div className="evaluation__overall kpis kpis--eval">
-              <div className="kpi kpi--lead">
-                <span className="kpi__k">F1</span>
-                <span className="kpi__v num">{fmtMetric(overall.f1)}</span>
-                <span className="kpi__s">Precision / Recall 调和平均</span>
+            <div className="evaluation__overall evaluation__conclusion">
+              <div className="evaluation__metrics">
+                <span className="evaluation__metric">
+                  <span className="evaluation__metric-k">F1</span>
+                  <b className="evaluation__metric-v num">{fmtMetric(overall.f1)}</b>
+                </span>
+                <span className="evaluation__metric">
+                  <span className="evaluation__metric-k">Precision</span>
+                  <b className="evaluation__metric-v num">{fmtMetric(overall.precision)}</b>
+                </span>
+                <span className="evaluation__metric">
+                  <span className="evaluation__metric-k">Recall</span>
+                  <b className="evaluation__metric-v num">{fmtMetric(overall.recall)}</b>
+                </span>
+                <span className="evaluation__metric">
+                  <span className="evaluation__metric-k">Range-F1</span>
+                  <b className="evaluation__metric-v num">{fmtMetric(overall.range_f1)}</b>
+                </span>
+                <span className="evaluation__metric">
+                  <span className="evaluation__metric-k">记录数</span>
+                  <b className="evaluation__metric-v num">{data.rows.length.toLocaleString()}</b>
+                </span>
               </div>
-              <div className="kpi">
-                <span className="kpi__k">Precision</span>
-                <span className="kpi__v num">{fmtMetric(overall.precision)}</span>
-                <span className="kpi__s">报警中真异常占比</span>
-              </div>
-              <div className="kpi">
-                <span className="kpi__k">Recall</span>
-                <span className="kpi__v num">{fmtMetric(overall.recall)}</span>
-                <span className="kpi__s">真异常被检出占比</span>
-              </div>
-              <div className="kpi">
-                <span className="kpi__k">Range-F1</span>
-                <span className="kpi__v num">{fmtMetric(overall.range_f1)}</span>
-                <span className="kpi__s">按区间重叠计分</span>
-              </div>
-              <div className="kpi">
-                <span className="kpi__k">标注点</span>
-                <span className="kpi__v num">{overall.n_truth.toLocaleString()}</span>
-                <span className="kpi__s">预测 {overall.n_pred.toLocaleString()} 点</span>
-              </div>
+              {best && worst && best[0] !== worst[0] ? (
+                <p className="evaluation__verdict">
+                  <b>{metricClassLabel(best[0])}</b> 最好（
+                  <span className="num">{fmtMetric(best[1].f1)}</span>）
+                  <span className="evaluation__verdict-sep" aria-hidden="true">
+                    ·
+                  </span>
+                  <b>{metricClassLabel(worst[0])}</b> 最差（
+                  <span className="num">{fmtMetric(worst[1].f1)}</span>）
+                </p>
+              ) : null}
             </div>
           )}
-
-          <div className="filter-bar evaluation__filters">
-            <FilterBar rows={rows} filters={filters} onChange={setFilters} />
-            <span className="filter-bar__count">
-              筛选后 <b className="num">{filtered.length}</b> / {data.rows.length} 条记录
-            </span>
-          </div>
 
           <section className="panel">
             <div className="panel__head">
@@ -301,6 +308,12 @@ export function EvaluationTable({
                 已排除记录{excludedCount > 0 ? `（${excludedCount}）` : ''}
               </Button>
             </div>
+            <div className="filter-bar evaluation__filters">
+              <FilterBar rows={rows} filters={filters} onChange={setFilters} />
+              <span className="filter-bar__count">
+                筛选后 <b className="num">{filtered.length}</b> / {data.rows.length} 条记录
+              </span>
+            </div>
             <div className="evaluation__detail">
               <Table<EvaluationRow>
                 rowKey={(row) => `${row.series_id}-${row.detector}`}
@@ -318,59 +331,79 @@ export function EvaluationTable({
   )
 }
 
+/** 两个视图的口径完全不同：离线回测（合成集）与生产评估（人工标注）。 */
+export type EvaluationTab = 'offline' | 'production'
+
+/** 从 URL 解析当前视图。不带 `tab` 的旧链接一律按「离线回测」处理。 */
+export function tabFromParams(params: URLSearchParams): EvaluationTab {
+  return params.get('tab') === 'production' ? 'production' : 'offline'
+}
+
+const TAB_ITEMS = [
+  { key: 'offline', label: '离线回测' },
+  { key: 'production', label: '生产评估' },
+]
+
 /** 评估报告页。路由级组件 —— 取数 + 传参。 */
 export function EvaluationPage() {
+  const [params, setParams] = useSearchParams()
   const summary = useSummary()
   const exclude = useExcludeEvaluationRow()
   const restore = useRestoreEvaluationRow()
   const [excludedOpen, setExcludedOpen] = useState(false)
 
+  const tab = tabFromParams(params)
   const excluded: Exclusion[] = summary.data?.excluded ?? []
-  const overall = summary.data?.summary.overall
-  const ranked = Object.entries(summary.data?.summary.by_metric_class ?? {}).sort(
-    (a, b) => b[1].f1 - a[1].f1,
-  )
-  const best = ranked[0]
-  const worst = ranked[ranked.length - 1]
+
+  /** 切视图写回 URL —— 刷新、分享链接都不丢；离线态不保留多余参数。 */
+  const changeTab = (key: string) => {
+    const next = new URLSearchParams(params)
+    if (key === 'production') next.set('tab', 'production')
+    else next.delete('tab')
+    setParams(next, { replace: true })
+  }
 
   return (
     <div className="page page--evaluation">
       <header className="page__header">
         <h1 className="page__title">评估报告</h1>
-        <p className="finding">
+        {/* 一行说清「这份报告是什么 + 什么时候生成的」；高度固定，数据到达前后不跳 */}
+        <p className="evaluation__provenance">
           {summary.data ? (
             <>
-              <span className="num">{summary.data.rows.length}</span> 条序列 · F1{' '}
-              <span className="num">{fmtMetric(overall?.f1)}</span>
-              {best && worst && best[0] !== worst[0] ? (
-                <>
-                  ；<b>{metricClassLabel(best[0])}</b> 最好（
-                  <span className="num">{fmtMetric(best[1].f1)}</span>），
-                  <b>{metricClassLabel(worst[0])}</b> 最差（
-                  <span className="num">{fmtMetric(worst[1].f1)}</span>）
-                </>
-              ) : null}
-              。
+              {summary.data.title || '回测'}报告 · 生成于{' '}
+              <span className="num">{fmtUtcTime(summary.data.generated_at)}</span> UTC
             </>
           ) : (
             '加载中…'
           )}
         </p>
-        <p className="evaluation__provenance dim">
-          {summary.data?.title ?? '回测'} · 生成于 {fmtUtcTime(summary.data?.generated_at)} UTC
-        </p>
       </header>
 
-      <ProductionEvaluationPanel />
-
-      <EvaluationTable
-        isLoading={summary.isPending}
-        error={summary.error}
-        summary={summary.data}
-        excludedCount={excluded.length}
-        onOpenExcluded={() => setExcludedOpen(true)}
-        onExclude={(row) => exclude.mutate({ series_id: row.series_id, detector: row.detector })}
+      <Tabs
+        className="evaluation__tabs"
+        activeKey={tab}
+        items={TAB_ITEMS}
+        onChange={changeTab}
       />
+
+      {tab === 'offline' ? (
+        <EvaluationTable
+          isLoading={summary.isPending}
+          error={summary.error}
+          summary={summary.data}
+          excludedCount={excluded.length}
+          onOpenExcluded={() => setExcludedOpen(true)}
+          onExclude={(row) => exclude.mutate({ series_id: row.series_id, detector: row.detector })}
+        />
+      ) : (
+        <section className="evaluation__production">
+          <p className="evaluation__production-note">
+            这一块用的是<b>人工标注 × 线上运行</b>，和「离线回测」的合成集回测不是一套数据。
+          </p>
+          <ProductionEvaluationPanel />
+        </section>
+      )}
 
       <Drawer
         open={excludedOpen}
