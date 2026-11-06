@@ -279,6 +279,89 @@ DETECTOR_LABELS = {
 }
 
 
+#: 每个算法「什么时候能用、什么时候会失效」。
+#:
+#: ⚠️ 内容放**后端**，前端只负责渲染 —— 否则两份文案迟早漂移，
+#:    用户在界面上看到的原因会和实际算法行为对不上。
+#:
+#: ⚠️ `bad_for` 要写**能被验证的具体条件**（「零值 > 75%」），
+#:    不写「效果不好」这种无法判断的话。
+DETECTOR_GUIDE: dict[str, dict[str, str]] = {
+    "iqr": {
+        "good_for": "平稳、连续、非零值占多数",
+        "bad_for": "零值超过 75%（Q3−Q1=0，会退回 std，对零膨胀不稳健）",
+        "score": "偏离中位数多少个 IQR",
+        "needs": "非零值 > 25%",
+    },
+    "mad": {
+        "good_for": "有离群点的平稳数据",
+        "bad_for": "零值超过 50%（MAD=0，比 IQR 更早退回 std）；全常数序列",
+        "score": "偏离中位数多少个 1.4826×MAD",
+        "needs": "非零值 > 50%",
+    },
+    "zscore": {
+        "good_for": "近似正态、没有尖峰",
+        "bad_for": "有尖峰（均值/方差被拉偏）；零膨胀",
+        "score": "偏离均值多少个标准差",
+        "needs": "方差 > 0",
+    },
+    "seasonal": {
+        "good_for": "稳定周期，窗口至少覆盖 3 个周期",
+        "bad_for": "无周期；趋势型（相位分组会把趋势算成异常）",
+        "score": "同相位组内的稳健偏离",
+        "needs": "周期可识别",
+    },
+    "stl_residual": {
+        "good_for": "周期明显（日/周）",
+        "bad_for": "无周期 —— 会估出伪周期（实测 500 点趋势序列报 2032 个点）",
+        "score": "STL 残差多少个残差 MAD",
+        "needs": "真实周期",
+    },
+    "trend_residual_iqr": {
+        "good_for": "线性趋势",
+        "bad_for": "非线性趋势；强周期",
+        "score": "去趋势后残差多少个 IQR",
+        "needs": "趋势近似线性",
+    },
+    "theil_sen": {
+        "good_for": "线性趋势 + 有离群点",
+        "bad_for": "非线性趋势；强周期",
+        "score": "Theil-Sen 残差多少个 MAD",
+        "needs": "趋势近似线性；点数 ≥ 8",
+    },
+    "event_count": {
+        "good_for": "稀疏事件，看「多久发生一次」",
+        "bad_for": "单点幅度爆发（1 次和 10 次被当成一样）；连续值",
+        "score": "窗口内非零点数相对泊松期望的累计概率",
+        "needs": "0 与非 0 有业务含义",
+    },
+    "poisson_count": {
+        "good_for": "计数型指标（每分钟 error 数、重试数）",
+        "bad_for": "非整数（率、延迟、金额）；强过度离散",
+        "score": "计数值相对泊松期望的累计概率",
+        "needs": "非负整数",
+    },
+    "zero_inflated_iqr": {
+        "good_for": "大部分为 0、非零是有幅度的值（交易额、消息大小）",
+        "bad_for": "非零点太少（<30，幅度估不准）；连续值",
+        "score": "非零部分偏离中位数多少个非零 IQR",
+        "needs": "非零样本 ≥ 30",
+    },
+    "chronos": {
+        "good_for": "没有历史基线的冷启动",
+        "bad_for": "慢（秒级/序列）；分数是 [0,1] 相对量；窗口短于 8 点",
+        "score": "预测区间越界的相对程度",
+        "needs": "本地权重 + 足够上下文",
+    },
+    "auto": {
+        "good_for": "不确定用哪个算法时",
+        "bad_for": "要求算法固定可复现的场景（逐窗会换算法）",
+        "score": "取决于当窗选中的算法",
+        "needs": "无",
+    },
+}
+
+
 #: 能给出基线的检测器 —— 只有它们支持「只报偏低」
 DIRECTION_BOTH_DETECTORS = {
     "iqr",
@@ -306,6 +389,7 @@ def detector_catalog() -> list[dict]:
             "reason": None,
             "slow": False,
             "direction": "both",
+            "guide": DETECTOR_GUIDE[AUTO_DETECTOR],
         }
     ]
     for name in DETECTOR_FACTORIES:
@@ -321,6 +405,7 @@ def detector_catalog() -> list[dict]:
                 "reason": reason,
                 "slow": name in SLOW_DETECTORS,
                 "direction": "both" if name in DIRECTION_BOTH_DETECTORS else "above",
+                "guide": DETECTOR_GUIDE.get(name, {}),
             }
         )
     return rows

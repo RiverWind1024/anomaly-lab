@@ -44,6 +44,17 @@ def test_catalog_contract():
             assert key in body["jobs"][0]
 
 
+def test_catalog_每个算法都有适用性说明():
+    """前端只在悬停时展示这些说明 —— 缺了就是一片空白，用户看不到失效条件。"""
+    client = TestClient(create_app())
+    catalog = client.get("/api/platform/catalog").json()
+    for det in catalog["detectors"]:
+        guide = det.get("guide") or {}
+        assert guide.get("good_for"), det["name"]
+        assert guide.get("bad_for"), det["name"]
+        assert guide.get("score"), det["name"]
+
+
 def test_alerts_contract():
     """告警中心的事件字段 —— 前端 types.ts 是手写的，这里防漂移。"""
     client = TestClient(create_app())
