@@ -9,6 +9,9 @@
     - 零值 >75%：IQR = q75 − q25 = 0
     - 零值 >50%：MAD = median(|x − med|) = 0（比 IQR 更早失效）
     - std 在零膨胀数据上仍有值（10% 非零、幅度 25 → std ≈ 7.5）
+
+⚠️ 别和 `detectors/robust.py::robust_scale` 搞混：那个只返回 MAD（退化用 std）的 float，
+   是本模块降级链的一个子集；需要逐点降级或想知道「用的是哪一档」时用本模块。
 """
 
 from __future__ import annotations
@@ -66,8 +69,9 @@ def robust_scale(values: np.ndarray, *, prefer: str = "iqr") -> ScaleEstimate:
     candidates = _candidates(values)
     floor = numeric_floor(values)
     for name in _ordered(prefer):
-        if candidates[name] > floor:
-            return ScaleEstimate(candidates[name], name, candidates)
+        value = candidates[name]
+        if np.isfinite(value) and value > floor:
+            return ScaleEstimate(value, name, candidates)
     return ScaleEstimate(0.0, "none", candidates)
 
 
@@ -100,8 +104,14 @@ def pick_scale(
 
 
 def majority_source(source: np.ndarray) -> str:
-    """逐点来源 → 一个代表值（忽略 none）。"""
+    """逐点来源 → 一个代表值。
+
+    ⚠️ 可判的点**不到一半**时返回 `"none"` ——
+       否则「90% 的点算不出尺度」会被报成 `ok`，又是一次静默失效。
+       前缀 NaN（滚动窗口的 `shift(1)`）会拉低可判比例，这是有意的：
+       可判点不足一半时，本来就不该声称这段序列「正常」。
+    """
     values = [item for item in source if item != "none"]
-    if not values:
+    if not values or len(values) * 2 < len(source):
         return "none"
     return Counter(values).most_common(1)[0][0]

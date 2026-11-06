@@ -1,6 +1,7 @@
 """尺度降级链：IQR → MAD → std → 不可判。"""
 
 import numpy as np
+import pytest
 
 from anomaly_lab.detectors.scale import majority_source, pick_scale, robust_scale
 
@@ -72,3 +73,47 @@ def test_majority_source忽略none():
     source = np.array(["none", "iqr", "iqr", "std"], dtype=object)
     assert majority_source(source) == "iqr"
     assert majority_source(np.array(["none", "none"], dtype=object)) == "none"
+
+
+def test_robust_scale不返回inf():
+    # ⚠️ 超大值会让 std 溢出成 inf；inf > floor 成立，
+    #    旧实现会返回 value=inf，于是 score = 偏差 / inf = 0 ——
+    #    又变回「算不出来当成正常」。必须跳过 inf 继续降级。
+    values = np.array([0.0, 1e308, -1e308, 1.0])
+    with np.errstate(over="ignore"):
+        est = robust_scale(values, prefer="std")
+    assert est.source == "iqr"
+    assert np.isfinite(est.value)
+
+
+def test_mad来源时带1_4826系数():
+    values = np.array([0.0, 1.0, 2.0, 3.0, 4.0, 100.0])
+    est = robust_scale(values, prefer="mad")
+    assert est.source == "mad"
+    assert est.value == pytest.approx(
+        np.median(np.abs(values - np.median(values))) * 1.4826
+    )
+
+
+def test_pick_scale忽略非有限候选():
+    scale, source = pick_scale(
+        prefer="iqr",
+        candidates={
+            "iqr": np.array([np.nan, np.inf, 2.0]),
+            "std": np.array([1.0, 1.0, 1.0]),
+        },
+    )
+    assert list(scale) == [1.0, 1.0, 2.0]
+    assert list(source) == ["std", "std", "iqr"]
+
+
+def test_pick_scale的floor压掉数值噪声():
+    _scale, source = pick_scale(
+        prefer="iqr", candidates={"iqr": np.array([1e-13, 1.0])}, floor=1e-12
+    )
+    assert list(source) == ["none", "iqr"]
+
+
+def test_majority_source可判点不足一半时返回none():
+    source = np.array(["none"] * 9 + ["std"], dtype=object)
+    assert majority_source(source) == "none"
