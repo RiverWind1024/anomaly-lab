@@ -3,7 +3,7 @@ PIP := uv pip
 PIP_INDEX ?= https://pypi.tuna.tsinghua.edu.cn/simple
 NPM ?= npm
 
-.PHONY: setup test lint generate classify detect evaluate compare report validate-auto serve smoke platform-demo platform-smoke compliance-check clean \
+.PHONY: setup test lint generate classify detect evaluate evaluate-all compare report validate-auto serve smoke platform-demo platform-smoke compliance-check clean \
 	frontend-install frontend-test frontend-build dev mock-tsdb mock-demo prune \
 	sync-detections lock
 
@@ -39,6 +39,9 @@ detect:
 
 evaluate:
 	$(PY) -m anomaly_lab.cli evaluate --report reports/latest
+
+evaluate-all:
+	$(PY) scripts/evaluate_all.py --out reports/latest
 
 compare:
 	$(PY) -m anomaly_lab.cli compare
