@@ -6,6 +6,7 @@ import { ScaleStatusTags } from './ScaleStatusTags'
 import { detectorLabel } from '../../lib/detectorLabels'
 import { DetectionConclusion } from './ClassificationCard'
 import { PreviewChart } from './PreviewChart'
+import { DecisionTraceTimeline } from '../evaluation/DecisionTraceTimeline'
 
 export interface PreviewPanelProps {
   isLoading: boolean
@@ -92,6 +93,11 @@ export function PreviewPanel({ isLoading, error, preview, onRun, running = false
             criticalThreshold={p.critical_threshold}
             levels={p.levels}
           />
+
+          {/* 决策链：数据质量 → 能力探测 → 形态判断 → 算法选择 → 阈值与分级 → 结果 */}
+          {p.decision && Object.keys(p.decision).length > 0 ? (
+            <DecisionTraceTimeline trace={p.decision} />
+          ) : null}
         </div>
       )}
     </StateBoundary>

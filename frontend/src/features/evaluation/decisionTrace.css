@@ -1,0 +1,34 @@
+/* 决策链时间线 —— 结论一行，原始数字折叠。颜色一律取 tokens.css 的变量。 */
+
+.decision-trace {
+  list-style: none;
+  margin: var(--space-3) 0 0;
+  padding: 0;
+}
+
+.decision-trace__step {
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.decision-trace__step strong {
+  margin-right: var(--space-3);
+}
+
+.decision-trace__step--warn strong {
+  color: var(--status-p1);
+}
+
+.decision-trace__summary {
+  color: var(--text-secondary);
+}
+
+.decision-trace__step details {
+  margin-top: var(--space-1);
+}
+
+.decision-trace__step pre {
+  margin: var(--space-1) 0 0;
+  max-height: 240px;
+  overflow: auto;
+}

@@ -386,6 +386,16 @@ export interface SeriesEntry {
   file: string | null
 }
 
+/** 一次检测的决策链。各段按需存在，老数据可能没有。 */
+export interface DecisionTraceData {
+  quality?: Record<string, unknown>
+  capability?: Record<string, unknown>
+  classify?: Record<string, unknown>
+  select?: Record<string, unknown>
+  threshold?: Record<string, unknown>
+  detect?: Record<string, unknown>
+}
+
 export interface Preview {
   run_id: number
   job_id: number
@@ -430,6 +440,8 @@ export interface Preview {
   alert_rules: AlertRule[]
   levels: string[]
   series: SeriesEntry[]
+  /** 决策链；老数据没有这个字段（或为 `{}`），前端整块不渲染。 */
+  decision?: DecisionTraceData
 }
 
 // ─────────────────────────────────────────── 多算法对比 /api/platform/jobs/{id}/compare
