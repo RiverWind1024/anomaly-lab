@@ -13,7 +13,7 @@ from anomaly_lab.platform.timeutil import to_iso, utcnow
 from anomaly_lab.web.app import create_app
 
 
-def _make_job(tmp_path, *, detector="iqr"):
+def _make_job(tmp_path, *, detector="iqr", alert_direction="both"):
     """⚠️ tests/ 不是 package，不能跨文件 import helper —— 就地复制建库代码。"""
     store = PlatformStore(tmp_path / "platform.db")
     source = store.add_source("local", "platform/source.db")
@@ -32,6 +32,7 @@ def _make_job(tmp_path, *, detector="iqr"):
         critical_threshold=4.0,
         window_points=60,
         interval_seconds=300,
+        alert_direction=alert_direction,
     )
     return store, job.id
 
@@ -106,6 +107,23 @@ def test_iqr退化到std会被标记为降级(tmp_path):
     assert body["scale_source"] == "std"
     assert body["status"] == "ok"
     assert body["scale_fallback"] is True
+
+
+def test_预览返回告警方向是否真的生效(tmp_path):
+    """⚠️ 配置了「只报偏低」但算法无基线时，必须让用户看到「没生效」。
+
+    `poisson_count` 没有 `bands()`，`direction="below"` 一条都不会报 ——
+    如果 preview 不返回 `direction_applied`，用户只会看到 0 告警。
+    """
+    store, job_id = _make_job(
+        tmp_path, detector="poisson_count", alert_direction="below"
+    )
+    _write_series(tmp_path, np.array([0, 0, 1, 0, 2, 0, 1, 0, 0, 3] * 6, dtype=float))
+    execute_job(store, job_id, data_root=tmp_path)
+
+    body = _client(store, tmp_path).get(f"/api/platform/jobs/{job_id}/preview").json()
+    assert body["alert_direction"] == "below"
+    assert body["direction_applied"] is False
 
 
 def test_老产物缺少新字段时回落默认值(tmp_path):

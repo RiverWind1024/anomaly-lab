@@ -87,6 +87,8 @@ class TheilSenTrendDetector(TimedDetector):
 
     name = "theil_sen"
     score_type = "zscore"
+    #: 残差尺度首选 MAD（稳健）；退化时走 `scale.py` 的降级链
+    prefer_scale = "mad"
     #: 默认阈值 **3.5**（不是统计族常看的 2.5）。
     #:
     #: ⚠️ 这是**实测出来的**，不是拍的 ——
@@ -113,35 +115,42 @@ class TheilSenTrendDetector(TimedDetector):
     def score(self, series: SeriesBundle) -> np.ndarray:
         values = np.asarray(series.values, dtype=float)
         _, residual, scale = self._parts(values)
+        if scale <= 0:
+            # 尺度不可判 —— 返回 0 分，由 `_last_status` 标出来
+            self._last_status = "undetermined"
+            return np.zeros_like(values)
+        self._last_status = "ok"
         with np.errstate(divide="ignore", invalid="ignore"):
             scores = np.abs(residual) / scale
-        # ⚠️ **NaN 不能悄悄变成 0** ——
-        #    尺度退化为 0 时「分数算不出来」，不是「一切正常」。
-        #    这里用 0 标不出来（会让界面显示「正常」），
-        #    所以保留 NaN，让上层看到「无法判定」。
-        #    （`iqr` 那边的 `→ 0.0` 是已知缺陷，见 ROADMAP 的静默失效待办。）
-        return scores
+        return np.where(np.isfinite(scores), scores, 0.0)
 
     def _parts(self, values: np.ndarray) -> tuple[np.ndarray, np.ndarray, float]:
         """返回 (趋势线, 残差, 残差尺度)。结果缓存，score 与 bands 共用。"""
         cached = self._cache
         if cached is not None and np.array_equal(cached[0], values):
+            # ⚠️ 缓存命中也要恢复尺度来源 —— `_timed_detect` 每次开始前都会清空它，
+            #    否则同一个检测器重复检测同一条序列时 `scale_source` 会变成 None。
+            self._last_scale_source = cached[4]
             return cached[1], cached[2], cached[3]
+
+        from anomaly_lab.detectors.scale import numeric_floor, robust_scale
 
         # ⚠️ **趋势用清洗值估，残差用原始值** —— 异常点必须留在残差里
         trend = theil_sen_trend(winsorize(values))
         residual = values - trend
 
-        center = float(np.median(residual))
-        scale = float(np.median(np.abs(residual - center))) * 1.4826
-        if scale <= 0:
-            # ⚠️ 尺度退化（残差几乎全是同一个值）—— 用标准差兜底，
-            #    别让分数除以 0 变成 inf/NaN。
-            scale = float(np.std(residual))
-        if scale <= 0:
-            scale = np.nan
+        # ⚠️ 输入本身没有可分辨的波动（死传感器 / 常数）：
+        #    残差全是浮点噪声，不能当尺度 —— 否则会报一堆假告警。
+        if np.ptp(values) <= numeric_floor(values):
+            self._last_scale_source = "none"
+            self._cache = (values.copy(), trend, residual, 0.0, "none")
+            return trend, residual, 0.0
 
-        self._cache = (values.copy(), trend, residual, scale)
+        est = robust_scale(residual, prefer="mad")
+        self._last_scale_source = est.source
+        scale = est.value if est.source != "none" else 0.0
+
+        self._cache = (values.copy(), trend, residual, scale, est.source)
         return trend, residual, scale
 
     def bands(self, series: SeriesBundle, threshold: float) -> Bands:

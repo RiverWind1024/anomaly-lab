@@ -42,6 +42,11 @@ def test_新检测器的首选尺度():
         assert rows[name]["prefer_scale"] is None, name
 
 
+def test_theil_sen声明首选尺度():
+    """`theil_sen` 走 `robust_scale(prefer="mad")` —— 不声明的话降级不可见。"""
+    assert _rows()["theil_sen"]["prefer_scale"] == "mad"
+
+
 def test_新检测器都有中文标签():
     rows = _rows()
     for name in NEW_DETECTORS:

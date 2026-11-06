@@ -10,7 +10,7 @@ def test_高零值比例不推荐iqr():
 
 
 def test_稀疏事件首选事件计数():
-    # ⚠️ 合成评测集上 event_count 的点级 F1（0.215）高于 poisson_count（0.161）——
+    # ⚠️ 合成评测集上 event_count 的点级 F1 明显高于 poisson_count——
     #    零值 95%+ 时先看「有没有发生」，比直接拿值做泊松检验更稳。
     #    poisson_count 仍是次选，手动可切。
     rec = recommend_for("sparse_event")

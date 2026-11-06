@@ -59,6 +59,7 @@
 | Seasonal | zscore | 同相位组内 `|x - median| / MAD` | 2.5 | 周期自动检测（FFT + ACF） |
 | STLResidual | residual_ratio | `|resid| / resid_MAD` | 3.5 | STL 需 statsmodels；周期自动检测 |
 | TrendResidualIQR（旧名 DeseasonalizedIQR） | zscore | 去线性趋势后的 IQR 分数 | 2.5 | 适合趋势/阶梯 |
+| TheilSen | zscore | `|resid| / resid_MAD`（Theil-Sen 趋势线） | 3.5 | 尖峰拉不歪趋势线；残差尺度首选 MAD |
 | ChangePoint | prob | `1 - p`（滑窗双样本 t 检验） | 0.99 | 高召回、低精度 |
 | EventCount | prob | `P(泊松基线 < 实际窗口计数)` | 0.99 | 适合稀疏事件；**因果窗口**，只在事件点告警 |
 | PoissonCount | prob | `max(P(泊松 < 本点值), P(泊松 < 窗口累计))` | 0.99 | 计数型；区分「1 次」与「10 次」；零值点不判 |

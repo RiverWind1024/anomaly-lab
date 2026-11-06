@@ -28,8 +28,10 @@ class Capability:
     looks_like_counts: bool
     scale_probe: dict[str, float]
     verdict: str                      # ok / unsuitable / undetermined
-    #: `looks_like_counts` 的对外别名：泊松 / 事件计数类算法是否适用。
+    #: 泊松 / 事件计数类算法是否适用（非负整数即可，允许全非零）。
     #: 前端在选中 poisson_count / event_count 时用它提示「数据不是计数」。
+    #: ⚠️ 与 `looks_like_counts` 不同：后者要求「含零」（稀疏计数），
+    #:    只用于 zscore 的「近似泊松」警告。
     count_ready: bool = False
     warnings: list[CapabilityWarning] = field(default_factory=list)
     message: str = ""
@@ -54,18 +56,22 @@ def probe(values: np.ndarray) -> Capability:
     est = robust_scale(v)
     probe_scales = dict(est.probe)
     floor = numeric_floor(v)
-    looks_like_counts = bool(
+    #: 非负整数 —— 泊松类算法的输入要求
+    nonneg_int = bool(
         n_nonzero > 0
         and np.all(v >= 0)
         and np.all(np.equal(np.mod(v, 1), 0))
-        and n_nonzero < n
     )
+    #: 稀疏计数（含零）—— zscore 的「近似泊松」警告用这个
+    looks_like_counts = bool(nonneg_int and n_nonzero < n)
+    #: 泊松类算法可用 —— 只要是非负整数（含全非零）
+    count_ready = nonneg_int
 
     # ⚠️ `none` 意味着所有候选都低于浮点噪声 —— 不是「没算出尺度」，是「没有可分辨的变化」。
     if est.source == "none":
         return Capability(
             n, zero_ratio, n_nonzero, looks_like_counts, probe_scales,
-            "undetermined", count_ready=looks_like_counts,
+            "undetermined", count_ready=count_ready,
             message="整段没有可分辨的变化（或全为 0），无法判定",
         )
 
@@ -102,10 +108,10 @@ def probe(values: np.ndarray) -> Capability:
     if not warnings:
         return Capability(
             n, zero_ratio, n_nonzero, looks_like_counts, probe_scales, "ok",
-            count_ready=looks_like_counts,
+            count_ready=count_ready,
         )
     return Capability(
         n, zero_ratio, n_nonzero, looks_like_counts, probe_scales,
-        "unsuitable", count_ready=looks_like_counts, warnings=warnings,
+        "unsuitable", count_ready=count_ready, warnings=warnings,
         message="；".join(w.reason for w in warnings),
     )

@@ -672,6 +672,14 @@ runner 写库时就把连续告警点合并成区间存下来了，
 ⚠️ 保留策略 prune 掉运行目录时，`alert_events` 的行跟着外键级联删 ——
 告警历史与运行历史同生共死。
 
+## 决策链
+
+每条序列的检测结果都随 run 落盘一份「决策链」—— 记录当时实际看到的数据质量、能力探测、形态分类、算法选择、阈值/尺度与检出数量，**读取时不重算**：
+
+- 落库：`run_series.decision_json`（一次运行的 `index.json` 里每条序列的 `decision` 字段同源）；
+- 预览：`GET /api/platform/jobs/{id}/preview` 原样返回 `decision`；
+- 数据不足时只有 `quality` + `capability` 两段，不编造 `select` / `threshold`。
+
 ## 基线与告警分级
 
 平台只接受能给出上下界的算法：`iqr` / `mad` / `zscore` / `seasonal` / `stl_residual` /

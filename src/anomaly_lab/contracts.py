@@ -87,8 +87,10 @@ class DetectionResult:
     upper: np.ndarray | None = None
     band_kind: BandKind | None = None
     scale_source: str | None = None
-    """这一窗实际用的尺度：iqr / mad / std / none。
+    """这一窗实际用的尺度：iqr / mad / std / poisson / none。
 
+    ⚠️ `poisson` 是 `event_count` / `poisson_count` 的尺度来源 ——
+       它们用泊松基线估期望与离散度，不走 iqr/mad/std 降级链。
     ⚠️ 降级必须**可见** —— 否则「用 std 兜底」也是一种静默。
     """
 

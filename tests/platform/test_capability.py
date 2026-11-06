@@ -76,7 +76,7 @@ def test_76百分比零才报iqr失效():
     assert "iqr" in names
 
 
-def test_count_ready_是计数判定的对外别名():
+def test_count_ready_在稀疏计数上与looks_like_counts一致():
     counts = probe(np.array([0, 0, 1, 0, 2, 0, 0, 1, 0, 10], dtype=float))
     assert counts.looks_like_counts is True
     assert counts.count_ready is True
@@ -84,6 +84,14 @@ def test_count_ready_是计数判定的对外别名():
     continuous = probe(np.random.default_rng(0).normal(10, 2, 500))
     assert continuous.looks_like_counts is False
     assert continuous.count_ready is False
+
+
+def test_全为正整数的序列也算计数型():
+    values = np.array([1, 3, 2, 5, 4, 2, 6, 1, 3, 2] * 10, dtype=float)
+    cap = probe(values)
+    assert cap.count_ready is True
+    # 但它不属于「稀疏计数」（没有零），zscore 的泊松警告不该出现
+    assert cap.looks_like_counts is False
 
 
 def test_catalog_每个检测器都带首选尺度():

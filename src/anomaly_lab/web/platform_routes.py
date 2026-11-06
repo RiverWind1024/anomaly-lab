@@ -784,7 +784,8 @@ def build_router(
                 "critical_threshold": job.critical_threshold,
                 "alert_rules": job.alert_rules,
                 "levels": ["正常"],
-                # 数据不足时决策链只有 quality + capability —— index.json 里已有的就是那段
+                "alert_direction": "both",
+                "direction_applied": True,                # 数据不足时决策链只有 quality + capability —— index.json 里已有的就是那段
                 "decision": entry.get("decision") or {},
                 "series": entries,
             }
@@ -847,6 +848,8 @@ def build_router(
             "critical_threshold": float(payload["critical_threshold"]),
             "alert_rules": json.loads(str(payload["alert_rules"])),
             "levels": json.loads(str(payload["levels"])),
+            "alert_direction": entry.get("alert_direction", "both"),
+            "direction_applied": bool(entry.get("direction_applied", True)),
             # 决策链 —— 与当时落库的那份一致，不在读的时候重算。
             "decision": entry.get("decision") or {},
             "series": entries,

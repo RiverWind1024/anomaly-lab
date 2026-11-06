@@ -146,16 +146,52 @@ def test_outlier_stays_in_the_residual():
     assert scores[250] > 3.5
 
 
-def test_degenerate_scale_does_not_silently_become_zero():
-    """⚠️ **尺度退化为 0 时不能假装「一切正常」**。
+def test_常数序列标记为无法判定():
+    """尺度不可判 = 「无法判定」，不是「一切正常」。
 
-    残差全是同一个值 → 尺度是 0 → 分数算不出来。
-    把它变成 0 会让界面显示「正常」，那是**假的**。
-    （`iqr` 那边有同样的缺陷，见 ROADMAP 的静默失效待办。）
+    分数可以返回 0（NaN 不是合法 JSON），但 `status` 必须是 `undetermined`。
     """
-    values = np.full(100, 5.0)
-    scores = TheilSenTrendDetector().fit(_series(values)).score(_series(values))
-    assert not np.any(np.isfinite(scores)), "尺度退化时分数应该是 NaN（无法判定），不是 0"
+    series = SeriesBundle(
+        "s",
+        np.full(200, 5.0),
+        np.arange(200).astype("datetime64[m]"),
+        "1min",
+    )
+    result = TheilSenTrendDetector().detect(series)
+    assert result.status == "undetermined"
+    assert result.scale_source == "none"
+    assert not result.is_anomaly.any()
+    assert (result.scores == 0).all()
+
+
+def test_死传感器的浮点噪声不算尺度():
+    """⚠️ 1e-16 量级的波动是浮点噪声，不是信号 —— 不能拿它当尺度报假告警。"""
+    values = 5.0 + 1e-16 * np.arange(200)
+    series = SeriesBundle(
+        "s",
+        values,
+        np.arange(200).astype("datetime64[m]"),
+        "1min",
+    )
+    result = TheilSenTrendDetector().detect(series)
+    assert result.status == "undetermined"
+    assert not result.is_anomaly.any()
+
+
+def test_正常趋势用mad且不报降级():
+    """正向路径：有真实波动时首选 MAD，且不是降级。"""
+    rng = np.random.default_rng(0)
+    values = np.linspace(0, 100, 300) + rng.normal(0, 1, 300)
+    series = SeriesBundle(
+        "s",
+        values,
+        np.arange(300).astype("datetime64[m]"),
+        "1min",
+    )
+    result = TheilSenTrendDetector().detect(series)
+    assert result.scale_source == "mad"
+    assert result.status == "ok"
+    assert result.scale_fallback is False
 
 
 # ---------- 与改名后的旧算法对比 ----------
