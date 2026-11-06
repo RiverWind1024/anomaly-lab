@@ -10,6 +10,7 @@ from anomaly_lab.detectors.bands import Bands
 from anomaly_lab.detectors.base import TimedDetector
 from anomaly_lab.detectors.period import detect_period, usable_period
 from anomaly_lab.detectors.robust import winsorize
+from anomaly_lab.detectors.scale import majority_source, numeric_floor, pick_scale
 
 #: 周期拿不准时的兜底值（点数）
 DEFAULT_PERIOD = 24
@@ -17,6 +18,10 @@ DEFAULT_PERIOD = 24
 
 class _WindowedDetector(TimedDetector):
     score_type = "zscore"
+    #: 降级链的起点
+    prefer_scale = "iqr"
+    #: 最近一次 `_center_scale` 实际用的尺度来源（iqr / mad / std / none）
+    _last_scale_source: str | None = None
 
     def __init__(self, k: float, window: int | None = None) -> None:
         self.k = float(k)
@@ -27,6 +32,7 @@ class _WindowedDetector(TimedDetector):
         return self
 
     def _center_scale(self, values: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """返回 `(center, scale)`；**同时**把来源写进 `_last_scale_source`。"""
         raise NotImplementedError
 
     def score(self, series: SeriesBundle) -> np.ndarray:
@@ -34,8 +40,9 @@ class _WindowedDetector(TimedDetector):
         center, scale = self._center_scale(values)
         with np.errstate(divide="ignore", invalid="ignore"):
             scores = np.abs(values - center) / scale
-        scores = np.where(np.isfinite(scores), scores, 0.0)
-        return scores
+        # NaN 仍然写 0（保持既有分数语义），但 `status` 由 `_last_scale_source` 决定，
+        # 所以「算不出来」不会被当成「一切正常」。
+        return np.where(np.isfinite(scores), scores, 0.0)
 
     def detect(
         self, series: SeriesBundle, threshold: float | None = None
@@ -60,10 +67,28 @@ def _rolling_quantile(values: np.ndarray, window: int, q: float) -> np.ndarray:
     return series.rolling(window=window, min_periods=window).quantile(q).shift(1).to_numpy()
 
 
+def _rolling_std(values: np.ndarray, window: int) -> np.ndarray:
+    # ⚠️ ddof=0 必须与整段的 `np.std` 一致，否则正常数据的分数会变
+    return (
+        pd.Series(values).rolling(window, min_periods=window)
+        .std(ddof=0).shift(1).to_numpy()
+    )
+
+
+def _rolling_mad(values: np.ndarray, window: int) -> np.ndarray:
+    med = _rolling_quantile(values, window, 0.5)
+    abs_dev = np.abs(values - med)
+    return (
+        pd.Series(abs_dev).rolling(window, min_periods=window)
+        .median().shift(1).to_numpy() * 1.4826
+    )
+
+
 class IQRDetector(_WindowedDetector):
     """|x - median| / IQR，阈值即经典 IQR 围栏倍数。"""
 
     name = "iqr"
+    prefer_scale = "iqr"
 
     def __init__(self, k: float = 2.5, window: int | None = None) -> None:
         super().__init__(k=k, window=window)
@@ -71,20 +96,36 @@ class IQRDetector(_WindowedDetector):
     def _center_scale(self, values: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         if self.window is None:
             center = np.full_like(values, np.median(values))
-            q1, q3 = np.percentile(values, [25, 75])
-            scale = np.full_like(values, q3 - q1)
+            med = np.median(values)
+            cand = {
+                "iqr": np.full_like(
+                    values, np.percentile(values, 75) - np.percentile(values, 25)
+                ),
+                "mad": np.full_like(values, np.median(np.abs(values - med)) * 1.4826),
+                "std": np.full_like(values, np.std(values)),
+            }
         else:
             center = _rolling_quantile(values, self.window, 0.5)
-            scale = _rolling_quantile(values, self.window, 0.75) - _rolling_quantile(
-                values, self.window, 0.25
-            )
-        return center, np.where(scale > 0, scale, np.nan)
+            cand = {
+                "iqr": _rolling_quantile(values, self.window, 0.75)
+                - _rolling_quantile(values, self.window, 0.25),
+                "mad": _rolling_mad(values, self.window),
+                "std": _rolling_std(values, self.window),
+            }
+        scale, source = pick_scale(
+            prefer=self.prefer_scale,
+            candidates=cand,
+            floor=numeric_floor(values),
+        )
+        self._last_scale_source = majority_source(source)
+        return center, scale
 
 
 class MADDetector(_WindowedDetector):
     """|x - median| / (1.4826 * MAD)。"""
 
     name = "mad"
+    prefer_scale = "mad"
 
     def __init__(self, k: float = 3.5, window: int | None = None) -> None:
         super().__init__(k=k, window=window)
@@ -92,20 +133,28 @@ class MADDetector(_WindowedDetector):
     def _center_scale(self, values: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         if self.window is None:
             center = np.full_like(values, np.median(values))
-            mad = np.median(np.abs(values - np.median(values))) * 1.4826
-            scale = np.full_like(values, mad)
+            med = np.median(values)
+            cand = {
+                "iqr": np.full_like(
+                    values, np.percentile(values, 75) - np.percentile(values, 25)
+                ),
+                "mad": np.full_like(values, np.median(np.abs(values - med)) * 1.4826),
+                "std": np.full_like(values, np.std(values)),
+            }
         else:
             center = _rolling_quantile(values, self.window, 0.5)
-            abs_dev = np.abs(values - center)
-            scale = (
-                pd.Series(abs_dev)
-                .rolling(window=self.window, min_periods=self.window)
-                .median()
-                .shift(1)
-                .to_numpy()
-                * 1.4826
-            )
-        scale = np.where(scale > 0, scale, np.nan)
+            cand = {
+                "iqr": _rolling_quantile(values, self.window, 0.75)
+                - _rolling_quantile(values, self.window, 0.25),
+                "mad": _rolling_mad(values, self.window),
+                "std": _rolling_std(values, self.window),
+            }
+        scale, source = pick_scale(
+            prefer=self.prefer_scale,
+            candidates=cand,
+            floor=numeric_floor(values),
+        )
+        self._last_scale_source = majority_source(source)
         return center, scale
 
 
@@ -113,6 +162,7 @@ class ZScoreDetector(_WindowedDetector):
     """经典 z 分数：|x - mean| / std。"""
 
     name = "zscore"
+    prefer_scale = "std"
 
     def __init__(self, k: float = 3.0, window: int | None = None) -> None:
         super().__init__(k=k, window=window)
@@ -120,14 +170,21 @@ class ZScoreDetector(_WindowedDetector):
     def _center_scale(self, values: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         if self.window is None:
             center = np.full_like(values, float(np.mean(values)))
-            scale = np.full_like(values, float(np.std(values)))
+            std_values = np.full_like(values, float(np.std(values)))
         else:
             rolling = pd.Series(values).rolling(
                 window=self.window, min_periods=self.window
             )
             center = rolling.mean().shift(1).to_numpy()
-            scale = rolling.std(ddof=0).shift(1).to_numpy()
-        return center, np.where(scale > 0, scale, np.nan)
+            std_values = rolling.std(ddof=0).shift(1).to_numpy()
+        # ZScore 只提供 std —— 不能因为链里有 iqr 就 KeyError
+        scale, source = pick_scale(
+            prefer="std",
+            candidates={"std": std_values},
+            floor=numeric_floor(values),
+        )
+        self._last_scale_source = majority_source(source)
+        return center, scale
 
 
 class SeasonalDetector(TimedDetector):

@@ -50,6 +50,8 @@ def make_result(
     detector: str,
     elapsed_ms: float,
     bands: Bands | None = None,
+    scale_source: str | None = None,
+    status: str = "ok",
 ) -> DetectionResult:
     scores = np.asarray(scores, dtype=float)
     return DetectionResult(
@@ -64,6 +66,8 @@ def make_result(
         lower=None if bands is None else np.asarray(bands.lower, dtype=float),
         upper=None if bands is None else np.asarray(bands.upper, dtype=float),
         band_kind=None if bands is None else bands.kind,
+        scale_source=scale_source,
+        status=status,
     )
 
 
@@ -102,6 +106,13 @@ class TimedDetector:
         chosen = self.default_threshold if threshold is None else float(threshold)
         # 基线是**可选输出**：检测器没实现就返回 None，不影响主流程
         bands = self.bands(series, chosen)
+
+        # 尺度来源由检测器在 `_center_scale` 里写进实例属性 ——
+        # 这样 `make_result` 不必改签名，也能把「降级」暴露到结果里。
+        source = getattr(self, "_last_scale_source", None)
+        status = getattr(self, "_last_status", None) or (
+            "undetermined" if source == "none" else "ok"
+        )
         return make_result(
             series,
             scores,
@@ -110,4 +121,6 @@ class TimedDetector:
             self.name,
             elapsed_ms,
             bands=bands,
+            scale_source=source,
+            status=status,
         )

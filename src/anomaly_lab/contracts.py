@@ -86,6 +86,18 @@ class DetectionResult:
     lower: np.ndarray | None = None
     upper: np.ndarray | None = None
     band_kind: BandKind | None = None
+    scale_source: str | None = None
+    """这一窗实际用的尺度：iqr / mad / std / none。
+
+    ⚠️ 降级必须**可见** —— 否则「用 std 兜底」也是一种静默。
+    """
+
+    status: str = "ok"
+    """ok / undetermined。
+
+    ⚠️ `undetermined` = 数据里没有可用的尺度（全常数序列），
+       不是「一切正常」。前端要显示成「无法判定」。
+    """
 
     def __post_init__(self) -> None:
         if len(self.scores) != len(self.is_anomaly):

@@ -117,3 +117,37 @@ def test_pick_scale的floor压掉数值噪声():
 def test_majority_source可判点不足一半时返回none():
     source = np.array(["none"] * 9 + ["std"], dtype=object)
     assert majority_source(source) == "none"
+
+
+def test_iqr在零膨胀数据上不再恒为0分():
+    from anomaly_lab.contracts import SeriesBundle
+    from anomaly_lab.detectors.statistical import IQRDetector
+
+    values = np.zeros(200)
+    values[50] = 25.0
+    values[150] = 25.0
+    series = SeriesBundle(
+        series_id="s",
+        values=values,
+        timestamps=np.arange(200).astype("datetime64[m]"),
+        freq="1min",
+    )
+    result = IQRDetector(k=2.5).detect(series)
+    assert result.scale_source == "std"
+    assert result.scores[50] > 2.5          # 必须能报出来
+    assert result.scores[0] == 0.0
+
+
+def test_全常数序列标记为无法判定():
+    from anomaly_lab.contracts import SeriesBundle
+    from anomaly_lab.detectors.statistical import IQRDetector
+
+    series = SeriesBundle(
+        series_id="s",
+        values=np.full(100, 7.0),
+        timestamps=np.arange(100).astype("datetime64[m]"),
+        freq="1min",
+    )
+    result = IQRDetector().detect(series)
+    assert result.status == "undetermined"
+    assert not result.is_anomaly.any()
