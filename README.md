@@ -3,7 +3,7 @@
 [![Python](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
 [![Node](https://img.shields.io/badge/node-20-339933)](https://nodejs.org/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-1219%20passed-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-1350%20passed-brightgreen)]()
 
 一个端到端的时序异常检测实验室：**合成数据 → 形态分类 → 算法推荐 → 多类检测器 → 离线评测 → 回归报告 → Web 演示**，外加一条**平台切片**：SQLite / HTTP 数据源 → SQL 指标 → 定时拉取 → 基线/上下界 → P1/P0 分级 → 前端预览。
 
@@ -137,8 +137,8 @@ MOCK_TSDB=1 make dev
 测试（CI 每次推送都跑，见 `.github/workflows/ci.yml`）：
 
 ```bash
-.venv/bin/python -m pytest -p no:warnings   # 后端 810 passed
-cd frontend && npx vitest run                # 前端 409 passed / 48 files
+.venv/bin/python -m pytest -p no:warnings   # 后端 902 passed
+cd frontend && npx vitest run                # 前端 448 passed / 54 files
 ```
 
 ⚠️ `torch` / `chronos` 是**可选依赖**：没装时相关用例自动跳过，
@@ -226,9 +226,21 @@ cd frontend && npx vitest run                # 前端 409 passed / 48 files
 | 统计 | `theil_sen` | Theil-Sen 稳健趋势线（点对斜率中位数）+ 残差 MAD |
 | 统计 | `trend_residual_iqr`（旧名 DeseasonalizedIQR） | 先线性去趋势，再跑 IQR |
 | 统计 | ChangePoint | 滑窗双样本 t 检验，`1 - p` 为概率 |
-| 统计 | EventCount | 窗口非零事件数 vs 泊松基线 |
+| 统计 | EventCount | 窗口非零事件数 vs 泊松基线（**因果窗口**，告警只落在事件点） |
+| 统计 | `poisson_count` | 计数值本身 vs 泊松期望（单点 + 窗口累计上尾，区分「1 次」和「10 次」） |
+| 统计 | `zero_inflated_iqr` | 只用**非零子集**估 IQR —— 零值 >75% 时普通 IQR 的分母会归零 |
 | 自训深度 | TCN / LSTM | 一维重构自编码器，重构误差归一为概率 |
 | 预训练 | Chronos | 分位数预测区间的越界程度（权重不可用时跳过） |
+
+### 尺度降级链：算不出来时不能假装「一切正常」
+
+稳健检测器的分数是 `|x − center| / scale`。零膨胀数据上 `scale` 会变成 0，
+除零得到 NaN —— 如果把它写成 0 分，界面就会显示「一切正常」，而实际上**什么都没算出来**。
+
+所以所有尺度型检测器共用一条降级链：**IQR → MAD → std → 不可判**。
+每一档都有明确的失效边界（零值 >75% 时 IQR=0；>50% 时 MAD 更早归零），
+降级与「不可判」都会写进结果（`scale_source` / `scale_fallback` / `status`），
+前端显示成「尺度降级」或「无法判定」，绝不静默。
 
 ### 基线三件套：分数之外，还要说「正常值在哪儿」
 
@@ -308,7 +320,9 @@ print(diff_reports("reports/iteration/before/report.json",
 - 任务自己配告警规则：一张「条件 → 等级」表，如 `2.5, P1` / `3.75, P0`（倍数条件），也可混写 `>50, P0`（绝对值条件，只抬不压）。顺序即档位顺序（最后一行最严重），命中多条取最高档；「10 突增到 50 算 P0 还是 P1」没有通用答案，所以交给用户配置。
 - 调度器内置在 `serve` 里，重启后错过的窗口只补跑一次；`--no-scheduler` 可关闭。
 - **检测记录落库**：`run_series`（序列摘要 + 时间范围 + `content_hash`）与 `alert_events`（告警区间）；逐点数组仍留 npz。查询不再扫产物目录（实测 8700 多个目录 → 一条 SQL）。
+- **告警方向**：任务可配「双向 / 只报偏高 / 只报偏低」。方向按「值相对检测器基线」判断，过滤发生在告警层（`severity`）——生产评估用的也是它，所以两侧口径一致。没有基线的计数型算法只能报偏高，界面会禁用「只报偏低」并说明原因。
 - **告警记录**（`/alerts`）：跨任务汇总告警事件，一条事件是一段连续告警点合并成的区间；取各任务最近一次运行的结果，没纳入统计的任务会说明原因。
+- **决策链**：每次运行都记录「数据质量 → 能力探测 → 形态判断 → 算法选择 → 阈值与分级 → 结果」六段，落在 `run_series.decision_json` 并在检测记录里展开；异常路径（算法回退、尺度降级、能力不足）高亮。
 - **删除**：任务 / 指标 / 数据源支持级联删除，run 目录文件一并清理；运行中的任务删不掉（返回 409）。
 - **保留策略**：默认 180 天，最新一次运行永远保留、正在执行的不删；`anomaly-lab prune --dry-run` 先看会删什么。
 

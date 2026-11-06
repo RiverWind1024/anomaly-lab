@@ -58,11 +58,30 @@
 | ZScore | zscore | `|x - mean| / std` | 3.0 | 经典基线 |
 | Seasonal | zscore | 同相位组内 `|x - median| / MAD` | 2.5 | 周期自动检测（FFT + ACF） |
 | STLResidual | residual_ratio | `|resid| / resid_MAD` | 3.5 | STL 需 statsmodels；周期自动检测 |
-| DeseasonalizedIQR | zscore | 去线性趋势后的 IQR 分数 | 2.5 | 适合趋势/阶梯 |
+| TrendResidualIQR（旧名 DeseasonalizedIQR） | zscore | 去线性趋势后的 IQR 分数 | 2.5 | 适合趋势/阶梯 |
 | ChangePoint | prob | `1 - p`（滑窗双样本 t 检验） | 0.99 | 高召回、低精度 |
-| EventCount | prob | `P(泊松基线 < 实际窗口计数)` | 0.99 | 适合稀疏事件 |
+| EventCount | prob | `P(泊松基线 < 实际窗口计数)` | 0.99 | 适合稀疏事件；**因果窗口**，只在事件点告警 |
+| PoissonCount | prob | `max(P(泊松 < 本点值), P(泊松 < 窗口累计))` | 0.99 | 计数型；区分「1 次」与「10 次」；零值点不判 |
+| ZeroInflatedIQR | zscore | 非零子集 `|x - median| / IQR` | 3.0 | 零值不判；非零点 <30 标「无法判定」 |
 | TCN / LSTM | prob | 重构误差 min-max 到 `[0,1]` | 0.5 | 只用干净序列训练 |
 | Chronos | prob | 预测区间越界程度 / 区间宽度 | 0.5 | 权重缺失时跳过 |
+
+## 尺度降级链
+
+所有「`|x − center| / scale`」型检测器共用 `detectors/scale.py` 的降级链：
+
+```
+首选尺度 → 次选 → std → none（不可判）
+```
+
+- IQR：零值 >75% 时 `Q3−Q1 = 0`；
+- MAD：零值 >50% 时更早归零；
+- std：零膨胀数据上仍有值，作为最后一档兜底；
+- none：整段没有可分辨的变化（全常数、或波动低于浮点噪声 `32·eps·max|x|`）。
+
+结果里带 `scale_source`（实际用了哪一档）、`scale_fallback`（是否真的降级）、
+`status`（`ok` / `undetermined`）。**降级与不可判都必须可见** —— 否则
+「用 std 兜底」和「什么都没算出来」都会被读成「一切正常」。
 
 ## 阈值搜索
 
