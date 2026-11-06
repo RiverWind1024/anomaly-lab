@@ -37,7 +37,7 @@ class ObservabilityMiddleware:
 
         obs = get_observability()
         method = str(scope.get("method", ""))
-        obs.registry.inc_gauge("http.inflight", 1.0)
+        obs.inflight_add(1.0)
         started = time.perf_counter()
         status = 500
 
@@ -52,7 +52,7 @@ class ObservabilityMiddleware:
         finally:
             elapsed_ms = (time.perf_counter() - started) * 1000.0
             route = _route_label(scope)
-            obs.registry.inc_gauge("http.inflight", -1.0)
+            obs.inflight_add(-1.0)
             obs.inc("http.requests", method=method, route=route, status=str(status))
             obs.observe_ms("http.request_ms", elapsed_ms, method=method, route=route)
             if status >= 500:

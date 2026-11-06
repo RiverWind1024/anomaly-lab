@@ -166,19 +166,14 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        # 监控采样线程跟着应用起停 —— 测试里建多个 app 也不会留后台线程。
-        observability.start()
         if scheduler is not None:
             scheduler.start()
         yield
         if scheduler is not None:
             scheduler.stop()
-        observability.stop()
+        # 监控指标由 OTel 的 reader 线程导出，关停时 flush 由 CLI 的 atexit 负责。
 
-    observability = configure_observability(
-        data_root=data_root,
-        start_sampler=False,
-    )
+    configure_observability(data_root=data_root)
     app = FastAPI(title="anomaly-lab", lifespan=lifespan)
     # ⚠️ 中间件要在 include_router 之前加：Starlette 的 add_middleware
     #    只能在应用启动前调用，路由顺序不影响它，但保持惯例。

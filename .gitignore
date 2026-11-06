@@ -12,6 +12,7 @@ data/cache/
 data/annotations/
 data/smoke/
 data/platform/
+data/metrics.db
 data/platform_smoke/
 data/mock_tsdb/
 data/lab/

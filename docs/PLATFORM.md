@@ -1148,17 +1148,18 @@ DELETE /api/platform/sources/{source_id}
 |---|---|---|---|
 | `http.requests` / `http.errors` | counter | `method` / `route` / `status` | ASGI 中间件 |
 | `http.request_ms` | histogram | `method` / `route` | 同上 |
-| `http.inflight` | gauge | — | 同上 |
 | `job.runs` | counter | `job` / `status` | `runner._run_job` |
 | `job.duration_ms` | histogram | `job` | `runner.execute_job` |
 | `job.stage_ms` | histogram | `stage`（load / detect / persist） | `runner` |
 | `detector.calls` | counter | `detector` / `status`（ok / fallback / error） | `runner._compute_job` |
 | `detector.duration_ms` | histogram | `detector` | 同上（含 fit + detect + 生成基线） |
 | `scheduler.ticks` / `scheduler.tick_ms` | counter / histogram | — | `Scheduler.tick` |
-| `scheduler.due_jobs` | gauge | — | 同上 |
+| `scheduler.due_jobs` / `scheduler.last_tick_at` | gauge | — | 同上 |
 | `alerts.fired` | counter | `level`（P1 / P0） | `runner._run_job`（按告警**区间**计数） |
-| `process.cpu_percent` / `process.memory_mb` | gauge | — | 60 秒采样线程 |
-| `storage.db_bytes` / `storage.runs_bytes` / `storage.runs_count` | gauge | — | 同上 |
+| `process.cpu_percent` / `process.memory_mb` | ObservableGauge | — | 随导出周期采样 |
+| `storage.db_bytes` / `storage.runs_bytes` / `storage.runs_count` | ObservableGauge | — | 同上 |
+
+「进行中请求数」不在上面 —— 它是瞬时值，由 API 直接读进程内计数，不进历史指标。
 
 ### 为什么标签用路由模板
 
@@ -1166,11 +1167,34 @@ DELETE /api/platform/sources/{source_id}
 不是真实 URL。否则每个 `job_id` 都是一条新时间序列，监控页会被自己的基数拖垮。
 匹配不到路由时记 `<unmatched>`；SPA 兜底路由单独标成「前端页面」。
 
-### 本地存储
+### 存储：自己实现的 SQLite exporter
 
-- 每 60 秒把累计直方图/计数器**差成增量**，写入 `deque(maxlen=360)`（6 小时）；
-- 分位数在桶内做线性插值（桶上界 1ms ~ 5min），不是精确分位；
-- 重启归零，不做持久化 —— 跨重启历史交给外部后端。
+OTel Python SDK 只提供 OTLP 与 Console 两种 exporter，**没有 file / SQLite**。
+`observability/sqlite_exporter.py` 实现了 `MetricExporter`，注册成第二个 reader：
+
+```
+MeterProvider
+├── PeriodicExportingMetricReader(SqliteMetricExporter) → data/metrics.db（30 天）
+└── PeriodicExportingMetricReader(OTLPMetricExporter)   → 外部后端（可选）
+```
+
+关键点：
+
+- **DELTA temporality**：`preferred_temporality` 声明成 DELTA，SDK 自己算增量，
+  exporter 直接存；用 cumulative 的话查询端还要再做一次差分。
+- **两张表**：
+  - `metric_samples(minute, metric, labels, kind, value, count, sum, buckets)` ——
+    只存时间线需要的聚合量，每分钟十几行；
+  - `metric_totals(metric, labels, ...)` —— 全维度累计，只保留最新一行，
+    供算法 / 接口 / 任务统计表使用，不随时间膨胀。
+- **维度裁剪**：`metric_samples` 丢掉 `route`（时间线只看总量），
+  `metric_totals` 保留 `method / route / status / detector / job / level / stage`。
+- **分钟边界**：exporter 在内存里按分钟累加，分钟切换时落库；`force_flush`
+  会把当前分钟也写进去（同一分钟多次 flush 是**增量合并**，不是覆盖）。
+- **保留期**：每小时清理一次 `minute < now - 30d`，用
+  `ANOMALY_MONITOR_RETENTION_DAYS` 调整。
+
+分位数在桶内做线性插值（桶上界 1ms ~ 5min），不是精确分位。
 
 ### 接 OTLP
 
@@ -1179,16 +1203,19 @@ pip install -e '.[otel]'
 ANOMALY_OTEL_ENDPOINT=http://localhost:4318 make serve
 ```
 
-- 不配端点时仍创建真实的 OTel instruments，只是没有 reader，几乎零成本；
-- 配了之后 metrics → `/v1/metrics`、traces → `/v1/traces`
+- 配了端点后 `MeterProvider` 同时挂 SQLite 与 OTLP 两个 reader，temporality 各自独立；
+- metrics → `/v1/metrics`、traces → `/v1/traces`
   （只写 `http://host:4318` 会自动补路径）；
-- 全局 MeterProvider 只设置一次（OTel 的限制），测试里反复建 app 不会打架。
+- 全局 MeterProvider 只设置一次（OTel 的限制），测试里反复建 app 不会打架；
+- 进程退出时 CLI 注册的 atexit 会 flush 一次。
 
 ### 已知边界
 
-- **单进程**：指标是进程内的，`uvicorn --workers > 1` 会各算各的；
-- **采样线程不持久化**：进程被杀时最多丢 60 秒；
-- **没有链路存储**：span 只导出，不在本地页面展示（本地页面看的是决策链，不是 trace）。
+- **单进程**：`uvicorn --workers > 1` 时每个进程各写一个 `metrics.db`，SQLite 会串写；
+- **最多丢一个导出周期（15 秒）**：进程被杀时，内存里还没落库的部分会丢；
+- **没有链路存储**：span 只导出，不在本地页面展示（本地页面看的是决策链，不是 trace）；
+- **exporter 用到 SDK 内部类型**（`opentelemetry.sdk.metrics._internal.instrument`），
+  OTel 大版本升级时要跟着改。
 
 ## 调度语义
 

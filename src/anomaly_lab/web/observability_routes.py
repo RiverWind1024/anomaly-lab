@@ -1,48 +1,123 @@
-"""服务监控 API：把本地指标注册表转成页面要的形状。
+"""服务监控 API：从 SQLite 里读 OTel 导出的指标，组装成页面要的形状。
 
-⚠️ 这组端点回答的是「服务自己现在怎么样」，不是「业务数据有没有异常」——
-   后者是告警与检测记录的事。不要混在一起。
+⚠️ 这里**只读** `metrics.db`，不碰平台业务库 —— 监控数据与业务数据是两套东西，
+   混在一个库里会互相抢写锁。
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+import json
+from collections.abc import Callable, Iterable, Sequence
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from fastapi import APIRouter
 
 from anomaly_lab.observability import get_observability
-from anomaly_lab.observability.registry import MetricsRegistry, parse_key
-from anomaly_lab.platform.timeutil import to_iso, utcnow
+from anomaly_lab.observability.buckets import percentile
+from anomaly_lab.platform.timeutil import utcnow
 
-#: 调度器多久没 tick 就判定为「停滞」。
-#: 默认 poll 是 2 秒，30 秒是留了足够余量的保守阈值。
-SCHEDULER_STALE_SECONDS = 30.0
+#: 调度器多久没导出 tick 就判定为「停滞」。
+SCHEDULER_STALE_SECONDS = 45.0
 
-
-def _groups(registry: MetricsRegistry, name: str) -> Iterator[tuple[dict[str, str], float]]:
-    """按指标名取 (标签, 值)，**严格匹配名字**。
-
-    ⚠️ 只按前缀过滤是不够的：`http.request` 会把 `http.request_ms` 也捞进来。
-    """
-    for key, value in registry.counter_with_prefix(name).items():
-        parsed_name, labels = parse_key(key)
-        if parsed_name == name:
-            yield labels, value
+#: 时间线里每个点固定读这些 gauge。
+_GAUGE_FIELDS = {
+    "process.cpu_percent": "cpu_percent",
+    "process.memory_mb": "memory_mb",
+    "storage.db_bytes": "db_bytes",
+    "storage.runs_bytes": "runs_bytes",
+    "storage.runs_count": "runs_count",
+}
 
 
-def _histograms(registry: MetricsRegistry, name: str) -> Iterator[tuple[dict[str, str], dict]]:
-    for key, summary in registry.histogram_with_prefix(name).items():
-        parsed_name, labels = parse_key(key)
-        if parsed_name == name:
-            yield labels, summary
+def _labels(raw: str | None) -> dict[str, str]:
+    if not raw:
+        return {}
+    try:
+        value = json.loads(raw)
+    except ValueError:
+        return {}
+    return {str(key): str(item) for key, item in value.items()} if isinstance(value, dict) else {}
 
 
-def _sum(registry: MetricsRegistry, name: str) -> float:
-    return sum(value for _labels, value in _groups(registry, name))
+def _buckets(raw: str | None) -> list[int]:
+    if not raw:
+        return []
+    try:
+        value = json.loads(raw)
+    except ValueError:
+        return []
+    return [int(item) for item in value] if isinstance(value, list) else []
 
 
-def _http_table(registry: MetricsRegistry) -> dict:
+def _sum_metric(rows: Iterable[dict], metric: str, **match: str) -> float:
+    total = 0.0
+    for row in rows:
+        if row["metric"] != metric:
+            continue
+        if match and any(_labels(row["labels"]).get(key) != value for key, value in match.items()):
+            continue
+        total += float(row["value"] or 0.0)
+    return total
+
+
+def _merge_histogram(rows: Iterable[dict]) -> tuple[int, list[int], float]:
+    count = 0
+    buckets: list[int] = []
+    total = 0.0
+    for row in rows:
+        count += int(row["count"] or 0)
+        total += float(row["sum"] or 0.0)
+        current = _buckets(row["buckets"])
+        if not buckets:
+            buckets = current
+        else:
+            for index, value in enumerate(current):
+                if index < len(buckets):
+                    buckets[index] += value
+    return count, buckets, total
+
+
+def _timeline(rows: Sequence[dict]) -> list[dict]:
+    by_minute: dict[str, list[dict]] = {}
+    for row in rows:
+        by_minute.setdefault(row["minute"], []).append(row)
+
+    points: list[dict] = []
+    for minute in sorted(by_minute):
+        group = by_minute[minute]
+        latency_count, latency_buckets, _ = _merge_histogram(
+            row for row in group if row["metric"] == "http.request_ms"
+        )
+        point = {
+            "at": f"{minute}:00+00:00",
+            "requests": int(_sum_metric(group, "http.requests")),
+            "errors": int(_sum_metric(group, "http.errors")),
+            "runs": int(_sum_metric(group, "job.runs")),
+            "failed_runs": int(_sum_metric(group, "job.runs", status="failed")),
+            "insufficient_runs": int(
+                _sum_metric(group, "job.runs", status="insufficient_data")
+            ),
+            "alerts": int(_sum_metric(group, "alerts.fired")),
+            "p0": int(_sum_metric(group, "alerts.fired", level="P0")),
+            "p50_ms": percentile(latency_buckets, latency_count, 0.50) if latency_count else None,
+            "p95_ms": percentile(latency_buckets, latency_count, 0.95) if latency_count else None,
+            "p99_ms": percentile(latency_buckets, latency_count, 0.99) if latency_count else None,
+        }
+        for metric, field in _GAUGE_FIELDS.items():
+            point[field] = next(
+                (
+                    float(row["value"])
+                    for row in group
+                    if row["metric"] == metric and row["value"] is not None
+                ),
+                None,
+            )
+        points.append(point)
+    return points
+
+
+def _http_table(totals: Sequence[dict]) -> dict:
     routes: dict[tuple[str, str], dict] = {}
 
     def entry(labels: dict[str, str]) -> dict:
@@ -59,24 +134,37 @@ def _http_table(registry: MetricsRegistry) -> dict:
             },
         )
 
-    for labels, value in _groups(registry, "http.requests"):
-        entry(labels)["count"] += int(value)
-    for labels, value in _groups(registry, "http.errors"):
-        entry(labels)["errors"] += int(value)
-    for labels, summary in _histograms(registry, "http.request_ms"):
-        target = entry(labels)
-        target["avg_ms"] = summary["avg_ms"]
-        target["p95_ms"] = summary["p95_ms"]
+    for row in totals:
+        labels = _labels(row["labels"])
+        if row["metric"] == "http.requests":
+            entry(labels)["count"] += int(row["value"] or 0)
+        elif row["metric"] == "http.errors":
+            entry(labels)["errors"] += int(row["value"] or 0)
+
+    # 延迟按 (method, route) 合并 —— 每个路由一行 histogram
+    latency: dict[tuple[str, str], list[dict]] = {}
+    for row in totals:
+        if row["metric"] != "http.request_ms":
+            continue
+        labels = _labels(row["labels"])
+        latency.setdefault((labels.get("method", ""), labels.get("route", "")), []).append(row)
+    for key, rows in latency.items():
+        count, buckets, total = _merge_histogram(rows)
+        target = routes.get(key)
+        if target is None or count == 0:
+            continue
+        target["avg_ms"] = total / count
+        target["p95_ms"] = percentile(buckets, count, 0.95)
 
     rows = sorted(routes.values(), key=lambda row: row["count"], reverse=True)
     return {
-        "total": int(_sum(registry, "http.requests")),
-        "errors": int(_sum(registry, "http.errors")),
+        "total": int(sum(row["count"] for row in rows)),
+        "errors": int(sum(row["errors"] for row in rows)),
         "routes": rows,
     }
 
 
-def _detector_table(registry: MetricsRegistry) -> list[dict]:
+def _detector_table(totals: Sequence[dict]) -> list[dict]:
     detectors: dict[str, dict] = {}
 
     def entry(name: str) -> dict:
@@ -93,142 +181,136 @@ def _detector_table(registry: MetricsRegistry) -> list[dict]:
             },
         )
 
-    for labels, value in _groups(registry, "detector.calls"):
-        target = entry(labels.get("detector", "<unknown>"))
-        target["calls"] += int(value)
-        status = labels.get("status", "ok")
-        if status == "fallback":
-            target["fallbacks"] += int(value)
-        elif status == "error":
-            target["errors"] += int(value)
-
-    for labels, summary in _histograms(registry, "detector.duration_ms"):
-        target = entry(labels.get("detector", "<unknown>"))
-        target["avg_ms"] = summary["avg_ms"]
-        target["p95_ms"] = summary["p95_ms"]
-        target["p99_ms"] = summary["p99_ms"]
+    for row in totals:
+        labels = _labels(row["labels"])
+        if row["metric"] == "detector.calls":
+            target = entry(labels.get("detector", "<unknown>"))
+            target["calls"] += int(row["value"] or 0)
+            status = labels.get("status", "ok")
+            if status == "fallback":
+                target["fallbacks"] += int(row["value"] or 0)
+            elif status == "error":
+                target["errors"] += int(row["value"] or 0)
+        elif row["metric"] == "detector.duration_ms":
+            target = entry(labels.get("detector", "<unknown>"))
+            count = int(row["count"] or 0)
+            if count:
+                target["avg_ms"] = float(row["sum"] or 0.0) / count
+                buckets = _buckets(row["buckets"])
+                target["p95_ms"] = percentile(buckets, count, 0.95)
+                target["p99_ms"] = percentile(buckets, count, 0.99)
 
     return sorted(detectors.values(), key=lambda row: row["calls"], reverse=True)
 
 
-def _job_table(registry: MetricsRegistry) -> list[dict]:
+def _job_table(totals: Sequence[dict]) -> list[dict]:
     jobs: dict[str, dict] = {}
 
     def entry(name: str) -> dict:
         return jobs.setdefault(
             name,
-            {"job": name, "runs": 0, "failed": 0, "insufficient": 0, "avg_ms": None, "p95_ms": None},
+            {
+                "job": name,
+                "runs": 0,
+                "failed": 0,
+                "insufficient": 0,
+                "avg_ms": None,
+                "p95_ms": None,
+            },
         )
 
-    for labels, value in _groups(registry, "job.runs"):
-        target = entry(labels.get("job", "<unknown>"))
-        target["runs"] += int(value)
-        status = labels.get("status", "success")
-        if status == "failed":
-            target["failed"] += int(value)
-        elif status == "insufficient_data":
-            target["insufficient"] += int(value)
-
-    for labels, summary in _histograms(registry, "job.duration_ms"):
-        target = entry(labels.get("job", "<unknown>"))
-        target["avg_ms"] = summary["avg_ms"]
-        target["p95_ms"] = summary["p95_ms"]
+    for row in totals:
+        labels = _labels(row["labels"])
+        if row["metric"] == "job.runs":
+            target = entry(labels.get("job", "<unknown>"))
+            target["runs"] += int(row["value"] or 0)
+            status = labels.get("status", "success")
+            if status == "failed":
+                target["failed"] += int(row["value"] or 0)
+            elif status == "insufficient_data":
+                target["insufficient"] += int(row["value"] or 0)
+        elif row["metric"] == "job.duration_ms":
+            target = entry(labels.get("job", "<unknown>"))
+            count = int(row["count"] or 0)
+            if count:
+                target["avg_ms"] = float(row["sum"] or 0.0) / count
+                target["p95_ms"] = percentile(_buckets(row["buckets"]), count, 0.95)
 
     return sorted(jobs.values(), key=lambda row: row["runs"], reverse=True)
 
 
-def _stage_table(registry: MetricsRegistry) -> list[dict]:
+def _stage_table(totals: Sequence[dict]) -> list[dict]:
     stages: dict[str, dict] = {}
-    for labels, summary in _histograms(registry, "job.stage_ms"):
+    for row in totals:
+        if row["metric"] != "job.stage_ms":
+            continue
+        labels = _labels(row["labels"])
         stage = labels.get("stage", "<unknown>")
+        count = int(row["count"] or 0)
         stages[stage] = {
             "stage": stage,
-            "count": summary["count"],
-            "avg_ms": summary["avg_ms"],
-            "p95_ms": summary["p95_ms"],
+            "count": count,
+            "avg_ms": (float(row["sum"] or 0.0) / count) if count else None,
+            "p95_ms": percentile(_buckets(row["buckets"]), count, 0.95) if count else None,
         }
-    return sorted(stages.values(), key=lambda row: (row["avg_ms"] or 0), reverse=True)
+    return sorted(stages.values(), key=lambda row: row["avg_ms"] or 0, reverse=True)
 
 
-def _scheduler_section(registry: MetricsRegistry) -> dict:
-    last_tick = registry.gauge_value("scheduler.last_tick_at")
-    alive = False
-    if last_tick is not None:
-        alive = (utcnow().timestamp() - last_tick) < SCHEDULER_STALE_SECONDS
-    tick = next(iter(_histograms(registry, "scheduler.tick_ms")), (None, {}))[1]
-    prune = next(iter(_histograms(registry, "scheduler.prune_ms")), (None, {}))[1]
-    due = registry.gauge_value("scheduler.due_jobs")
+def _current(totals: Sequence[dict], inflight: int) -> dict:
+    def latest(metric: str) -> float | None:
+        values = [
+            float(row["value"])
+            for row in totals
+            if row["metric"] == metric and row["value"] is not None
+        ]
+        return values[-1] if values else None
+
     return {
-        "alive": alive,
-        "ticks": int(_sum(registry, "scheduler.ticks")),
-        "avg_tick_ms": tick.get("avg_ms"),
-        "p95_tick_ms": tick.get("p95_ms"),
-        "due_jobs": int(due) if due is not None else None,
-        "last_tick_at": _ts_iso(last_tick) if last_tick is not None else None,
-        "avg_prune_ms": prune.get("avg_ms"),
+        "cpu_percent": latest("process.cpu_percent"),
+        "memory_mb": latest("process.memory_mb"),
+        "db_bytes": latest("storage.db_bytes"),
+        "runs_bytes": latest("storage.runs_bytes"),
+        "runs_count": latest("storage.runs_count"),
+        "inflight": inflight,
+        "due_jobs": latest("scheduler.due_jobs"),
     }
 
 
-def _ts_iso(epoch_seconds: float) -> str:
-    from datetime import UTC, datetime
-
-    return to_iso(datetime.fromtimestamp(float(epoch_seconds), tz=UTC))
-
-
-def _current_section(registry: MetricsRegistry) -> dict:
-    def gauge(name: str):
-        return registry.gauge_value(name)
-
+def _scheduler_section(totals: Sequence[dict]) -> dict:
+    ticks = [
+        float(row["value"]) for row in totals if row["metric"] == "scheduler.ticks"
+    ]
+    tick_rows = [row for row in totals if row["metric"] == "scheduler.tick_ms"]
+    tick_count, tick_buckets, tick_total = _merge_histogram(tick_rows)
+    last_tick = [
+        float(row["value"])
+        for row in totals
+        if row["metric"] == "scheduler.last_tick_at" and row["value"] is not None
+    ]
+    due = [
+        float(row["value"])
+        for row in totals
+        if row["metric"] == "scheduler.due_jobs" and row["value"] is not None
+    ]
+    last_tick_at = last_tick[-1] if last_tick else None
     return {
-        "cpu_percent": gauge("process.cpu_percent"),
-        "memory_mb": gauge("process.memory_mb"),
-        "db_bytes": gauge("storage.db_bytes"),
-        "runs_bytes": gauge("storage.runs_bytes"),
-        "runs_count": gauge("storage.runs_count"),
-        "inflight": gauge("http.inflight") or 0,
-        "due_jobs": gauge("scheduler.due_jobs"),
+        # ⚠️ 用「最近一次 tick 的时间」判断，而不是线程对象 ——
+        #    监控数据来自另一个进程时（未来多进程），线程对象根本读不到。
+        "alive": bool(
+            last_tick_at is not None
+            and utcnow().timestamp() - last_tick_at < SCHEDULER_STALE_SECONDS
+        ),
+        "ticks": int(ticks[-1]) if ticks else 0,
+        "avg_tick_ms": (tick_total / tick_count) if tick_count else None,
+        "p95_tick_ms": percentile(tick_buckets, tick_count, 0.95) if tick_count else None,
+        "due_jobs": int(due[-1]) if due else None,
+        "last_tick_at": (
+            datetime.fromtimestamp(last_tick_at, tz=UTC).isoformat(timespec="seconds")
+            if last_tick_at is not None
+            else None
+        ),
+        "avg_prune_ms": None,
     }
-
-
-def _timeline(registry: MetricsRegistry, window: int) -> list[dict]:
-    points = registry.points()[-max(1, window) :]
-    rows: list[dict] = []
-    for point in points:
-        counters = {"http.requests": 0, "http.errors": 0, "job.runs": 0, "alerts.fired": 0}
-        failed = 0
-        insufficient = 0
-        p0 = 0
-        for key, value in point.counters.items():
-            name, labels = parse_key(key)
-            if name in counters:
-                counters[name] += int(value)
-            if name == "job.runs" and labels.get("status") == "failed":
-                failed += int(value)
-            if name == "job.runs" and labels.get("status") == "insufficient_data":
-                insufficient += int(value)
-            if name == "alerts.fired" and labels.get("level") == "P0":
-                p0 += int(value)
-        rows.append(
-            {
-                "at": to_iso(point.at),
-                "requests": counters["http.requests"],
-                "errors": counters["http.errors"],
-                "runs": counters["job.runs"],
-                "failed_runs": failed,
-                "insufficient_runs": insufficient,
-                "alerts": counters["alerts.fired"],
-                "p0": p0,
-                "p50_ms": point.latency.get("p50"),
-                "p95_ms": point.latency.get("p95"),
-                "p99_ms": point.latency.get("p99"),
-                "cpu_percent": point.system.cpu_percent,
-                "memory_mb": point.system.memory_mb,
-                "db_bytes": point.system.db_bytes,
-                "runs_bytes": point.system.runs_bytes,
-                "runs_count": point.system.runs_count,
-            }
-        )
-    return rows
 
 
 def build_observability_router(
@@ -241,38 +323,54 @@ def build_observability_router(
         """服务自身状态 + 最近 N 分钟的时序 + 算法/接口/任务统计。
 
         ⚠️ 一次请求返回全页所需 —— 监控页 15 秒刷新一次，
-           拆成五个端点就是五倍请求、五倍慢查询。
+           拆成五个端点就是五倍的请求与查询。
         """
         obs = get_observability()
-        registry = obs.registry
-        window = max(1, min(int(window_minutes), 360))
+        window = max(1, min(int(window_minutes), 24 * 60))
+        since = (utcnow() - timedelta(minutes=window)).strftime("%Y-%m-%dT%H:%M")
+        store = obs.store()
+        totals = store.total_rows()
+        timeline = _timeline(store.timeline_rows(since))
+        info = obs.info()
+
         return {
-            "service": obs.info(),
-            "interval_seconds": obs.loop.interval,
-            "current": _current_section(registry),
-            "timeline": _timeline(registry, window),
-            "http": _http_table(registry),
+            "service": {
+                **info,
+                "sampler_running": bool(timeline),
+                "snapshot_at": timeline[-1]["at"] if timeline else None,
+            },
+            "interval_seconds": info["export_interval_seconds"],
+            "current": _current(totals, info["inflight"]),
+            "timeline": timeline,
+            "http": _http_table(totals),
             "alerts": {
-                "total": int(_sum(registry, "alerts.fired")),
+                "total": int(
+                    sum(
+                        float(row["value"] or 0.0)
+                        for row in totals
+                        if row["metric"] == "alerts.fired"
+                    )
+                ),
                 "p0": int(
                     sum(
-                        value
-                        for labels, value in _groups(registry, "alerts.fired")
-                        if labels.get("level") == "P0"
+                        float(row["value"] or 0.0)
+                        for row in totals
+                        if row["metric"] == "alerts.fired"
+                        and _labels(row["labels"]).get("level") == "P0"
                     )
                 ),
             },
-            "detectors": _detector_table(registry),
-            "jobs": _job_table(registry),
-            "stages": _stage_table(registry),
-            "scheduler": _scheduler_section(registry),
+            "detectors": _detector_table(totals),
+            "jobs": _job_table(totals),
+            "stages": _stage_table(totals),
+            "scheduler": _scheduler_section(totals),
             "otel": {
-                "enabled": obs.otel.enabled,
-                "endpoint": obs.endpoint or "",
+                "enabled": info["otel_enabled"],
+                "endpoint": info["otel_endpoint"],
                 "hint": (
                     "指标与链路已按 OTLP 导出"
-                    if obs.otel.enabled
-                    else "未配置 ANOMALY_OTEL_ENDPOINT，指标只留在本地"
+                    if info["otel_enabled"]
+                    else "未配置 ANOMALY_OTEL_ENDPOINT，指标只写本地 SQLite"
                 ),
             },
         }
