@@ -72,3 +72,19 @@ describe('PreviewPanel 的尺度状态', () => {
     expect(screen.queryByText(/尺度降级/)).toBeNull()
   })
 })
+
+describe('PreviewPanel 的告警方向', () => {
+  it('方向没生效时给出警告，并说明「0 告警不代表正常」', () => {
+    // 配了「只报偏低」但算法没有基线 —— 告警数 0 不能当成没事
+    renderPanel(preview({ alert_direction: 'below', direction_applied: false, n_alerts: 0 }))
+    expect(
+      screen.getByText('这个任务的算法没有基线，无法判断「只报偏低」'),
+    ).toBeTruthy()
+    expect(screen.getByText(/本次运行没有产生告警，不代表数据正常/)).toBeTruthy()
+  })
+
+  it('方向生效时不显示警告', () => {
+    renderPanel(preview({ alert_direction: 'below', direction_applied: true }))
+    expect(screen.queryByText(/无法判断「只报偏低」/)).toBeNull()
+  })
+})

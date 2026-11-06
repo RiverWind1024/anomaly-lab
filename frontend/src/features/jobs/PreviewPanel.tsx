@@ -59,6 +59,17 @@ export function PreviewPanel({ isLoading, error, preview, onRun, running = false
             </Space>
           </div>
 
+          {/* 方向没生效：告警数 0 不代表数据正常，必须明说 */}
+          {p.direction_applied === false ? (
+            <Alert
+              type="warning"
+              showIcon
+              message="这个任务的算法没有基线，无法判断「只报偏低」"
+              description="本次运行没有产生告警，不代表数据正常。请把告警方向改成「双向」，或换一个支持基线的算法。"
+              style={{ marginBottom: 12 }}
+            />
+          ) : null}
+
           {/* 检测结论：形态 / 回退 / score_type / 推荐理由（旧 UI 的 hint 主体） */}
           <DetectionConclusion
             requestedDetector={p.requested_detector}

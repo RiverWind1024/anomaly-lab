@@ -445,6 +445,10 @@ export interface Preview {
   alert_rules: AlertRule[]
   levels: string[]
   series: SeriesEntry[]
+  /** 告警方向；老数据没有这个字段。 */
+  alert_direction?: 'both' | 'above' | 'below'
+  /** 告警方向是否真的生效；`false` 表示算法没有基线，方向无从判断。 */
+  direction_applied?: boolean
   /** 决策链；老数据没有这个字段（或为 `{}`），前端整块不渲染。 */
   decision?: DecisionTraceData
 }

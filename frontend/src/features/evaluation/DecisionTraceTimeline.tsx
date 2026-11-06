@@ -36,7 +36,7 @@ function summary(key: StepKey, step: Record<string, unknown>): ReactNode {
     case 'select':
       return `${String(step.requested ?? '')} → ${String(step.detector ?? '')}${step.fallback ? '（回退）' : ''}`
     case 'threshold':
-      return `尺度 ${String(step.scale_source ?? '—')} · ${step.status === 'undetermined' ? '无法判定' : '正常'}`
+      return `尺度 ${String(step.scale_source ?? '—')}${step.scale_fallback ? '（降级）' : ''} · ${step.status === 'undetermined' ? '无法判定' : '正常'}`
     case 'detect':
       return `${step.n_alerts ?? 0} 个告警点 · ${step.n_p0 ?? 0} 条 P0`
     default:
@@ -44,11 +44,12 @@ function summary(key: StepKey, step: Record<string, unknown>): ReactNode {
   }
 }
 
-/** 异常路径高亮：能力不足 / 算法回退 / 尺度判不出来 / 退回标准差。 */
+/** 异常路径高亮：能力不足 / 算法回退 / 尺度判不出来 / 尺度降级。 */
 function isWarn(key: StepKey, step: Record<string, unknown>): boolean {
   if (key === 'capability') return step.verdict !== 'ok'
   if (key === 'select') return Boolean(step.fallback)
-  if (key === 'threshold') return step.status === 'undetermined' || step.scale_source === 'std'
+  // ⚠️ 不能按 `scale_source === 'std'` 判降级 —— zscore 的原生尺度就是 std
+  if (key === 'threshold') return step.status === 'undetermined' || step.scale_fallback === true
   return false
 }
 

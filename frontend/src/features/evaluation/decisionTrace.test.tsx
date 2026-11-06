@@ -54,10 +54,45 @@ describe('DecisionTraceTimeline', () => {
   it('尺度判不出来时高亮', () => {
     render(
       <DecisionTraceTimeline
-        trace={{ threshold: { scale_source: 'std', status: 'undetermined' } }}
+        trace={{ threshold: { scale_source: 'std', scale_fallback: false, status: 'undetermined' } }}
       />,
     )
     expect(screen.getByText('尺度 std · 无法判定')).toBeInTheDocument()
+    const warn = document.querySelector('.decision-trace__step--warn')
+    expect(warn).not.toBeNull()
+    expect(warn?.textContent).toContain('阈值与分级')
+  })
+
+  it('尺度降级时高亮，摘要标出降级', () => {
+    render(
+      <DecisionTraceTimeline
+        trace={{ threshold: { scale_source: 'std', scale_fallback: true, status: 'ok' } }}
+      />,
+    )
+    expect(screen.getByText('尺度 std（降级） · 正常')).toBeInTheDocument()
+    const warn = document.querySelector('.decision-trace__step--warn')
+    expect(warn).not.toBeNull()
+    expect(warn?.textContent).toContain('阈值与分级')
+  })
+
+  it('zscore 的原生 std 不算降级 —— 不高亮', () => {
+    // ⚠️ zscore 的首选尺度就是 std，按 scale_source 判降级会把它每次标黄
+    render(
+      <DecisionTraceTimeline
+        trace={{ threshold: { scale_source: 'std', scale_fallback: false, status: 'ok' } }}
+      />,
+    )
+    expect(screen.getByText('尺度 std · 正常')).toBeInTheDocument()
+    expect(document.querySelector('.decision-trace__step--warn')).toBeNull()
+  })
+
+  it('mad 暖机段退到 iqr 时高亮', () => {
+    render(
+      <DecisionTraceTimeline
+        trace={{ threshold: { scale_source: 'iqr', scale_fallback: true, status: 'ok' } }}
+      />,
+    )
+    expect(screen.getByText('尺度 iqr（降级） · 正常')).toBeInTheDocument()
     const warn = document.querySelector('.decision-trace__step--warn')
     expect(warn).not.toBeNull()
     expect(warn?.textContent).toContain('阈值与分级')
