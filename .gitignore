@@ -18,6 +18,7 @@ data/lab/
 data/platform.db
 data/evaluation_exclusions.json
 .cache/
+frontend/.vitest/
 notebooks/.ipynb_checkpoints/
 reports/
 *.pt
