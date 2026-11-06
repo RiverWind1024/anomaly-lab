@@ -4,6 +4,7 @@ import type { ColumnsType } from 'antd/es/table'
 import { PreviewChart } from './PreviewChart'
 import { AlertRulesView } from './AlertRulesView'
 import { ScaleStatusTags } from './ScaleStatusTags'
+import { CapabilityWarning } from './CapabilityWarning'
 import { detectorLabel } from '../../lib/detectorLabels'
 import { useTestRunJob } from './queries'
 import type { TestRunAlert, TestRunSeries } from '../../api/types'
@@ -161,6 +162,10 @@ export function TestRunPanel({ jobId }: TestRunPanelProps) {
                   scaleFallback={currentEntry?.scale_fallback}
                 />
               </Space>
+              <CapabilityWarning
+                detector={currentEntry?.detector ?? result.detector}
+                capability={currentEntry?.capability}
+              />
               <PreviewChart
                 timestamps={current.timestamps}
                 values={current.values}

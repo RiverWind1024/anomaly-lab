@@ -335,6 +335,23 @@ export interface RunList {
 
 // ─────────────────────────────────────────── 预览 /api/platform/jobs/{id}/preview
 
+// ─────────────────────────────────────────── 数据能力探测
+
+/** 某条能力警告针对的算法（iqr / mad / zscore / zero_inflated_iqr）。 */
+export interface CapabilityWarningItem {
+  detector: string
+  reason: string
+}
+
+/** 这个指标会让哪些算法失效 —— 只报告，不改数据。 */
+export interface Capability {
+  zero_ratio: number
+  n_nonzero: number
+  verdict: 'ok' | 'unsuitable' | 'undetermined'
+  warnings: CapabilityWarningItem[]
+  message: string
+}
+
 export interface SeriesEntry {
   series_id: string
   group: string | null
@@ -360,6 +377,8 @@ export interface SeriesEntry {
    * `false` = 配了 `below` 但算法没有基线，本次一条没报。
    */
   direction_applied?: boolean
+  /** 这个指标会让哪些算法失效；数据不足时没有这个键。 */
+  capability?: Capability
   file: string | null
 }
 
@@ -514,6 +533,8 @@ export interface TestRunSeries {
   lower: (number | null)[] | null
   upper: (number | null)[] | null
   severity: number[]
+  /** 这个指标会让哪些算法失效；数据不足时没有这个键。 */
+  capability?: Capability
 }
 
 /** 试跑里的一个告警点。 */

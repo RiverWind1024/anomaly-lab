@@ -25,6 +25,7 @@ from anomaly_lab.platform.alerts import (
     parse_rules,
     rules_to_dicts,
 )
+from anomaly_lab.platform.capability import probe
 from anomaly_lab.platform.compare import compare_series
 from anomaly_lab.platform.detectors import (
     AUTO_DETECTOR,
@@ -567,8 +568,25 @@ def build_router(
         for outcome in result.outcomes:
             entry = dict(outcome.entry)
             entry.pop("file", None)
-            entries.append(entry)
             arrays = outcome.arrays
+            # 能力探测只**报告**，不改数据 —— 与 lab 的体检同一套结论。
+            # ⚠️ 数据不足时没有 values，无法探测：`results` 与 `series` 都不加
+            #    这个键，前端只在 `sufficient` 时读它。
+            cap_payload: dict | None = None
+            if arrays:
+                cap = probe(arrays["values"])
+                cap_payload = {
+                    "zero_ratio": cap.zero_ratio,
+                    "n_nonzero": cap.n_nonzero,
+                    "verdict": cap.verdict,
+                    "warnings": [
+                        {"detector": w.detector, "reason": w.reason}
+                        for w in cap.warnings
+                    ],
+                    "message": cap.message,
+                }
+                entry["capability"] = cap_payload
+            entries.append(entry)
             if not arrays:
                 # 数据不足：明确说明，绝不返回「一切正常」的错觉
                 results.append(
@@ -651,6 +669,7 @@ def build_router(
                     "lower": _clean(lower) if has_bands else None,
                     "upper": _clean(upper) if has_bands else None,
                     "severity": [int(item) for item in severity],
+                    "capability": cap_payload,
                 }
             )
 

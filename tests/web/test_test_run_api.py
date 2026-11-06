@@ -116,6 +116,46 @@ def test_test_run_timestamps_are_readable_dates(tmp_path):
         assert "T" in value
 
 
+def test_试跑返回能力警告(tmp_path):
+    # ⚠️ 前端 TestRunPanel 渲染的是 `results`（不是 `series`）—— 两处都要带
+    client, _store, job_id = _client(tmp_path)
+    body = client.post(f"/api/platform/jobs/{job_id}/test-run").json()
+    caps = [item.get("capability") for item in body["results"]]
+    assert caps and caps[0]["verdict"] in {"ok", "unsuitable", "undetermined"}
+    # `series` 与 `results` 是同一次探测的两份数据，结论必须一致
+    assert body["series"][0]["capability"] == caps[0]
+
+
+def _overwrite_series(tmp_path, values: list[float]) -> None:
+    """把源库里的序列换成给定的值 —— 需要精确控制零值比例时用。"""
+    path = tmp_path / "platform" / "source.db"
+    conn = sqlite3.connect(path)
+    conn.execute("DELETE FROM t")
+    end = utcnow().replace(second=0, microsecond=0)
+    n = len(values)
+    rows = [
+        (to_iso(end - timedelta(minutes=5 * (n - 1 - index))), float(value))
+        for index, value in enumerate(values)
+    ]
+    conn.executemany("INSERT INTO t VALUES (?, ?)", rows)
+    conn.commit()
+    conn.close()
+
+
+def test_零膨胀数据判定为不可用并给出_iqr_警告(tmp_path):
+    """97.5% 以上是零 → IQR 退化为 0，必须明确指出这个算法不可靠。"""
+    values = [0.0] * 60
+    values[0] = 12.0
+    client, _store, job_id = _client(tmp_path)
+    _overwrite_series(tmp_path, values)
+
+    body = client.post(f"/api/platform/jobs/{job_id}/test-run").json()
+    capability = body["results"][0]["capability"]
+    assert capability["verdict"] == "unsuitable"
+    assert capability["zero_ratio"] == 1 - 1 / 60
+    assert "iqr" in {item["detector"] for item in capability["warnings"]}
+
+
 def test_test_run_unknown_job_returns_404(tmp_path):
     client, _store, _job_id = _client(tmp_path)
     assert client.post("/api/platform/jobs/9999/test-run").status_code == 404
