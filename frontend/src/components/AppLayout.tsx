@@ -163,6 +163,13 @@ const NAV_ICON_PATHS: Record<string, ReactNode> = {
       <path d="M8 6.2v3.2M8 11.4h.01" />
     </>
   ),
+  // 评估与标注：天平 —— 标注（真值）与检测（预测）做对比
+  evaluation: (
+    <>
+      <path d="M8 2.4v11.2M5 13.6h6M8 4.2 3.4 5.6M8 4.2l4.6 1.4" />
+      <path d="M3.4 5.6 2.2 9h2.4L3.4 5.6ZM12.6 5.6 11.4 9H14l-1.4-3.4Z" />
+    </>
+  ),
   // 评估报告：柱状图
   '/evaluation': (
     <>
@@ -205,9 +212,13 @@ function NavIcon({ name }: { name: string }) {
 
 /**
  * 品牌标记 —— 从产品自己的东西画出来：
- * 一条异常分数曲线，中间那个尖出来的点就是被抓住的异常。
+ * 一条异常分数曲线，**最高那个峰**就是被抓住的异常。
  *
  * ⚠️ 不是「黑方块 + 一个字母」 —— 那是模板。
+ *
+ * ⚠️ 红点必须落在曲线的**最高峰**（14.2, 6.5）上。
+ *    之前画在下坡段（17, 12.5）—— 那里只是个普通拐点，
+ *    读起来像「曲线上的装饰」，而不是「检出异常」。
  */
 function BrandMark() {
   return (
@@ -220,7 +231,7 @@ function BrandMark() {
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-      <circle cx="17" cy="12.5" r="2.1" className="app-brand__spark" />
+      <circle cx="14.2" cy="6.5" r="2.1" className="app-brand__spark" />
     </svg>
   )
 }
