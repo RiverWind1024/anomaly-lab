@@ -328,10 +328,12 @@ export interface SeriesEntry {
   detector: string
   metric_class: string | null
   fallback: boolean
-  /** 尺度来源（median / iqr / mad / std / none）；老产物没有这个键。 */
+  /** 尺度来源（iqr / mad / std / none）；老产物没有这个键。 */
   scale_source?: string
   /** 尺度是否可用；老产物没有这个键。 */
   status?: 'ok' | 'undetermined'
+  /** 尺度是否降级过；老产物没有这个键。 */
+  scale_fallback?: boolean
   file: string | null
 }
 
@@ -350,10 +352,12 @@ export interface Preview {
   detector_rationale: string
   detector_fallback: boolean
   score_type: string
-  /** 尺度来源（median / iqr / mad / std / none）；数据不足时为空串。 */
+  /** 尺度来源（iqr / mad / std / none）；数据不足时为空串。 */
   scale_source: string
   /** 尺度是否可用；数据不足时按 ok 返回（前端先看 sufficient）。 */
   status: 'ok' | 'undetermined'
+  /** 尺度是否降级过（实际来源 ≠ 检测器首选）。 */
+  scale_fallback: boolean
   series_id: string
   group: string | null
   n: number
@@ -812,10 +816,12 @@ export interface RunSeriesDetail {
   run_id: number
   series_id: string
   detector: string
-  /** 尺度来源（median / iqr / mad / std / none）；老产物为空串。 */
+  /** 尺度来源（iqr / mad / std / none）；老产物为空串。 */
   scale_source: string
   /** 尺度是否可用；老产物按 ok 返回。 */
   status: 'ok' | 'undetermined'
+  /** 尺度是否降级过；老产物按 false 返回。 */
+  scale_fallback: boolean
   timestamps: string[]
   values: number[]
   scores: number[]

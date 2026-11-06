@@ -314,6 +314,7 @@ def _compute_job(
                     "fallback": resolution.fallback,
                     "scale_source": result.scale_source or "",
                     "status": result.status,
+                    "scale_fallback": bool(result.scale_fallback),
                     "file": _file_name(series.series_id),
                 },
                 arrays={
@@ -337,6 +338,7 @@ def _compute_job(
                     "score_type": np.array(result.score_type),
                     "scale_source": np.array(result.scale_source or ""),
                     "status": np.array(result.status),
+                    "scale_fallback": np.array(result.scale_fallback),
                     "series_id": np.array(series.series_id),
                     "group": np.array(
                         "" if series.meta.get("group") is None else str(series.meta["group"])

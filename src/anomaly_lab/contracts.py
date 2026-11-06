@@ -99,6 +99,14 @@ class DetectionResult:
        不是「一切正常」。前端要显示成「无法判定」。
     """
 
+    scale_fallback: bool = False
+    """尺度是否**降级**过（实际来源 ≠ 检测器首选）。
+
+    ⚠️ 为什么不能只看 `scale_source == "std"`：
+       `zscore` 的首选尺度就是 std，那是它的**原生**尺度，不是降级。
+       只按字符串判断会把 zscore 每次预览都标成「降级」。
+    """
+
     def __post_init__(self) -> None:
         if len(self.scores) != len(self.is_anomaly):
             raise ValueError("scores 与 is_anomaly 长度不一致")

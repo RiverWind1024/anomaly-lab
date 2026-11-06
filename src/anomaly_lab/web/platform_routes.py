@@ -739,6 +739,7 @@ def build_router(
                 "score_type": "",
                 "scale_source": "",
                 "status": "ok",
+                "scale_fallback": False,
                 "series_id": entry["series_id"],
                 "group": entry.get("group"),
                 "n": int(entry.get("n", 0)),
@@ -797,6 +798,7 @@ def build_router(
             # ⚠️ 老产物没有这两个键 —— 用 get 兜底，不能 KeyError。
             "scale_source": entry.get("scale_source", ""),
             "status": entry.get("status", "ok"),
+            "scale_fallback": bool(entry.get("scale_fallback", False)),
             "series_id": entry["series_id"],
             "group": entry.get("group"),
             "n": entry["n"],

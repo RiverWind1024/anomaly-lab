@@ -52,6 +52,7 @@ def make_result(
     bands: Bands | None = None,
     scale_source: str | None = None,
     status: str = "ok",
+    scale_fallback: bool = False,
 ) -> DetectionResult:
     scores = np.asarray(scores, dtype=float)
     return DetectionResult(
@@ -68,6 +69,7 @@ def make_result(
         band_kind=None if bands is None else bands.kind,
         scale_source=scale_source,
         status=status,
+        scale_fallback=scale_fallback,
     )
 
 
@@ -117,6 +119,12 @@ class TimedDetector:
         status = self._last_status or (
             "undetermined" if source == "none" else "ok"
         )
+        prefer = getattr(self, "prefer_scale", None)
+        # ⚠️ fallback = 真的换了尺度。`none` 不算降级（那是「不可判」），
+        #    没有 prefer_scale 的检测器（poisson/chronos）也不报降级。
+        fallback = bool(
+            prefer is not None and source not in (None, "none") and source != prefer
+        )
         chosen = self.default_threshold if threshold is None else float(threshold)
         # 基线是**可选输出**：检测器没实现就返回 None，不影响主流程
         bands = self.bands(series, chosen)
@@ -130,4 +138,5 @@ class TimedDetector:
             bands=bands,
             scale_source=source,
             status=status,
+            scale_fallback=fallback,
         )

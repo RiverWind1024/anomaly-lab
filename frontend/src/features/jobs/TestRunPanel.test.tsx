@@ -159,6 +159,49 @@ describe('TestRunPanel', () => {
     await waitFor(() => expect(screen.getByText(/再试一次/)).toBeTruthy())
   })
 
+  it('无法判定时不说「数值都在正常带里」', async () => {
+    // 常数序列：没有可用尺度，零告警不等于「一切正常」
+    const undetermined = {
+      ...TEST_RUN,
+      n_alerts: 0,
+      n_p0: 0,
+      alerts: [],
+      series: [
+        {
+          ...TEST_RUN.series[0],
+          n_alerts: 0,
+          n_p0: 0,
+          scale_source: 'none',
+          status: 'undetermined',
+          scale_fallback: false,
+        },
+      ],
+      results: [
+        {
+          ...TEST_RUN.results[0],
+          n_alerts: 0,
+          n_p0: 0,
+          scores: [0, 0],
+          severity: [0, 0],
+        },
+      ],
+    }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify(undetermined), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderPanel()
+    await user.click(screen.getByText('试跑一次'))
+    await waitFor(() => expect(screen.getAllByText('无法判定').length).toBeGreaterThan(0))
+    expect(screen.queryByText(/正常带里/)).toBeNull()
+  })
+
   it('试跑失败时把原因显示出来', async () => {
     vi.stubGlobal(
       'fetch',

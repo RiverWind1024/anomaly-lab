@@ -3,6 +3,7 @@ import { Alert, Button, Empty, Select, Space, Table, Tag } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { PreviewChart } from './PreviewChart'
 import { AlertRulesView } from './AlertRulesView'
+import { ScaleStatusTags } from './ScaleStatusTags'
 import { detectorLabel } from '../../lib/detectorLabels'
 import { useTestRunJob } from './queries'
 import type { TestRunAlert, TestRunSeries } from '../../api/types'
@@ -34,6 +35,11 @@ export function TestRunPanel({ jobId }: TestRunPanelProps) {
     if (usable.length === 0) return undefined
     return usable.find((item) => item.series_id === seriesId) ?? usable[0]
   }, [result, seriesId])
+
+  /** 当前序列的索引摘要 —— 尺度状态（status / scale_fallback）只在这里。 */
+  const currentEntry = result?.series.find(
+    (item) => item.series_id === current?.series_id,
+  )
 
   const alertColumns: ColumnsType<TestRunAlert> = [
     {
@@ -134,18 +140,28 @@ export function TestRunPanel({ jobId }: TestRunPanelProps) {
           </section>
 
           {current ? (
-            <PreviewChart
-              timestamps={current.timestamps}
-              values={current.values}
-              scores={current.scores}
-              baseline={current.baseline}
-              lower={current.lower}
-              upper={current.upper}
-              severity={current.severity}
-              alertThreshold={result.alert_threshold}
-              criticalThreshold={result.critical_threshold}
-              levels={result.levels}
-            />
+            <>
+              <Space size="small" wrap style={{ marginBottom: 8 }}>
+                <span className="mono dim">{current.series_id}</span>
+                <ScaleStatusTags
+                  status={currentEntry?.status}
+                  scaleSource={currentEntry?.scale_source}
+                  scaleFallback={currentEntry?.scale_fallback}
+                />
+              </Space>
+              <PreviewChart
+                timestamps={current.timestamps}
+                values={current.values}
+                scores={current.scores}
+                baseline={current.baseline}
+                lower={current.lower}
+                upper={current.upper}
+                severity={current.severity}
+                alertThreshold={result.alert_threshold}
+                criticalThreshold={result.critical_threshold}
+                levels={result.levels}
+              />
+            </>
           ) : (
             <Empty description="没有足够的点来做检测" />
           )}
@@ -153,9 +169,15 @@ export function TestRunPanel({ jobId }: TestRunPanelProps) {
           <section className="test-run__alerts">
             <h3 className="section__title">告警点（{result.alerts.length}）</h3>
             {result.alerts.length === 0 ? (
-              <p className="muted">
-                当前阈值下没有告警点 —— 数值都在正常带里。
-              </p>
+              currentEntry?.status === 'undetermined' ? (
+                <p className="muted">
+                  无法判定：数据里没有可用尺度，不是「一切正常」。
+                </p>
+              ) : (
+                <p className="muted">
+                  当前阈值下没有告警点 —— 数值都在正常带里。
+                </p>
+              )
             ) : (
               <Table<TestRunAlert>
                 rowKey={(row) => `${row.series_id}:${row.index}`}

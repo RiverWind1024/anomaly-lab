@@ -15,6 +15,7 @@ function preview(overrides: Partial<Preview> = {}): Preview {
     score_type: 'zscore',
     scale_source: 'iqr',
     status: 'ok',
+    scale_fallback: false,
     series_id: 's-1',
     group: null,
     n: 2,
@@ -49,19 +50,25 @@ function renderPanel(value: Preview) {
 }
 
 describe('PreviewPanel 的尺度状态', () => {
-  it('无法判定时给出「无法判定」标签', () => {
+  it('无法判定时给出「无法判定」标签，且不误报降级', () => {
     renderPanel(preview({ status: 'undetermined', scale_source: 'none' }))
     expect(screen.getByText('无法判定')).toBeTruthy()
+    expect(screen.queryByText(/尺度降级/)).toBeNull()
   })
 
-  it('尺度退回标准差时给出降级标签', () => {
-    renderPanel(preview({ scale_source: 'std' }))
+  it('真的降级时才给降级标签', () => {
+    renderPanel(preview({ scale_source: 'std', scale_fallback: true }))
     expect(screen.getByText('尺度降级 · std')).toBeTruthy()
   })
 
-  it('正常尺度不显示任何提示', () => {
-    renderPanel(preview())
+  it('原生 mad 尺度不算降级 —— 不显示任何提示', () => {
+    renderPanel(preview({ detector: 'mad', scale_source: 'mad', scale_fallback: false }))
     expect(screen.queryByText('无法判定')).toBeNull()
-    expect(screen.queryByText('尺度降级 · std')).toBeNull()
+    expect(screen.queryByText(/尺度降级/)).toBeNull()
+  })
+
+  it('zscore 的原生 std 不算降级', () => {
+    renderPanel(preview({ detector: 'zscore', scale_source: 'std', scale_fallback: false }))
+    expect(screen.queryByText(/尺度降级/)).toBeNull()
   })
 })
