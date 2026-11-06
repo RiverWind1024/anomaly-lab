@@ -1,5 +1,5 @@
-import { useState } from 'react'
 import { Button, message, Table, Tag } from 'antd'
+import { useNavigate } from 'react-router-dom'
 import type { ColumnsType } from 'antd/es/table'
 import { useRuns, useRunJob } from '../../features/jobs/queries'
 import type { RunSummary } from '../../api/types'
@@ -39,7 +39,7 @@ function fmtDuration(startedAt: string, finishedAt: string | null): string {
  * 现在独立成页，能看到每次运行的序列数、告警数、耗时、错误。
  */
 export function JobRunsPanel({ jobId, enabled }: JobRunsPanelProps) {
-  const [selectedRunId, setSelectedRunId] = useState<number | undefined>(undefined)
+  const navigate = useNavigate()
   const runs = useRuns(jobId, enabled)
   const runJob = useRunJob()
 
@@ -95,14 +95,19 @@ export function JobRunsPanel({ jobId, enabled }: JobRunsPanelProps) {
       render: (value: string | null) =>
         value ? <span className="muted">{value}</span> : <span className="muted">—</span>,
     },
+    {
+      title: '',
+      key: 'open',
+      width: 110,
+      render: () => <span className="mono dim">查看流程 →</span>,
+    },
   ]
 
   return (
     <div className="job-runs">
       <div className="job-runs__toolbar">
         <span className="muted">
-          共 {runs.data?.runs.length ?? 0} 次运行
-          {selectedRunId !== undefined ? ` · 已选 #${selectedRunId}` : ''}
+          共 {runs.data?.runs.length ?? 0} 次运行 · 点任意一行看那次运行的检测流程
         </span>
         <Button type="primary" loading={runJob.isPending} onClick={handleRun}>
           立即运行
@@ -117,10 +122,11 @@ export function JobRunsPanel({ jobId, enabled }: JobRunsPanelProps) {
         loading={runs.isPending}
         pagination={{ pageSize: 10, showSizeChanger: true }}
         onRow={(row) => ({
-          onClick: () => setSelectedRunId(row.id),
+          // ⚠️ 点进「检测结果」并**带上 run_id** —— 不带的话那个页面永远只显示最近一次，
+          //    用户会以为历史运行没有检测记录。
+          onClick: () => navigate(`/jobs/${jobId}/detections?run_id=${row.id}`),
           style: { cursor: 'pointer' },
         })}
-        rowClassName={(row) => (row.id === selectedRunId ? 'is-active' : '')}
         scroll={{ x: 'max-content' }}
       />
     </div>

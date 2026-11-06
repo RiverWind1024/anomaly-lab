@@ -107,7 +107,13 @@ export function PreviewPanel({ isLoading, error, preview, onRun, running = false
 
           {/* 决策链：数据质量 → 能力探测 → 形态判断 → 算法选择 → 阈值与分级 → 结果 */}
           {p.decision && Object.keys(p.decision).length > 0 ? (
-            <DecisionTraceTimeline trace={p.decision} />
+            <section className="preview-panel__trace">
+              <h3 className="preview-panel__trace-title">检测流程</h3>
+              <p className="preview-panel__trace-hint">
+                这次为什么这么判 —— 每一步的结论与原始数字都在这里
+              </p>
+              <DecisionTraceTimeline trace={p.decision} />
+            </section>
           ) : null}
         </div>
       )}

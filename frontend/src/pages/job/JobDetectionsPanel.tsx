@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { Alert } from 'antd'
+import { useNavigate } from 'react-router-dom'
 import { ClassificationCard } from '../../features/jobs/ClassificationCard'
 import { CompareChart } from '../../features/jobs/CompareChart'
 import { ComparePicker } from '../../features/jobs/ComparePicker'
 import { CompareTable } from '../../features/jobs/CompareTable'
 import { PreviewPanel } from '../../features/jobs/PreviewPanel'
-import { SeriesSelect } from '../../features/jobs/RunsView'
-import { useCompare, usePreview, useToggleJob } from '../../features/jobs/queries'
+import { RunsView, SeriesSelect } from '../../features/jobs/RunsView'
+import { useCompare, usePreview, useRuns, useToggleJob } from '../../features/jobs/queries'
 import type { CatalogDetector } from '../../api/types'
 
 export interface JobDetectionsPanelProps {
@@ -28,9 +29,11 @@ export function JobDetectionsPanel({
   detectors,
   enabled,
 }: JobDetectionsPanelProps) {
+  const navigate = useNavigate()
   const [seriesId, setSeriesId] = useState<string | undefined>(undefined)
   const [selectedDetectors, setSelectedDetectors] = useState<string[]>([])
 
+  const runs = useRuns(jobId, enabled)
   const preview = usePreview(jobId, runId, seriesId, enabled)
   const compare = useCompare(jobId, seriesId, selectedDetectors, enabled)
   const toggleJob = useToggleJob()
@@ -48,6 +51,17 @@ export function JobDetectionsPanel({
   return (
     <div className="job-detections">
       <div className="runs-view__bar">
+        {/* ⚠️ 运行下拉是「检测结果」的时间轴入口 ——
+            没有它，用户只能看到最近一次运行，历史运行等于不存在。 */}
+        <RunsView
+          runs={runs.data?.runs ?? []}
+          selectedRunId={runId}
+          onSelect={(nextRunId) => {
+            setSeriesId(undefined)
+            navigate(`/jobs/${jobId}/detections?run_id=${nextRunId}`)
+          }}
+          loading={runs.isPending}
+        />
         <SeriesSelect
           series={preview.data?.series ?? []}
           selectedSeriesId={seriesId ?? preview.data?.series_id}

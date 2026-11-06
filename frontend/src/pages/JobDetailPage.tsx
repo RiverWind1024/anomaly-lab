@@ -1,4 +1,4 @@
-import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Button, Tabs } from 'antd'
 import { useCatalog, useFeedback, useRuns } from '../features/jobs/queries'
 import { TestRunPanel } from '../features/jobs/TestRunPanel'
@@ -64,8 +64,10 @@ export function JobDetailPage() {
   const feedback = useFeedback(jobId, enabled)
   const latestRun = runs.data?.runs?.[0]
 
-  // 「检测结果」分区默认看最近一次运行
-  const effectiveRunId = latestRun?.id
+  // 「检测结果」看哪次运行：URL 指定优先（从「运行记录」点进来），否则最近一次
+  const [searchParams] = useSearchParams()
+  const requestedRunId = Number(searchParams.get('run_id') ?? '') || undefined
+  const effectiveRunId = requestedRunId ?? latestRun?.id
 
   if (catalog.data && jobExists === false) {
     return (
