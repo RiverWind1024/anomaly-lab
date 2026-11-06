@@ -4,7 +4,7 @@ import type { ColumnsType } from 'antd/es/table'
 import { Link } from 'react-router-dom'
 import { useRuns } from './queries'
 import type { CatalogJob, RunSummary } from '../../api/types'
-import { fmtUtcTime } from '../../lib/format'
+import { fmtDateTime } from '../../lib/format'
 
 /**
  * 最近运行 —— 任务跑了什么、跑了多久、报了什么。
@@ -49,7 +49,7 @@ export function RecentRuns({
       dataIndex: 'started_at',
       key: 'started_at',
       width: 140,
-      render: (value: string) => <span className="mono dim">{fmtUtcTime(value)}</span>,
+      render: (value: string) => <span className="mono dim">{fmtDateTime(value)}</span>,
     },
     {
       title: '耗时',

@@ -3,6 +3,7 @@ import type { ColumnsType } from 'antd/es/table'
 import { StateBoundary } from '../../components/StateBoundary'
 import type { FeedbackRecord } from '../../api/types'
 import { FEEDBACK_KIND_LABELS } from './FeedbackPanel'
+import { fmtFullDateTime } from '../../lib/format'
 
 export interface FeedbackHistoryProps {
   isLoading: boolean
@@ -42,8 +43,8 @@ export function FeedbackHistory({ isLoading, error, feedback }: FeedbackHistoryP
       title: '时间范围',
       key: 'range',
       render: (_value, row) => (
-        <span className="mono">
-          {row.start_ts} ~ {row.end_ts}
+        <span className="mono nowrap">
+          {fmtFullDateTime(row.start_ts)} ~ {fmtFullDateTime(row.end_ts)}
         </span>
       ),
     },

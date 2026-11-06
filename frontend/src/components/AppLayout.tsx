@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import type { ThemeMode } from '../theme/useThemeMode'
 import { getOverview } from '../api/platform'
+import { parseTs } from '../lib/format'
 import './AppLayout.css'
 
 const { Sider, Content } = Layout
@@ -351,7 +352,7 @@ function ThemeToggle({ themeMode, onToggle }: { themeMode: ThemeMode; onToggle: 
 /** 距上次运行多久 —— 侧栏页脚只报一个相对时间。 */
 function sinceLabel(iso: string | null | undefined): string {
   if (!iso) return '还没有运行'
-  const then = Date.parse(iso)
+  const then = parseTs(iso)
   if (Number.isNaN(then)) return '—'
   const minutes = Math.round((Date.now() - then) / 60000)
   if (minutes < 1) return '刚刚'

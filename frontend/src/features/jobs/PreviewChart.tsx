@@ -3,6 +3,7 @@ import { Alert } from 'antd'
 import { cssVar, cssVarAlpha, invalidateCssVarCache } from '../../theme/cssVar'
 import { useThemeModeValue } from '../../theme/ThemeModeContext'
 import { buildBandSeries } from '../../lib/bands'
+import { fmtDateTime } from '../../lib/format'
 
 export interface PreviewChartProps {
   timestamps: string[]
@@ -213,7 +214,7 @@ export function buildPreviewOption(
     },
     xAxis: {
       type: 'category',
-      data: timestamps,
+      data: timestamps.map((ts) => fmtDateTime(ts)),
       boundaryGap: false,
       axisLabel: { color: textTertiary, fontSize: 11, formatter: '{value}' },
       axisLine: { lineStyle: { color: border } },

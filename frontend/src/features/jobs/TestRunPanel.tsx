@@ -6,6 +6,7 @@ import { AlertRulesView } from './AlertRulesView'
 import { ScaleStatusTags } from './ScaleStatusTags'
 import { CapabilityWarning } from './CapabilityWarning'
 import { detectorLabel } from '../../lib/detectorLabels'
+import { fmtFullDateTime } from '../../lib/format'
 import { useTestRunJob } from './queries'
 import type { TestRunAlert, TestRunSeries } from '../../api/types'
 
@@ -60,7 +61,7 @@ export function TestRunPanel({ jobId }: TestRunPanelProps) {
       dataIndex: 'timestamp',
       key: 'timestamp',
       width: 200,
-      render: (value: string) => <span className="mono">{value}</span>,
+      render: (value: string) => <span className="mono">{fmtFullDateTime(value)}</span>,
     },
     {
       title: '序列',

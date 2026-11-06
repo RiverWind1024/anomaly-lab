@@ -3,6 +3,7 @@ import { cssVar, invalidateCssVarCache } from '../../theme/cssVar'
 import { useThemeModeValue } from '../../theme/ThemeModeContext'
 import { seriesColors } from '../../lib/palette'
 import { detectorLabel } from '../../lib/detectorLabels'
+import { fmtDateTime } from '../../lib/format'
 import type { LabWindowDetail } from '../../api/types'
 
 export interface WindowChartProps {
@@ -111,7 +112,7 @@ export function buildWindowOption(props: WindowChartProps, themeMode: 'dark' | '
     },
     xAxis: {
       type: 'category',
-      data: detail.timestamps.map((ts) => new Date(ts).toISOString().slice(5, 16).replace('T', ' ')),
+      data: detail.timestamps.map((ts) => fmtDateTime(ts)),
       boundaryGap: false,
       axisLabel: { color: textTertiary, fontSize: 11, hideOverlap: true },
       axisLine: { lineStyle: { color: border } },

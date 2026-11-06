@@ -3,6 +3,7 @@ import { StateBoundary } from '../../components/StateBoundary'
 import { usePreview } from '../jobs/queries'
 import { AlertChart } from './AlertChart'
 import type { AlertEvent } from '../../api/types'
+import { fmtFullDateTime } from '../../lib/format'
 
 export interface AlertDetailDrawerProps {
   /** 选中的告警事件；null 表示抽屉关闭。 */
@@ -11,7 +12,7 @@ export interface AlertDetailDrawerProps {
 }
 
 function fmtTime(value: string): string {
-  return value.replace('T', ' ').slice(0, 19)
+  return fmtFullDateTime(value)
 }
 
 /**

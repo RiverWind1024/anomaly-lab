@@ -1,7 +1,7 @@
 import { Button, Table, Tooltip } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import dayjs from 'dayjs'
 import { detectorLabel } from '../../lib/detectorLabels'
+import { fmtDateTimeSec } from '../../lib/format'
 import type { LabExperimentSummary } from '../../api/types'
 
 /**
@@ -31,11 +31,11 @@ export function ExperimentRecords({
 }: ExperimentRecordsProps) {
   const columns: ColumnsType<LabExperimentSummary> = [
     {
-      title: '时间（UTC）',
+      title: '时间',
       dataIndex: 'created_at',
       width: 170,
       render: (value: string) => (
-        <span className="mono">{dayjs(value).format('MM-DD HH:mm:ss')}</span>
+        <span className="mono">{fmtDateTimeSec(value)}</span>
       ),
     },
     {

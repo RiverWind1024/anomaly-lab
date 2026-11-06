@@ -7,6 +7,7 @@ import { cssVar, cssVarAlpha, invalidateCssVarCache } from '../../theme/cssVar'
 import { useThemeModeValue } from '../../theme/ThemeModeContext'
 import type { Annotation, SeriesValues } from '../../api/types'
 import { useSeries } from '../series/queries'
+import { fmtDateTime } from '../../lib/format'
 import {
   useAnnotations,
   useProductionSamples,
@@ -99,7 +100,7 @@ export function buildAnnotateOption(
     ],
     xAxis: {
       type: 'category',
-      data: data.timestamps,
+      data: data.timestamps.map((ts) => fmtDateTime(ts)),
       boundaryGap: false,
       axisLabel: { color: textTertiary, fontSize: 11 },
       axisLine: { lineStyle: { color: border } },
@@ -434,8 +435,8 @@ export function AnnotatePage() {
                   <span>
                     已选区间：
                     <span className="mono">
-                      {values.data?.timestamps[pending.start] ?? pending.start} ~{' '}
-                      {values.data?.timestamps[pending.end] ?? pending.end}
+                      {fmtDateTime(values.data?.timestamps[pending.start] ?? null)} ~{' '}
+                      {fmtDateTime(values.data?.timestamps[pending.end] ?? null)}
                     </span>
                   </span>
                   <Select

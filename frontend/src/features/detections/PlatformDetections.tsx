@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import { getDetectionRecords } from '../../api/platform'
 import { getRunSeriesDetail } from '../../api/series'
 import { StateBoundary } from '../../components/StateBoundary'
-import { fmtMetric } from '../../lib/format'
+import { fmtFullDateTime, fmtMetric } from '../../lib/format'
 import { detectorLabel } from '../../lib/detectorLabels'
 import { DecisionTraceTimeline } from '../evaluation/DecisionTraceTimeline'
 import { metricClassLabel } from '../jobs/ClassificationCard'
@@ -90,7 +90,7 @@ export function PlatformDetections() {
         dataIndex: 'started_at',
         key: 'started_at',
         width: 170,
-        render: (value: string) => <span className="mono dim">{value.slice(0, 19)}</span>,
+        render: (value: string) => <span className="mono dim nowrap">{fmtFullDateTime(value)}</span>,
       },
       {
         title: '任务 / 指标',

@@ -1,6 +1,6 @@
 import { Alert, Button } from 'antd'
 import dayjs, { type Dayjs } from 'dayjs'
-import { fmtUtcTime } from '../../lib/format'
+import { fmtDateTime, parseTs } from '../../lib/format'
 import type { LabSeries } from '../../api/types'
 
 /**
@@ -22,8 +22,8 @@ import type { LabSeries } from '../../api/types'
 export function actualRangeOf(series: LabSeries[]): { start: Dayjs; end: Dayjs } | null {
   const spans = series.filter((item) => item.data_start && item.data_end)
   if (!spans.length) return null
-  const starts = spans.map((item) => dayjs(item.data_start as string).valueOf())
-  const ends = spans.map((item) => dayjs(item.data_end as string).valueOf())
+  const starts = spans.map((item) => parseTs(item.data_start as string))
+  const ends = spans.map((item) => parseTs(item.data_end as string))
   return {
     start: dayjs(Math.min(...starts)),
     end: dayjs(Math.max(...ends)),
@@ -47,8 +47,8 @@ export function RangeSuggestion({ series, onApply }: RangeSuggestionProps) {
       message="时间范围可能没覆盖到实际数据"
       description={
         <span>
-          数据实际覆盖 {fmtUtcTime(range.start.toISOString())} →{' '}
-          {fmtUtcTime(range.end.toISOString())}。切到这段区间，采样窗口才不会落空。
+          数据实际覆盖 {fmtDateTime(range.start.toISOString())} →{' '}
+          {fmtDateTime(range.end.toISOString())}。切到这段区间，采样窗口才不会落空。
           <span style={{ marginLeft: 12 }}>
             <Button size="small" onClick={() => onApply([range.start, range.end])}>
               按实际范围重跑

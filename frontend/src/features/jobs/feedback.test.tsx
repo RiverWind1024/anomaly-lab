@@ -68,7 +68,7 @@ describe('FeedbackHistory', () => {
     const cells = screen.getAllByRole('cell')
     expect(cells[0].textContent).toBe('1')
     expect(screen.getByText('demo-metric:web-api')).toBeTruthy()
-    expect(screen.getByText(/2026-10-29T05:57:00 ~ 2026-10-29T07:57:00/)).toBeTruthy()
+    expect(screen.getByText(/2026-10-29 13:57:00 ~ 2026-10-29 15:57:00/)).toBeTruthy()
     expect(screen.getByText('漏报')).toBeTruthy()
     expect(screen.getByText('这里应该报')).toBeTruthy()
   })

@@ -4,7 +4,12 @@ import { ANOMALY_TYPES, buildAnnotateOption } from './AnnotatePage'
 
 const data: SeriesValues = {
   series_id: 'demo-1',
-  timestamps: ['t0', 't1', 't2', 't3'],
+  timestamps: [
+    '2026-11-06T00:00:00',
+    '2026-11-06T00:05:00',
+    '2026-11-06T00:10:00',
+    '2026-11-06T00:15:00',
+  ],
   values: [1, 2, 3, 4],
   labels: [0, 0, 1, 0],
 }
@@ -12,8 +17,8 @@ const data: SeriesValues = {
 const annotation = (over: Partial<Annotation> = {}): Annotation => ({
   series_id: 'demo-1',
   // ⚠️ 标注存**时间戳**，不是下标 —— 图上要换算回去。
-  start: 't1',
-  end: 't2',
+  start: '2026-11-06T00:05:00',
+  end: '2026-11-06T00:10:00',
   type: 'spike',
   created_at: '2026-10-30T00:00:00+00:00',
   ...over,
@@ -42,7 +47,7 @@ describe('buildAnnotateOption', () => {
   it('已有标注画成 markArea —— 时间戳换算成 x 轴下标', () => {
     const option = buildAnnotateOption({
       data,
-      annotations: [annotation({ start: 't1', end: 't2' })],
+      annotations: [annotation({ start: '2026-11-06T00:05:00', end: '2026-11-06T00:10:00' })],
       onBrush: () => {},
     })
     const areas = option.series[0].markArea?.data as Array<Array<{ xAxis: number }>>
@@ -76,8 +81,11 @@ describe('buildAnnotateOption', () => {
     expect(option.dataZoom?.length).toBe(2)
   })
 
-  it('x 轴是时间戳的 category 轴', () => {
+  it('x 轴是本地时间的 category 轴', () => {
     const option = buildAnnotateOption({ data, annotations: [], onBrush: () => {} })
-    expect(option.xAxis).toMatchObject({ type: 'category', data: data.timestamps })
+    expect(option.xAxis).toMatchObject({
+      type: 'category',
+      data: ['11-06 08:00', '11-06 08:05', '11-06 08:10', '11-06 08:15'],
+    })
   })
 })

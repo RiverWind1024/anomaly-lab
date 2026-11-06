@@ -6,6 +6,7 @@ import { StateBoundary } from '../../components/StateBoundary'
 import { AlertDetailDrawer } from './AlertDetailDrawer'
 import type { AlertEvent, AlertListResponse } from '../../api/types'
 import type { AlertFilters } from './queries'
+import { fmtClock, fmtDateTime, fmtDay } from '../../lib/format'
 
 export interface AlertListProps {
   isLoading: boolean
@@ -37,10 +38,10 @@ function levelPill(levelIndex: number, level: string) {
  *    在窄列里会折成两行，把表格撑得很丑。
  */
 function fmtRange(start: string, end: string): string {
-  const from = start.replace('T', ' ').slice(5, 16)
-  const to = end.replace('T', ' ').slice(5, 16)
-  if (start.slice(0, 10) === end.slice(0, 10)) {
-    return `${from} ~ ${end.replace('T', ' ').slice(11, 16)}`
+  const from = fmtDateTime(start)
+  const to = fmtDateTime(end)
+  if (fmtDay(start) === fmtDay(end)) {
+    return `${from} ~ ${fmtClock(end)}`
   }
   return `${from} ~ ${to}`
 }

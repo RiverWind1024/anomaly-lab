@@ -6,6 +6,7 @@ import { StateBoundary } from '../../components/StateBoundary'
 import { DeleteButton } from '../delete/DeleteButton'
 import type { Catalog, CatalogJob, OverviewJob } from '../../api/types'
 import { formatRules } from './rules'
+import { parseTs } from '../../lib/format'
 
 export interface JobListProps {
   isLoading: boolean
@@ -25,7 +26,7 @@ export interface JobListProps {
 /** 下次运行 —— 相对现在说，别只给一个裸时间戳。 */
 function nextRunLabel(nextRunAt: string | null): string {
   if (!nextRunAt) return '—'
-  const diff = Date.parse(nextRunAt) - Date.now()
+  const diff = parseTs(nextRunAt) - Date.now()
   if (Number.isNaN(diff)) return '—'
   const minutes = Math.round(diff / 60000)
   if (minutes <= 0) return '即将'

@@ -131,7 +131,7 @@ describe('AlertList 详情', () => {
     renderList()
     fireEvent.click(screen.getByRole('button', { name: /详\s*情/ }))
     await waitFor(() => {
-      expect(screen.getByText('2026-10-30 10:00:00')).toBeTruthy()
+      expect(screen.getByText('2026-10-30 18:00:00')).toBeTruthy()
     })
     // 抽屉里的「峰值分数」是描述项，不是表格单元格
     expect(screen.getAllByText('4.20').length).toBeGreaterThan(0)

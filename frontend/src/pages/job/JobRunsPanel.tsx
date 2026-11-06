@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import type { ColumnsType } from 'antd/es/table'
 import { useRuns, useRunJob } from '../../features/jobs/queries'
 import type { RunSummary } from '../../api/types'
+import { fmtFullDateTime } from '../../lib/format'
 
 export interface JobRunsPanelProps {
   jobId: number
@@ -18,7 +19,7 @@ const RUN_STATUS_LABEL: Record<string, string> = {
 }
 
 function fmtTime(value: string | null): string {
-  return value ? value.replace('T', ' ').slice(0, 19) : '—'
+  return fmtFullDateTime(value)
 }
 
 /** 运行时长（秒）。 */

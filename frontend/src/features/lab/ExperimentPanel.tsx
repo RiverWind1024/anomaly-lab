@@ -1,7 +1,7 @@
 import { Table, Tooltip } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { detectorLabel } from '../../lib/detectorLabels'
-import { fmtUtcTime } from '../../lib/format'
+import { fmtDateTime } from '../../lib/format'
 import { metricClassLabel } from '../jobs/ClassificationCard'
 import { SensitivityChart } from './SensitivityChart'
 import { WindowDetailPanel } from './WindowDetailPanel'
@@ -125,11 +125,11 @@ function PerWindowTable({ result }: { result: LabRunResult }) {
       render: (value: number) => <span className="mono">{value}</span>,
     },
     {
-      title: '时间范围（UTC）',
+      title: '时间范围（本地时间）',
       key: 'range',
       render: (_, row) => (
         <span className="mono">
-          {fmtUtcTime(row.start)} → {fmtUtcTime(row.end)}
+          {fmtDateTime(row.start)} → {fmtDateTime(row.end)}
         </span>
       ),
     },

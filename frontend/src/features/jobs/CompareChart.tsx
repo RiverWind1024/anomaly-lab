@@ -2,6 +2,7 @@ import ReactECharts from 'echarts-for-react'
 import { cssVar, cssVarAlpha, invalidateCssVarCache } from '../../theme/cssVar'
 import { useThemeModeValue } from '../../theme/ThemeModeContext'
 import type { CompareDetector } from '../../api/types'
+import { fmtDateTime } from '../../lib/format'
 
 export interface CompareChartProps {
   timestamps: string[]
@@ -115,7 +116,7 @@ export function buildCompareOption(
     },
     xAxis: {
       type: 'category',
-      data: timestamps,
+      data: timestamps.map((ts) => fmtDateTime(ts)),
       boundaryGap: false,
       axisLabel: { color: textTertiary, fontSize: 11 },
       axisLine: { lineStyle: { color: border } },

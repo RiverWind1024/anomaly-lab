@@ -2,7 +2,7 @@ import { Table, Tag } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import type { ReactNode } from 'react'
 import { StateBoundary } from '../../components/StateBoundary'
-import { fmtUtcSeconds } from '../../lib/format'
+import { fmtClock, fmtDateTimeSec } from '../../lib/format'
 import { detectorLabel } from '../../lib/detectorLabels'
 import { useObservability } from './queries'
 import { MonitoringChart } from './MonitoringChart'
@@ -79,7 +79,7 @@ export function MonitoringPage() {
         </div>
         {query.data ? (
           <span className="monitoring__stamp mono dim">
-            最近采样 {fmtUtcSeconds(query.data.service.snapshot_at)} UTC
+            最近采样 {fmtDateTimeSec(query.data.service.snapshot_at)}（本地时间）
           </span>
         ) : null}
       </header>
@@ -99,7 +99,7 @@ export function MonitoringPage() {
 
 function MonitoringBody({ data }: { data: Observability }) {
   const points = data.timeline
-  const times = points.map((point) => point.at.slice(11, 16))
+  const times = points.map((point) => fmtClock(point.at))
   const hasCurve = points.length >= 2
   const totalCalls = data.detectors.reduce((sum, row) => sum + row.calls, 0)
   const totalFallbacks = data.detectors.reduce((sum, row) => sum + row.fallbacks, 0)

@@ -64,6 +64,11 @@ pre {
   font-feature-settings: 'tnum' 1;
 }
 
+/* 时间戳中间有空格，窄列里会被折断 —— 需要时显式禁止换行 */
+.nowrap {
+  white-space: nowrap;
+}
+
 /* 页面级布局 —— 所有路由页面共用的骨架 */
 .page {
   display: flex;

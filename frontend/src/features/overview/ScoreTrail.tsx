@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { fmtUtcTime } from '../../lib/format'
+import { fmtDateTime } from '../../lib/format'
 import { buildTrail, stripRect, type TrailGeometry } from './trail'
 import type { AlertEvent, Preview, SeriesEntry } from '../../api/types'
 import './overview.css'
@@ -135,7 +135,7 @@ export function ScoreTrail({
         <div className="trail__readout">
           <span className="trail__peak num">{geom.peak.s.toFixed(2)}σ</span>
           <span className="trail__peak-meta">
-            峰值 · {fmtUtcTime(preview.timestamps[geom.peak.i] ?? null)} ·{' '}
+            峰值 · {fmtDateTime(preview.timestamps[geom.peak.i] ?? null)} ·{' '}
             <span className="num">{preview.n_alerts}</span> 个告警点
           </span>
         </div>
@@ -344,14 +344,14 @@ export function ScoreTrail({
                 >
                   {geom.peak.s.toFixed(2)}σ
                   {geom.clipped ? ' ↑' : ''} ·{' '}
-                  {fmtUtcTime(preview?.timestamps[geom.peak.i] ?? null)}
+                  {fmtDateTime(preview?.timestamps[geom.peak.i] ?? null)}
                 </text>
               </g>
             ) : null}
 
             {/* x 轴刻度 */}
             {geom.ticks.map((t, i) => {
-              const text = fmtUtcTime(new Date(t).toISOString())
+              const text = fmtDateTime(t)
               const label = geom.wideLabels ? text : text.slice(6)
               const half = label.length * 3.35
               let anchor: 'middle' | 'start' | 'end' = 'middle'
@@ -416,7 +416,7 @@ export function ScoreTrail({
                 setHover({
                   x: geom.x(best.t),
                   y: geom.y(best.s),
-                  text: `${fmtUtcTime(preview?.timestamps[best.i] ?? null)} UTC · ${best.s.toFixed(2)}σ`,
+                  text: `${fmtDateTime(preview?.timestamps[best.i] ?? null)} · ${best.s.toFixed(2)}σ`,
                 })
               }}
             />
@@ -449,9 +449,8 @@ export function ScoreTrail({
             <>
               更新于{' '}
               <span className="num">
-                {fmtUtcTime(preview.timestamps[preview.timestamps.length - 1])}
-              </span>{' '}
-              UTC
+                {fmtDateTime(preview.timestamps[preview.timestamps.length - 1])}
+              </span>
             </>
           ) : (
             '—'

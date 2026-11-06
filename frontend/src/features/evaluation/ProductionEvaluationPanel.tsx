@@ -3,7 +3,7 @@ import { Alert, InputNumber, Table, Tag } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { Link } from 'react-router-dom'
 import { StateBoundary } from '../../components/StateBoundary'
-import { fmtMetric, fmtUtcTime } from '../../lib/format'
+import { fmtMetric, fmtDateTime } from '../../lib/format'
 import { detectorLabel } from '../../lib/detectorLabels'
 import { useProductionEvaluation } from './queries'
 import type {
@@ -137,7 +137,7 @@ export function ProductionEvaluationPanel() {
       align: 'right',
       render: (value: number, row) => (
         <span className="mono">
-          #{value} · {fmtUtcTime(row.start_ts)} → {fmtUtcTime(row.end_ts)}
+          #{value} · {fmtDateTime(row.start_ts)} → {fmtDateTime(row.end_ts)}
         </span>
       ),
     },

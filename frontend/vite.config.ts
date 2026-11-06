@@ -65,6 +65,9 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
+    // ⚠️ 固定测试时区：时间展示已改为「浏览器本地时区」，
+    //    不固定的话 CI（通常 UTC）与本机（东八区）断言的时间会差 8 小时。
+    env: { TZ: 'Asia/Shanghai' },
     // 限制 worker 数：机器负载高时（CPU 抢占 / I/O 繁忙），
     // 默认按 CPU 核数开 worker 会让测试进程抢不到调度而**卡住**
     // （实测 load average 88 时，默认 16 worker 直接挂住不退出）。

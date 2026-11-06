@@ -6,6 +6,7 @@ import { DeleteButton } from '../features/delete/DeleteButton'
 import { useCatalog } from '../features/jobs/queries'
 import { useDeleteMetric } from '../features/delete/queries'
 import type { CatalogJob, CatalogMetric } from '../api/types'
+import { fmtFullDateTime } from '../lib/format'
 
 /**
  * 数据源详情页 —— **指标的父级**。
@@ -199,7 +200,7 @@ export function SourceDetailPage() {
             <span className="mono">{source?.path ?? '—'}</span>
           </Descriptions.Item>
           <Descriptions.Item label="创建时间">
-            <span className="mono">{source?.created_at?.slice(0, 19).replace('T', ' ') ?? '—'}</span>
+            <span className="mono">{fmtFullDateTime(source?.created_at)}</span>
           </Descriptions.Item>
         </Descriptions>
       </section>

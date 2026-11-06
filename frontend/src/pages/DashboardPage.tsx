@@ -5,7 +5,7 @@ import { getOverview, getAlerts } from '../api/platform'
 import { getSummary } from '../api/series'
 import { useCatalog, usePreview } from '../features/jobs/queries'
 import { StateBoundary } from '../components/StateBoundary'
-import { fmtUtcTime } from '../lib/format'
+import { fmtDateTime } from '../lib/format'
 import { ScoreTrail } from '../features/overview/ScoreTrail'
 import {
   AlertEventsPanel,
@@ -112,7 +112,7 @@ export function DashboardPage() {
                     {peak ? (
                       <>
                         {' '}
-                        在 <span className="num">{fmtUtcTime(peak.ts)}</span> 出现{' '}
+                        在 <span className="num">{fmtDateTime(peak.ts)}</span> 出现{' '}
                         <span className="num">{peak.score.toFixed(2)}σ</span> 峰值
                       </>
                     ) : null}

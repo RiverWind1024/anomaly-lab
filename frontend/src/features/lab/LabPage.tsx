@@ -19,7 +19,7 @@ import { inspectLab, listLabExperiments, evaluateLab, runLab, saveLabExperiment 
 import { hint } from '../../components/FieldHint'
 import type { LabInspectResult, LabSeries, LabWindow } from '../../api/types'
 import { detectorLabel } from '../../lib/detectorLabels'
-import { fmtUtcTime } from '../../lib/format'
+import { fmtDateTime } from '../../lib/format'
 import { useCatalog } from '../jobs/queries'
 import { metricClassLabel } from '../jobs/ClassificationCard'
 import { ExperimentPanel } from './ExperimentPanel'
@@ -157,11 +157,11 @@ const WINDOW_COLUMNS: ColumnsType<LabWindow> = [
     render: (value: number) => <span className="mono">{value}</span>,
   },
   {
-    title: '时间范围（UTC）',
+    title: '时间范围',
     key: 'range',
     render: (_, row) => (
       <span className="mono">
-        {fmtUtcTime(row.start)} → {fmtUtcTime(row.end)}
+        {fmtDateTime(row.start)} → {fmtDateTime(row.end)}
       </span>
     ),
   },
@@ -252,7 +252,7 @@ function SeriesPanel({ series }: { series: LabSeries }) {
               <>
                 {' · 数据实际覆盖 '}
                 <span className="mono">
-                  {fmtUtcTime(series.data_start)} → {fmtUtcTime(series.data_end)}
+                  {fmtDateTime(series.data_start)} → {fmtDateTime(series.data_end)}
                 </span>
               </>
             ) : null}
@@ -743,7 +743,7 @@ export function LabPage() {
 
           {kind === 'synthetic' ? (
             <label className="lab-form__field">
-              <span className="lab-form__label">起始时间（UTC）</span>
+              <span className="lab-form__label">起始时间（本地时间）</span>
               <DatePicker
                 showTime
                 value={range[0]}
@@ -756,7 +756,7 @@ export function LabPage() {
             </label>
           ) : (
             <label className="lab-form__field">
-              <span className="lab-form__label">时间范围（UTC）</span>
+              <span className="lab-form__label">时间范围（本地时间）</span>
               <DatePicker.RangePicker
                 showTime
                 allowClear={false}

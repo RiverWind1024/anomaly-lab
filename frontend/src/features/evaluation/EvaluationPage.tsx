@@ -3,7 +3,7 @@ import { Button, Drawer, Popconfirm, Space, Table, Tabs, Tag } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { Link, useSearchParams } from 'react-router-dom'
 import { StateBoundary } from '../../components/StateBoundary'
-import { fmtMetric, fmtUtcTime } from '../../lib/format'
+import { fmtMetric, fmtDateTime } from '../../lib/format'
 import { detectorLabel } from '../../lib/detectorLabels'
 import './evaluation.css'
 import { aggregateBy } from './aggregate'
@@ -372,7 +372,7 @@ export function EvaluationPage() {
           {summary.data ? (
             <>
               {summary.data.title || '回测'}报告 · 生成于{' '}
-              <span className="num">{fmtUtcTime(summary.data.generated_at)}</span> UTC
+              <span className="num">{fmtDateTime(summary.data.generated_at)}</span>
             </>
           ) : (
             '加载中…'

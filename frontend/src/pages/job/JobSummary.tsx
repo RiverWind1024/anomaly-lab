@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { Space, Tag } from 'antd'
 import type { CatalogJob, RunSummary } from '../../api/types'
+import { parseTs } from '../../lib/format'
 
 export interface JobSummaryProps {
   job: CatalogJob
@@ -12,7 +13,7 @@ export interface JobSummaryProps {
 /** 距上次运行多久（人类可读）。 */
 export function sinceLabel(iso: string | null | undefined): string {
   if (!iso) return '从未运行'
-  const then = Date.parse(iso)
+  const then = parseTs(iso)
   if (Number.isNaN(then)) return '—'
   const minutes = Math.round((Date.now() - then) / 60000)
   if (minutes < 1) return '刚刚'

@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { Button } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { fmtUtcTime } from '../../lib/format'
+import { fmtDateTime, fmtDay, parseTs } from '../../lib/format'
 import { getStorage, pruneData } from '../../api/platform'
 import type { AlertEvent, Overview, OverviewJob, Summary } from '../../api/types'
 import './overview.css'
@@ -112,8 +112,8 @@ export function AlertEventsPanel({
               <span className={`pill pill--${e.level_index >= 2 ? 'p0' : 'p1'}`}>{e.level}</span>
               <span className="event__main">
                 <span className="event__series num">
-                  {fmtUtcTime(e.start_ts)}
-                  {e.end_ts !== e.start_ts ? ` – ${fmtUtcTime(e.end_ts).slice(6)}` : ''}
+                  {fmtDateTime(e.start_ts)}
+                  {e.end_ts !== e.start_ts ? ` – ${fmtDateTime(e.end_ts).slice(6)}` : ''}
                 </span>
                 <span className="event__time">{e.detector}</span>
               </span>
@@ -217,7 +217,7 @@ export function JobHealthPanel({
               </span>
               <span className="r jobrow__hide" role="cell">
                 <span className="num">
-                  {conf?.next_run_at ? fmtUtcTime(conf.next_run_at).slice(6) : '—'}
+                  {conf?.next_run_at ? fmtDateTime(conf.next_run_at).slice(6) : '—'}
                 </span>
               </span>
             </div>
@@ -303,7 +303,7 @@ export function BacktestPanel({ summary }: { summary: Summary | undefined }) {
           </h2>
           <p className="panel__meta">
             <span className="num">{bt.n_series}</span> 条序列 ·{' '}
-            <span className="num">{summary.generated_at?.slice(0, 10) ?? ''}</span>
+            <span className="num">{fmtDay(summary.generated_at)}</span>
           </p>
         </div>
         <Link className="link" to="/evaluation">
@@ -425,7 +425,7 @@ export function fmtBytes(bytes: number): string {
 /** 距上次清理多久。 */
 export function sinceLabel(iso: string | null): string {
   if (!iso) return '从未运行'
-  const then = Date.parse(iso)
+  const then = parseTs(iso)
   if (Number.isNaN(then)) return '—'
   const minutes = Math.round((Date.now() - then) / 60000)
   if (minutes < 1) return '刚刚'
