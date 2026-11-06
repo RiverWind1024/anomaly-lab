@@ -1,0 +1,27 @@
+/* 平台检测记录页 —— 表格里的两行单元格与抽屉内容。 */
+
+.platform-detections .stacked {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.35;
+}
+
+.platform-detections .stacked__sub {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.platform-record {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.platform-record__chart {
+  margin: 0;
+}
+
+.platform-detections .nowrap {
+  white-space: nowrap;
+}

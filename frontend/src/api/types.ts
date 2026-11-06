@@ -335,6 +335,51 @@ export interface RunList {
   runs: RunSummary[]
 }
 
+// ───────────────────────────── 平台检测记录 /api/platform/detections
+
+/**
+ * 一次运行 × 一条序列的检测记录。
+ *
+ * ⚠️ 与离线评估的 `EvaluationRow` 不是一回事：
+ *    那边是「算法在合成集上表现如何」，这里是「任务实际跑出了什么」。
+ */
+export interface DetectionRecord {
+  run_id: number
+  job_id: number
+  job_name: string
+  metric_id: number
+  metric_name: string
+  source_name: string
+  started_at: string
+  series_id: string
+  group: string | null
+  n: number
+  n_valid: number
+  n_missing: number
+  n_alerts: number
+  n_p0: number
+  sufficient: boolean
+  detector: string
+  metric_class: string
+  fallback: boolean
+  start_ts: string
+  end_ts: string
+  /** 尺度来源（iqr / mad / std / poisson / none）；老数据为空串。 */
+  scale_source: string
+  scale_fallback: boolean
+  status: 'ok' | 'undetermined'
+  /** 这次运行有没有留下决策链；老数据可能没有。 */
+  has_decision: boolean
+}
+
+export interface DetectionRecordList {
+  records: DetectionRecord[]
+  total: number
+  limit: number
+  offset: number
+  jobs: Array<{ id: number; name: string }>
+}
+
 // ─────────────────────────────────────────── 预览 /api/platform/jobs/{id}/preview
 
 // ─────────────────────────────────────────── 数据能力探测
@@ -911,6 +956,17 @@ export interface RunSeriesDetail {
   values: number[]
   scores: number[]
   severity: number[]
+  /** 决策链（数据质量 → 能力 → 形态 → 选算法 → 阈值 → 结果）；老产物为 `{}`。 */
+  decision?: DecisionTraceData
+  /** 基线三件套；无带的算法是空数组。 */
+  baseline?: number[]
+  lower?: number[]
+  upper?: number[]
+  alert_threshold?: number
+  critical_threshold?: number
+  score_type?: string
+  /** 档位名（0 号固定「正常」）。 */
+  levels?: string[]
   /** 生产数据没有自带真值 —— 恒为空，真值来自人工标注。 */
   labels: number[]
 }

@@ -97,7 +97,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-function renderPage(initialEntry = '/detections') {
+function renderPage(initialEntry = '/detections?view=offline') {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })

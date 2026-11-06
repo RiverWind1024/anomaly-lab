@@ -4,6 +4,7 @@ import type {
   AlertRule,
   Catalog,
   Compare,
+  DetectionRecordList,
   FeedbackList,
   LabExperiment,
   LabExperimentSummary,
@@ -67,6 +68,27 @@ export const createSource = (payload: {
   kind?: string
   config?: SourceConfig
 }) => postJson<{ id: number }>('/api/platform/sources', payload)
+
+/**
+ * **平台运行产生的检测记录** —— 每次运行 × 每条序列。
+ *
+ * ⚠️ 与 `/api/summary`（离线回测报告）刻意分开：混在一张表里
+ *    分不清「算法在合成集上的上限」和「任务实际跑出了什么」。
+ */
+export const getDetectionRecords = (opts: {
+  jobId?: number
+  onlyAlerts?: boolean
+  limit?: number
+  offset?: number
+} = {}) => {
+  const params = new URLSearchParams()
+  if (opts.jobId !== undefined) params.set('job_id', String(opts.jobId))
+  if (opts.onlyAlerts) params.set('only_alerts', 'true')
+  if (opts.limit !== undefined) params.set('limit', String(opts.limit))
+  if (opts.offset !== undefined) params.set('offset', String(opts.offset))
+  const qs = params.toString()
+  return request<DetectionRecordList>(`/api/platform/detections${qs ? `?${qs}` : ''}`)
+}
 
 /**
  * 数据浏览：在数据源上执行一段只读 SQL，返回列结构与前 N 行。

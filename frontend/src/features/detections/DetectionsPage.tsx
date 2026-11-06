@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Table } from 'antd'
+import { Table, Tabs } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { useSearchParams } from 'react-router-dom'
 import { StateBoundary } from '../../components/StateBoundary'
@@ -8,6 +8,7 @@ import { detectorLabel } from '../../lib/detectorLabels'
 import { DetectionChart } from './DetectionChart'
 import { badcaseLabel } from './detectionChart'
 import { DetectionsList } from './DetectionsList'
+import { PlatformDetections } from './PlatformDetections'
 import { useDetectionDetail } from './queries'
 import { indexOfRow, isSelectedRow, resolveSelected, type RecordKey } from './records'
 import { FilterBar } from '../evaluation/FilterBar'
@@ -32,6 +33,51 @@ export const PAGE_SIZE = 20
  */
 export function DetectionsPage() {
   const [params, setParams] = useSearchParams()
+  // 从评估报告点进来会带 series_id —— 那是离线记录的深链接，不能落在平台页签上
+  const view =
+    params.get('view') === 'offline' || params.get('series_id')
+      ? 'offline'
+      : 'platform'
+
+  const changeView = (key: string) => {
+    setParams((prev) => {
+      const next = new URLSearchParams(prev)
+      next.set('view', key)
+      // 切到平台页签时清掉离线记录的选中项 —— 否则上面那条判断会一直把它拉回离线
+      if (key === 'platform') {
+        next.delete('series_id')
+        next.delete('detector')
+      }
+      return next
+    })
+  }
+
+  return (
+    <div className="page">
+      <header className="titlebar">
+        <h1>检测记录</h1>
+      </header>
+      <Tabs
+        activeKey={view}
+        onChange={changeView}
+        items={[
+          { key: 'platform', label: '平台运行' },
+          { key: 'offline', label: '离线评测集' },
+        ]}
+      />
+      {view === 'platform' ? <PlatformDetections /> : <OfflineDetections />}
+    </div>
+  )
+}
+
+/**
+ * 离线评测集的检测记录（`reports/latest`）。
+ *
+ * ⚠️ 与「平台运行」是两套数据：这里是**算法在合成集上的逐条表现**，
+ *    有真值、能算 P/R/F1；那边是任务实际跑出来的结果，没有真值。
+ */
+function OfflineDetections() {
+  const [params, setParams] = useSearchParams()
   const summary = useSummary()
   const [filters, setFilters] = useState<EvaluationFilters>({})
   const [page, setPage] = useState(1)
@@ -41,6 +87,15 @@ export function DetectionsPage() {
   // 选中项直接取自 URL —— 不另存一份 state，否则从评估页跳进来时状态不同步
   const seriesId = params.get('series_id') ?? undefined
   const detectorParam = params.get('detector') ?? undefined
+
+  /** 把选中项写进 URL —— **合并**而不是覆盖，否则会把 `view` 一起冲掉。 */
+  const selectParams = (next: { series_id: string; detector: string }) =>
+    setParams((prev) => {
+      const merged = new URLSearchParams(prev)
+      merged.set('series_id', next.series_id)
+      merged.set('detector', next.detector)
+      return merged
+    })
 
   const rows = useMemo(() => summary.data?.rows ?? [], [summary.data])
   const filtered = useMemo(() => filterRows(rows, filters), [rows, filters])
@@ -85,8 +140,8 @@ export function DetectionsPage() {
   useEffect(() => {
     if (seriesId || filtered.length === 0) return
     const first = filtered[0]
-    setParams({ series_id: first.series_id, detector: first.detector })
-  }, [seriesId, filtered, setParams])
+    selectParams({ series_id: first.series_id, detector: first.detector })
+  }, [seriesId, filtered])
 
   /**
    * 把左栏滚动到选中的记录。
@@ -101,15 +156,11 @@ export function DetectionsPage() {
   }, [selected, filtered])
 
   const select = (row: EvaluationRow) => {
-    setParams({ series_id: row.series_id, detector: row.detector })
+    selectParams({ series_id: row.series_id, detector: row.detector })
   }
 
   return (
-    <div className="page">
-      <header className="titlebar">
-        <h1>检测记录</h1>
-      </header>
-
+    <div className="offline-detections">
       <div className="filter-bar">
         <FilterBar rows={rows} filters={filters} onChange={setFilters} />
         {/* 记录总数 —— 筛选之后才知道还剩几条 */}
