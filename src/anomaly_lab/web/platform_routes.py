@@ -51,6 +51,21 @@ TimeFormat = Literal["iso_utc", "iso_naive", "epoch_s", "epoch_ms"]
 MissingPolicy = Literal["drop", "interpolate", "error"]
 
 
+def _parse_decision(raw: object) -> dict:
+    """把 `decision_json` 解析成对象；老数据 / 坏数据一律返回空 dict。
+
+    ⚠️ 绝不能让一条老记录的坏 JSON 把整页打成 500 ——
+       决策链是**附加信息**，读不出来就当作「这次没记」。
+    """
+    if not raw:
+        return {}
+    try:
+        value = json.loads(str(raw))
+    except (TypeError, ValueError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
 class SourceIn(BaseModel):
     name: str
     path: str = ""
@@ -372,6 +387,68 @@ def build_router(
             "series": sorted({item.series_id for item in candidates}),
             "jobs": [{"id": job.id, "name": job.name} for job in store.list_jobs()],
             "skipped": skipped,
+        }
+
+    @router.get("/api/platform/detections")
+    def detections(
+        job_id: int | None = None,
+        only_alerts: bool = False,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> dict:
+        """**平台运行产生的检测记录** —— 每次运行 × 每条序列。
+
+        ⚠️ 与 `/api/summary`（离线回测报告）是两回事：
+           那边回答「算法在合成集上表现如何」，这边回答「我们的任务跑出了什么」。
+
+        ⚠️ 与 `/api/platform/alerts` 也不同：告警记录只收 `n_alerts > 0` 的记录，
+           这里**默认全收**（包括「跑了但没告警」）—— 「没有告警」本身是结论。
+        """
+        store = _store()
+        limit = max(1, min(int(limit), 500))
+        offset = max(0, int(offset))
+        rows, total = store.detection_record_page(
+            job_id=job_id, only_alerts=only_alerts, limit=limit, offset=offset
+        )
+        records = []
+        for row in rows:
+            decision = _parse_decision(row.get("decision_json"))
+            threshold = decision.get("threshold") or {}
+            records.append(
+                {
+                    "run_id": int(row["run_id"]),
+                    "job_id": int(row["job_id"]),
+                    "job_name": row["job_name"],
+                    "metric_id": int(row["metric_id"]),
+                    "metric_name": row["metric_name"],
+                    "source_name": row["source_name"],
+                    "started_at": row["started_at"],
+                    "series_id": row["series_id"],
+                    "group": row["group_name"],
+                    "n": int(row["n"]),
+                    "n_valid": int(row["n_valid"]),
+                    "n_missing": int(row["n_missing"]),
+                    "n_alerts": int(row["n_alerts"]),
+                    "n_p0": int(row["n_p0"]),
+                    "sufficient": bool(row["sufficient"]),
+                    "detector": row["detector"],
+                    "metric_class": row["metric_class"],
+                    "fallback": bool(row["fallback"]),
+                    "start_ts": row["start_ts"],
+                    "end_ts": row["end_ts"],
+                    # 尺度结论从决策链里取（run_series 没有单独的列）
+                    "scale_source": threshold.get("scale_source") or "",
+                    "scale_fallback": bool(threshold.get("scale_fallback")),
+                    "status": threshold.get("status") or "ok",
+                    "has_decision": bool(decision),
+                }
+            )
+        return {
+            "records": records,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "jobs": [{"id": job.id, "name": job.name} for job in store.list_jobs()],
         }
 
     @router.post("/api/platform/sources")

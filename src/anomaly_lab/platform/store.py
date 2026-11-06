@@ -45,6 +45,27 @@ from anomaly_lab.platform.validation import (
     validate_window_points,
 )
 
+#: 检测记录清单的公共 SELECT —— 全量清单与分页共用一份字段清单。
+#:
+#: ⚠️ 别在两个方法里各写一遍：加一个字段（如 `decision_json`）时
+#:    很容易只改一处，另一条读路径就悄悄少了字段。
+_DETECTION_RECORDS_SELECT = (
+    "SELECT rs.run_id, rs.series_id, rs.group_name, rs.n, rs.n_valid,"
+    " rs.n_missing, rs.n_alerts, rs.n_p0, rs.sufficient, rs.detector,"
+    " rs.metric_class, rs.fallback, rs.file, rs.content_hash,"
+    " rs.start_ts, rs.end_ts, rs.decision_json,"
+    " r.job_id, r.started_at, j.name AS job_name,"
+    " m.id AS metric_id, m.name AS metric_name,"
+    " s.id AS source_id, s.name AS source_name"
+    " FROM run_series rs"
+    " JOIN runs r ON r.id = rs.run_id"
+    " JOIN jobs j ON j.id = r.job_id"
+    " JOIN metrics m ON m.id = j.metric_id"
+    " JOIN sources s ON s.id = m.source_id"
+    " WHERE rs.file <> ''"
+)
+
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS sources (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1284,19 +1305,7 @@ class PlatformStore:
         ⚠️ **只返回真正跑出结果的记录**（`file` 非空）——
            数据不足的序列没有检测产物，进总体只会稀释指标。
         """
-        sql = (
-            "SELECT rs.run_id, rs.series_id, rs.group_name, rs.n, rs.n_alerts,"
-            " rs.n_p0, rs.sufficient, rs.detector, rs.metric_class, rs.fallback,"
-            " rs.file, rs.content_hash, rs.start_ts, rs.end_ts, rs.decision_json,"
-            " r.job_id, m.id AS metric_id, m.name AS metric_name,"
-            " s.id AS source_id, s.name AS source_name"
-            " FROM run_series rs"
-            " JOIN runs r ON r.id = rs.run_id"
-            " JOIN jobs j ON j.id = r.job_id"
-            " JOIN metrics m ON m.id = j.metric_id"
-            " JOIN sources s ON s.id = m.source_id"
-            " WHERE rs.file <> ''"
-        )
+        sql = _DETECTION_RECORDS_SELECT
         params: list[object] = []
         if job_id is not None:
             sql += " AND r.job_id = ?"
@@ -1305,6 +1314,42 @@ class PlatformStore:
         with self._conn() as conn:
             rows = conn.execute(sql, params).fetchall()
         return [dict(row) for row in rows]
+
+    def detection_record_page(
+        self,
+        *,
+        job_id: int | None = None,
+        only_alerts: bool = False,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[list[dict], int]:
+        """检测记录分页 —— 新的在前，附带总条数。
+
+        ⚠️ 与 `detection_records()` 共用同一段 SELECT，只在 WHERE / ORDER / LIMIT
+           上不同：两处各写一份字段清单迟早会漂移。
+        """
+        where = ""
+        params: list[object] = []
+        if job_id is not None:
+            where += " AND r.job_id = ?"
+            params.append(int(job_id))
+        if only_alerts:
+            where += " AND rs.n_alerts > 0"
+
+        with self._conn() as conn:
+            total = int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM (" + _DETECTION_RECORDS_SELECT + where + ")",
+                    params,
+                ).fetchone()[0]
+            )
+            rows = conn.execute(
+                _DETECTION_RECORDS_SELECT
+                + where
+                + " ORDER BY rs.run_id DESC, rs.series_id LIMIT ? OFFSET ?",
+                [*params, int(limit), int(offset)],
+            ).fetchall()
+        return [dict(row) for row in rows], total
 
     def distinct_alert_events(self) -> dict[tuple[int, str, str], int]:
         """(metric_id, series_id, 检出结果) → **去重后**的告警事件数。

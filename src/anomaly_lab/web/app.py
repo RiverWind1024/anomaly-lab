@@ -127,6 +127,19 @@ def _find_frontend_dist() -> Path | None:
     return None
 
 
+def _npz_list(data, key: str) -> list[float]:
+    """npz 里的可选浮点数组 → 列表；缺键 / 空数组都给 `[]`。
+
+    ⚠️ 不能直接 `list(data[key])`：标量（0 维）会抛 `TypeError`，
+       而老产物里这些键可能缺失。
+    """
+    if key not in data:
+        return []
+    import numpy as np
+
+    return [float(v) for v in np.asarray(data[key], dtype=float).ravel()]
+
+
 def create_app(
     platform_store: PlatformStore | None = None,
     platform_data_root: Path | None = None,
@@ -368,6 +381,23 @@ def create_app(
                 "values": [float(v) for v in np.asarray(data["values"], dtype=float)],
                 "scores": [float(v) for v in np.asarray(data["scores"], dtype=float)],
                 "severity": [int(v) for v in np.asarray(data["severity"], dtype=int)],
+                # 基线三件套 / 阈值 / 档位名 —— 有就带上，老产物缺键时给空值。
+                # ⚠️ 空数组 ≠ null：前端按长度判断「有没有带」，别把空数组当「有带」。
+                "baseline": _npz_list(data, "baseline"),
+                "lower": _npz_list(data, "lower"),
+                "upper": _npz_list(data, "upper"),
+                "alert_threshold": (
+                    float(data["alert_threshold"]) if "alert_threshold" in data else 0.0
+                ),
+                "critical_threshold": (
+                    float(data["critical_threshold"])
+                    if "critical_threshold" in data
+                    else 0.0
+                ),
+                "score_type": str(data["score_type"]) if "score_type" in data else "",
+                "levels": (
+                    json.loads(str(data["levels"])) if "levels" in data else ["正常"]
+                ),
                 # ⚠️ 生产数据没有自带真值 —— 恒为空，真值来自人工标注。
                 "labels": [],
             }
