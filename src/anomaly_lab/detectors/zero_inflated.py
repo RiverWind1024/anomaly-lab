@@ -6,6 +6,7 @@
 
 - `poisson_count`：计数值（每分钟 error 数）vs 泊松期望；
 - `zero_inflated_iqr`：大部分为 0、非零有幅度（交易额、消息大小）。
+  幅度尺度也走降级链：非零 IQR → 非零 MAD → 非零 std → 不可判。
 """
 
 from __future__ import annotations
@@ -41,7 +42,6 @@ class PoissonCountDetector(TimedDetector):
             raise ValueError("window 至少为 2")
         self.window = int(window)
         self.default_threshold = float(threshold)
-        self._last_scale_source = "poisson"
 
     def fit(self, series: SeriesBundle) -> PoissonCountDetector:
         return self
@@ -56,29 +56,33 @@ class PoissonCountDetector(TimedDetector):
         self._last_scale_source = "poisson"
 
         values = np.asarray(series.values, dtype=float)
-        # 基线 λ：扩张均值 + shift(1) —— 因果，不含当前点也不含未来
-        fallback = float(values.mean()) if values.size else 0.0
-        rate = (
-            pd.Series(values)
-            .expanding(min_periods=2)
-            .mean()
-            .shift(1)
-            .fillna(fallback)
-            .clip(lower=1e-3)          # λ=0 会让第一次出现变成「无穷倍」
-            .to_numpy()
+
+        # ⚠️ λ 必须是因果的：只用**当前点之前**的数据。
+        #    前两个点没有足够历史（min_periods=2 + shift(1)）→ 无法判断，
+        #    分数给 0，绝不能用全序列均值兜底（那是未来数据）。
+        history = (
+            pd.Series(values).expanding(min_periods=2).mean().shift(1).to_numpy()
         )
+        known = np.isfinite(history)
+        # 未知位置给一个占位值（最后会被 `known` 掩成 0 分）
+        rate = np.where(known, history, 1.0)
+        lam = np.maximum(rate, 1e-3)   # λ=0 会让第一次出现变成「无穷倍」
 
         # ① 单点：这一分钟爆了
-        p_point = poisson.cdf(values - 1, rate)
+        p_point = poisson.cdf(values - 1, lam)
 
         # ② 窗口累计：这几分钟一直在出（λ 随有效窗口长度缩放）
         sums = pd.Series(values).rolling(self.window, min_periods=1).sum().to_numpy()
         effective = (
             pd.Series(values).rolling(self.window, min_periods=1).count().to_numpy()
         )
-        p_window = poisson.cdf(sums - 1, rate * effective)
+        p_window = poisson.cdf(sums - 1, lam * effective)
 
-        return np.maximum(p_point, p_window)
+        # ⚠️ 窗口项只在「当前点本身就有事件」时采用 ——
+        #    否则一次尖峰会让它后面 window-1 个 **0 值点**都报 1.0，
+        #    用户会看到「0 次 / 分数 1.0」的告警。
+        scores = np.where(values > 0, np.maximum(p_point, p_window), 0.0)
+        return np.where(known, scores, 0.0)
 
 
 MIN_NONZERO_SAMPLES = 30
@@ -96,6 +100,7 @@ class ZeroInflatedIQRDetector(TimedDetector):
 
     name = "zero_inflated_iqr"
     score_type = "zscore"
+    prefer_scale = "iqr"
     default_threshold = 3.0
 
     def __init__(self, k: float = 3.0) -> None:

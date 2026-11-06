@@ -11,8 +11,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from anomaly_lab.detectors.scale import numeric_floor, robust_scale
-
-MIN_NONZERO_SAMPLES = 30    # 非零样本少于它 → 幅度估不准
+from anomaly_lab.detectors.zero_inflated import MIN_NONZERO_SAMPLES
 
 
 @dataclass(frozen=True)
@@ -29,6 +28,9 @@ class Capability:
     looks_like_counts: bool
     scale_probe: dict[str, float]
     verdict: str                      # ok / unsuitable / undetermined
+    #: `looks_like_counts` 的对外别名：泊松 / 事件计数类算法是否适用。
+    #: 前端在选中 poisson_count / event_count 时用它提示「数据不是计数」。
+    count_ready: bool = False
     warnings: list[CapabilityWarning] = field(default_factory=list)
     message: str = ""
 
@@ -38,7 +40,10 @@ def probe(values: np.ndarray) -> Capability:
     v = v[np.isfinite(v)]
     n = int(v.size)
     if n == 0:
-        return Capability(0, 0.0, 0, False, {}, "undetermined", [], "没有有效数据")
+        return Capability(
+            0, 0.0, 0, False, {}, "undetermined", count_ready=False,
+            message="没有有效数据",
+        )
 
     nonzero = v != 0
     n_nonzero = int(nonzero.sum())
@@ -60,7 +65,8 @@ def probe(values: np.ndarray) -> Capability:
     if est.source == "none":
         return Capability(
             n, zero_ratio, n_nonzero, looks_like_counts, probe_scales,
-            "undetermined", [], "整段没有可分辨的变化（或全为 0），无法判定",
+            "undetermined", count_ready=looks_like_counts,
+            message="整段没有可分辨的变化（或全为 0），无法判定",
         )
 
     warnings: list[CapabilityWarning] = []
@@ -95,9 +101,11 @@ def probe(values: np.ndarray) -> Capability:
 
     if not warnings:
         return Capability(
-            n, zero_ratio, n_nonzero, looks_like_counts, probe_scales, "ok", [], ""
+            n, zero_ratio, n_nonzero, looks_like_counts, probe_scales, "ok",
+            count_ready=looks_like_counts,
         )
     return Capability(
         n, zero_ratio, n_nonzero, looks_like_counts, probe_scales,
-        "unsuitable", warnings, "；".join(w.reason for w in warnings),
+        "unsuitable", count_ready=looks_like_counts, warnings=warnings,
+        message="；".join(w.reason for w in warnings),
     )

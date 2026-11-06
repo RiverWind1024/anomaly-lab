@@ -349,6 +349,11 @@ export interface CapabilityWarningItem {
 export interface Capability {
   zero_ratio: number
   n_nonzero: number
+  /**
+   * 数据是否像非负整数计数（泊松 / 事件计数类算法的前提）。
+   * 老产物没有这个键。
+   */
+  count_ready?: boolean
   verdict: 'ok' | 'unsuitable' | 'undetermined'
   warnings: CapabilityWarningItem[]
   message: string

@@ -122,6 +122,8 @@ def test_试跑返回能力警告(tmp_path):
     body = client.post(f"/api/platform/jobs/{job_id}/test-run").json()
     caps = [item.get("capability") for item in body["results"]]
     assert caps and caps[0]["verdict"] in {"ok", "unsuitable", "undetermined"}
+    # 前端据此判断「泊松 / 事件计数类算法是否适用」
+    assert isinstance(caps[0]["count_ready"], bool)
     # `series` 与 `results` 是同一次探测的两份数据，结论必须一致
     assert body["series"][0]["capability"] == caps[0]
 

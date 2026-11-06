@@ -76,6 +76,16 @@ def test_76百分比零才报iqr失效():
     assert "iqr" in names
 
 
+def test_count_ready_是计数判定的对外别名():
+    counts = probe(np.array([0, 0, 1, 0, 2, 0, 0, 1, 0, 10], dtype=float))
+    assert counts.looks_like_counts is True
+    assert counts.count_ready is True
+
+    continuous = probe(np.random.default_rng(0).normal(10, 2, 500))
+    assert continuous.looks_like_counts is False
+    assert continuous.count_ready is False
+
+
 def test_catalog_每个检测器都带首选尺度():
     from anomaly_lab.platform.detectors import detector_catalog
 

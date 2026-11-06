@@ -81,4 +81,44 @@ describe('CapabilityWarning', () => {
     expect(screen.getByText(/不符合该算法的假设/)).toBeInTheDocument()
     expect(screen.queryByText(/退回标准差兜底/)).not.toBeInTheDocument()
   })
+
+  it('计数类算法 + 数据不是计数时提示', () => {
+    render(
+      <CapabilityWarning
+        detector="poisson_count"
+        capability={{ verdict: 'ok', warnings: [], count_ready: false }}
+      />,
+    )
+    expect(screen.getByText(/要求非负整数计数/)).toBeTruthy()
+  })
+
+  it('计数类算法 + 数据是计数时不提示', () => {
+    const { container } = render(
+      <CapabilityWarning
+        detector="event_count"
+        capability={{ verdict: 'ok', warnings: [], count_ready: true }}
+      />,
+    )
+    expect(container).toBeEmptyDOMElement()
+  })
+
+  it('非计数类算法不因 count_ready 提示', () => {
+    const { container } = render(
+      <CapabilityWarning
+        detector="iqr"
+        capability={{ verdict: 'ok', warnings: [], count_ready: false }}
+      />,
+    )
+    expect(container).toBeEmptyDOMElement()
+  })
+
+  it('老产物没有 count_ready 时不误报', () => {
+    const { container } = render(
+      <CapabilityWarning
+        detector="poisson_count"
+        capability={{ verdict: 'ok', warnings: [] }}
+      />,
+    )
+    expect(container).toBeEmptyDOMElement()
+  })
 })

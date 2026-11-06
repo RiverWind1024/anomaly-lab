@@ -32,10 +32,13 @@ def test_新检测器只报偏高():
         assert rows[name]["direction"] == "above", name
 
 
-def test_新检测器没有首选尺度():
-    """它们不走 `robust_scale`，catalog 里的偏好尺度是 None。"""
+def test_新检测器的首选尺度():
+    """`zero_inflated_iqr` 内部走 `robust_scale(prefer="iqr")`，必须声明首选尺度，
+    否则降级到 std 时 `scale_fallback` 永远是 False，用户看不到尺度降级。
+    另外两个不做尺度估计，偏好尺度是 None。"""
     rows = _rows()
-    for name in NEW_DETECTORS:
+    assert rows["zero_inflated_iqr"]["prefer_scale"] == "iqr"
+    for name in ("event_count", "poisson_count"):
         assert rows[name]["prefer_scale"] is None, name
 
 

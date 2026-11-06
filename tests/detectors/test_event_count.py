@@ -29,3 +29,26 @@ def test_尺度来源标为_poisson():
     values[10:20] = 1.0
     result = EventCountDetector(window=20).detect(_series(values))
     assert result.scale_source == "poisson"
+
+
+def test_第一个点不报():
+    # 没有历史，无法判断 —— 不能拿全序列均值兜底
+    values = np.zeros(50)
+    values[0] = 100.0
+    result = EventCountDetector(window=10).detect(_series(values))
+    assert result.scores[0] == 0.0
+
+
+def test_截断不变性_后面加数据不影响前面的分数():
+    """⚠️ 因果性最强的证据：把后半段换掉，前半段分数必须逐位不变。"""
+    rng = np.random.default_rng(11)
+    values = (rng.uniform(size=250) < 0.3).astype(float)
+    values[80:90] = 1.0
+
+    base = EventCountDetector(window=10).detect(_series(values)).scores
+
+    changed = values.copy()
+    changed[150:] = 999.0
+    after = EventCountDetector(window=10).detect(_series(changed)).scores
+
+    np.testing.assert_allclose(after[:150], base[:150])

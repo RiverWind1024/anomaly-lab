@@ -578,6 +578,7 @@ def build_router(
                 cap_payload = {
                     "zero_ratio": cap.zero_ratio,
                     "n_nonzero": cap.n_nonzero,
+                    "count_ready": cap.count_ready,
                     "verdict": cap.verdict,
                     "warnings": [
                         {"detector": w.detector, "reason": w.reason}

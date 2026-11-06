@@ -666,8 +666,8 @@ class Recommendation:
 | periodic | `["seasonal", "stl_residual", "iqr"]` | seasonal: period←分类器给出，k∈[2,4] |
 | trending | `["deseasonalized_iqr", "stl_residual"]` | k∈[1.5,3.0] |
 | step | `["changepoint"]` | min_seg∈[10,30] |
-| high_zero_ratio | `["iqr"]` | k∈[2,4]（零值单独建模在 v2） |
-| sparse_event | `["event_count"]` | —— |
+| high_zero_ratio | `["zero_inflated_iqr", "event_count", "iqr"]` | zero_inflated_iqr: k∈[2,4]；event_count: window∈[20,100]；iqr: k∈[2,4] |
+| sparse_event | `["poisson_count", "event_count", "zero_inflated_iqr"]` | poisson_count: window∈[10,100]；event_count: window∈[20,100]；zero_inflated_iqr: k∈[2,4] |
 
 - [ ] **Step 1: 写失败测试**
 

@@ -25,17 +25,20 @@ def test_一次是正常抖动十次才算异常():
 
     result = PoissonCountDetector(window=30).detect(_series(values))
 
-    assert not result.is_anomaly[100]      # 1 次不报
+    assert not result.is_anomaly[90]       # 单次事件不报（90 是事件点）
+    assert not result.is_anomaly[100]      # 零值点更不报
     assert result.is_anomaly[200]          # 10 次必报
 
 
 def test_连续小突发靠窗口累计():
+    # 常态：每 3 分钟 3 次；突发：连续 5 分钟各 3 次（频率 ×3，单点幅度不变）
+    # ⚠️ 单点项和 2 点窗口都不够（< 0.99），必须靠 10 点窗口累计才报得出来。
     values = np.zeros(300)
-    values[::30] = 1.0
-    values[100:105] = 2.0                  # 连续 5 分钟各 2 次
+    values[::3] = 3.0
+    values[100:105] = 3.0
 
+    assert not PoissonCountDetector(window=2).detect(_series(values)).is_anomaly.any()
     result = PoissonCountDetector(window=10).detect(_series(values))
-
     assert result.is_anomaly[100:105].any()
 
 
@@ -43,6 +46,29 @@ def test_零值不会被误报():
     values = np.zeros(100)
     result = PoissonCountDetector(window=10).detect(_series(values))
     assert not result.is_anomaly.any()
+
+
+def test_第一个点不报():
+    # 没有历史，无法判断 —— 不能拿全序列均值兜底
+    values = np.zeros(50)
+    values[0] = 100.0
+    result = PoissonCountDetector(window=10).detect(_series(values))
+    assert result.scores[0] == 0.0
+
+
+def test_截断不变性_后面加数据不影响前面的分数():
+    """⚠️ 因果性最强的证据：把后半段换掉，前半段分数必须逐位不变。"""
+    rng = np.random.default_rng(7)
+    values = rng.poisson(0.4, 250).astype(float)
+    values[80:90] = 5.0
+
+    base = PoissonCountDetector(window=10).detect(_series(values)).scores
+
+    changed = values.copy()
+    changed[150:] = 999.0
+    after = PoissonCountDetector(window=10).detect(_series(changed)).scores
+
+    np.testing.assert_allclose(after[:150], base[:150])
 
 
 def test_poisson_count的尺度来源是poisson():
@@ -79,3 +105,14 @@ def test_zero_inflated_iqr的尺度来源是非零IQR():
     result = ZeroInflatedIQRDetector().detect(_series(values))
     assert result.scale_source == "iqr"
     assert result.status == "ok"
+
+
+def test_zero_inflated_iqr降级到std时标记降级():
+    # 非零点全是 7，只有一个 50 —— IQR=0、MAD=0，退到 std
+    values = np.zeros(200)
+    idx = np.arange(0, 200, 3)[:60]
+    values[idx] = 7.0
+    values[idx[30]] = 50.0
+    result = ZeroInflatedIQRDetector().detect(_series(values))
+    assert result.scale_source == "std"
+    assert result.scale_fallback is True

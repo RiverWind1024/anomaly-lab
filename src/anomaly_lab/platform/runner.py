@@ -256,6 +256,7 @@ def _quality_section(series, cap) -> dict:
 def _capability_section(cap) -> dict:
     return {
         "verdict": cap.verdict,
+        "count_ready": cap.count_ready,
         "scale_probe": cap.scale_probe,
         "warnings": [{"detector": w.detector, "reason": w.reason} for w in cap.warnings],
     }

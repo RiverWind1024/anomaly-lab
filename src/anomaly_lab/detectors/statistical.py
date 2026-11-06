@@ -578,17 +578,16 @@ class EventCountDetector(TimedDetector):
             .count()
             .to_numpy()
         )
-        # λ 也必须是因果的：扩张均值 + shift(1)，第一个点用全局率兜底
-        fallback = float(nonzero.mean())
-        rate = (
-            pd.Series(nonzero)
-            .expanding(min_periods=2)
-            .mean()
-            .shift(1)
-            .fillna(fallback)
-            .to_numpy()
+        # ⚠️ λ 必须是因果的：只用**当前点之前**的数据。
+        #    前两个点没有足够历史（min_periods=2 + shift(1)）→ 无法判断，
+        #    分数给 0，绝不能用全序列均值兜底（那是未来数据）。
+        history = (
+            pd.Series(nonzero).expanding(min_periods=2).mean().shift(1).to_numpy()
         )
-        return poisson.cdf(counts - 1, np.maximum(rate * effective, 1e-6))
+        known = np.isfinite(history)
+        rate = np.where(known, history, 1.0)
+        scores = poisson.cdf(counts - 1, np.maximum(rate * effective, 1e-6))
+        return np.where(known, scores, 0.0)
 
     def detect(
         self, series: SeriesBundle, threshold: float | None = None
