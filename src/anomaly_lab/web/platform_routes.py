@@ -103,6 +103,7 @@ class JobIn(BaseModel):
     interval_seconds: int = 300
     enabled: bool = True
     alert_rules: list[AlertRuleIn] | None = None
+    alert_direction: str | None = None
 
 
 class AlertRuleIn(BaseModel):
@@ -137,6 +138,7 @@ class JobToggleIn(BaseModel):
     window_points: int | None = None
     interval_seconds: int | None = None
     alert_rules: list[AlertRuleIn] | None = None
+    alert_direction: str | None = None
 
 
 class FeedbackIn(BaseModel):
@@ -491,6 +493,7 @@ def build_router(
                 interval_seconds=payload.interval_seconds,
                 enabled=payload.enabled,
                 alert_rules=rule_dicts or None,
+                alert_direction=payload.alert_direction or "both",
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -667,6 +670,7 @@ def build_router(
             "critical_threshold": job.critical_threshold,
             "alert_rules": rules,
             "levels": levels,
+            "alert_direction": job.alert_direction,
             "series": entries,
             "results": results,
             "alerts": alerts,

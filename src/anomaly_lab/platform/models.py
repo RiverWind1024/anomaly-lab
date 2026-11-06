@@ -51,6 +51,9 @@ class Job:
 
     `alert_rules` 是「倍数 → 等级」的规则表，按倍数升序；判定以异常分数为准。
     `alert_threshold` / `critical_threshold` 是规则表的快捷视图（最低档/最高档倍数）。
+
+    `alert_direction` 决定报哪一侧的异常（both / above / below）。
+    方向按「值与检测器基线的比较」判断，不是按分数。
     """
 
     id: int
@@ -66,6 +69,8 @@ class Job:
     next_run_at: str | None
     created_at: str
     alert_rules: list[dict] = field(default_factory=list)
+    #: 告警方向：both / above / below
+    alert_direction: str = "both"
 
 
 @dataclass(frozen=True)

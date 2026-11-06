@@ -19,11 +19,13 @@ from anomaly_lab.contracts import SeriesBundle
 from anomaly_lab.detectors.bands import compute_bands
 from anomaly_lab.platform.alerts import (
     SEVERITY_NORMAL,
+    apply_direction,
     band_multiplier_or_none,
     default_rules,
     highest_multiplier,
     level_labels,
     merge_alert_intervals,
+    parse_direction,
     parse_rules,
     rules_to_dicts,
     severity_from_conditions,
@@ -259,6 +261,7 @@ def _compute_job(
     start_time = start or (end_time - freq_delta(metric.freq) * job.window_points)
     series_list = load_series(store, metric, data_root, start_time, end_time)
     rules = job_rules(job)
+    direction = parse_direction(getattr(job, "alert_direction", "both"))
     # 没有倍数条件时（规则全是绝对值条件）没有「上下界宽度」可言 ——
     # 退回到检测器自己的默认阈值。分级由规则表决定，不受影响。
     band_width = band_multiplier_or_none(rules)
@@ -284,6 +287,8 @@ def _compute_job(
                         "n_p0": 0,
                         "sufficient": False,
                         "file": None,
+                        "alert_direction": direction,
+                        "direction_applied": True,
                     },
                     arrays={},
                     alert_rules=rules_to_dicts(rules),
@@ -298,6 +303,9 @@ def _compute_job(
         result = detector.detect(series, threshold=width)
         bands = compute_bands(detector, series, width)
         severity = severity_from_conditions(result.scores, series.values, rules)
+        severity, direction_applied = apply_direction(
+            severity, series.values, result.expected, direction
+        )
         outcomes.append(
             SeriesOutcome(
                 entry={
@@ -316,6 +324,8 @@ def _compute_job(
                     "status": result.status,
                     "scale_fallback": bool(result.scale_fallback),
                     "file": _file_name(series.series_id),
+                    "alert_direction": direction,
+                    "direction_applied": bool(direction_applied),
                 },
                 arrays={
                     "timestamps": series.timestamps.astype("datetime64[ns]").astype(np.int64),
@@ -331,6 +341,7 @@ def _compute_job(
                     ),
                     "alert_rules": np.array(json.dumps(rules_to_dicts(rules), ensure_ascii=False)),
                     "levels": np.array(json.dumps(levels, ensure_ascii=False)),
+                    "alert_direction": np.array(direction),
                     "detector": np.array(result.detector),
                     "requested_detector": np.array(job.detector),
                     "metric_class": np.array(resolution.metric_class or ""),

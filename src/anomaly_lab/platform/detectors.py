@@ -277,6 +277,20 @@ DETECTOR_LABELS = {
 }
 
 
+#: 能给出基线的检测器 —— 只有它们支持「只报偏低」
+DIRECTION_BOTH_DETECTORS = {
+    "iqr",
+    "mad",
+    "zscore",
+    "seasonal",
+    "stl_residual",
+    "trend_residual_iqr",
+    "theil_sen",
+    "changepoint",
+    "chronos",
+}
+
+
 def detector_catalog() -> list[dict]:
     """给前端用的检测器清单，含默认阈值与可用性。"""
     rows = [
@@ -290,6 +304,7 @@ def detector_catalog() -> list[dict]:
             "available": True,
             "reason": None,
             "slow": False,
+            "direction": "both",
         }
     ]
     for name in DETECTOR_FACTORIES:
@@ -304,6 +319,7 @@ def detector_catalog() -> list[dict]:
                 "available": available,
                 "reason": reason,
                 "slow": name in SLOW_DETECTORS,
+                "direction": "both" if name in DIRECTION_BOTH_DETECTORS else "above",
             }
         )
     return rows

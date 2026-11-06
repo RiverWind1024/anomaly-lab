@@ -29,6 +29,53 @@ SEVERITY_NORMAL = 0
 #: 绝对值条件支持的比较符
 ABSOLUTE_OPS = (">", ">=", "<", "<=")
 
+#: 告警方向：双向 / 只报偏高 / 只报偏低
+DIRECTIONS = ("both", "above", "below")
+
+
+def parse_direction(raw: object) -> str:
+    """校验并归一化告警方向；缺省是 both。"""
+    if raw is None or str(raw).strip() == "":
+        return "both"
+    value = str(raw).strip().lower()
+    if value not in DIRECTIONS:
+        raise ValueError(f"告警方向只支持 {list(DIRECTIONS)}: {raw!r}")
+    return value
+
+
+def apply_direction(
+    severity: np.ndarray,
+    values: np.ndarray,
+    baseline: np.ndarray | None,
+    direction: str,
+) -> tuple[np.ndarray, bool]:
+    """按「值相对基线偏高/偏低」筛掉反方向的告警。
+
+    ⚠️ 返回 `(severity, applied)`：
+       `applied=False` 表示**这次没能按方向过滤**（检测器没有基线），
+       调用方必须把它标出来 —— 用户配了「只报偏低」却收到双向告警，不能静默。
+
+    ⚠️ 没有基线的检测器（poisson_count / event_count / zero_inflated_iqr）
+       分数本身只衡量「偏高」，`direction="below"` 时应当**一条都不报**，
+       而不是退化成双向。
+    """
+    severity = np.asarray(severity)
+    if direction == "both":
+        return severity, True
+
+    if baseline is None or len(baseline) != len(values):
+        if direction == "above":
+            # 无基线时分数本身就是「偏高程度」，above 与 both 等价
+            return severity, True
+        return np.zeros_like(severity), False
+
+    base = np.asarray(baseline, dtype=float)
+    values = np.asarray(values, dtype=float)
+    with np.errstate(invalid="ignore"):
+        keep = values > base if direction == "above" else values < base
+    # 基线是 NaN 的点（滚动窗口暖机段）分数本来就是 0，keep=False 不影响结果
+    return np.where(keep, severity, SEVERITY_NORMAL), True
+
 
 def merge_alert_intervals(severity: np.ndarray) -> list[tuple[int, int, int]]:
     """把逐点 severity 合并成连续区间。

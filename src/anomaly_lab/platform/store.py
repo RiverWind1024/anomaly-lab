@@ -17,6 +17,7 @@ from anomaly_lab.platform.alerts import (
     band_multiplier_or_none,
     default_rules,
     highest_multiplier,
+    parse_direction,
     parse_rules,
     rules_to_dicts,
 )
@@ -78,7 +79,8 @@ CREATE TABLE IF NOT EXISTS jobs (
   enabled INTEGER NOT NULL DEFAULT 1,
   last_run_at TEXT,
   next_run_at TEXT,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  alert_direction TEXT NOT NULL DEFAULT 'both'
 );
 CREATE TABLE IF NOT EXISTS runs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -514,6 +516,10 @@ class PlatformStore:
             conn.execute(
                 "ALTER TABLE jobs ADD COLUMN alert_rules TEXT NOT NULL DEFAULT '[]'"
             )
+        if "alert_direction" not in job_columns:
+            conn.execute(
+                "ALTER TABLE jobs ADD COLUMN alert_direction TEXT NOT NULL DEFAULT 'both'"
+            )
         source_columns = {
             row["name"] for row in conn.execute("PRAGMA table_info(sources)")
         }
@@ -788,10 +794,12 @@ class PlatformStore:
         interval_seconds: int,
         enabled: bool = True,
         alert_rules: list[dict] | None = None,
+        alert_direction: str = "both",
     ) -> Job:
         name = validate_name(name, "任务名称")
         if detector != AUTO_DETECTOR and detector not in DETECTOR_FACTORIES:
             raise ValueError(f"不支持的检测器: {detector}")
+        alert_direction = parse_direction(alert_direction)
         window_points = validate_window_points(int(window_points))
         interval_seconds = validate_interval_seconds(int(interval_seconds))
         self.get_metric(metric_id)
@@ -812,8 +820,8 @@ class PlatformStore:
                 cursor = conn.execute(
                     "INSERT INTO jobs (metric_id, name, detector, alert_threshold,"
                     " critical_threshold, window_points, interval_seconds, enabled,"
-                    " last_run_at, next_run_at, alert_rules, created_at)"
-                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)",
+                    " last_run_at, next_run_at, alert_rules, alert_direction, created_at)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)",
                     (
                         metric_id,
                         name,
@@ -825,6 +833,7 @@ class PlatformStore:
                         1 if enabled else 0,
                         created_at,
                         rules_json,
+                        alert_direction,
                         created_at,
                     ),
                 )
@@ -887,6 +896,9 @@ class PlatformStore:
             int(_pick(fields, "interval_seconds", current.interval_seconds))
         )
         enabled = fields.get("enabled", current.enabled)
+        direction = parse_direction(
+            _pick(fields, "alert_direction", current.alert_direction)
+        )
 
         # ⚠️ **显式给了规则表 → 以它为准** ——
         #    阈值只是规则表的「快捷视图」（最低档/最高档倍数）。
@@ -994,7 +1006,8 @@ class PlatformStore:
                     conn.execute(
                         "UPDATE jobs SET name = ?, metric_id = ?, detector = ?,"
                         " alert_threshold = ?, critical_threshold = ?, window_points = ?,"
-                        " interval_seconds = ?, enabled = ? WHERE id = ?",
+                        " interval_seconds = ?, enabled = ?, alert_direction = ?"
+                        " WHERE id = ?",
                         (
                             name,
                             metric_id,
@@ -1004,6 +1017,7 @@ class PlatformStore:
                             window_points,
                             interval_seconds,
                             1 if enabled else 0,
+                            direction,
                             job_id,
                         ),
                     )
@@ -1011,7 +1025,8 @@ class PlatformStore:
                     conn.execute(
                         "UPDATE jobs SET name = ?, metric_id = ?, detector = ?,"
                         " alert_threshold = ?, critical_threshold = ?, window_points = ?,"
-                        " interval_seconds = ?, enabled = ?, alert_rules = ? WHERE id = ?",
+                        " interval_seconds = ?, enabled = ?, alert_rules = ?,"
+                        " alert_direction = ? WHERE id = ?",
                         (
                             name,
                             metric_id,
@@ -1022,6 +1037,7 @@ class PlatformStore:
                             interval_seconds,
                             1 if enabled else 0,
                             rules_json,
+                            direction,
                             job_id,
                         ),
                     )
