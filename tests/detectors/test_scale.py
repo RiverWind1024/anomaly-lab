@@ -320,3 +320,53 @@ def test_趋势残差正常数据用iqr且不报降级():
     assert result.scale_source == "iqr"
     assert result.status == "ok"
     assert result.scale_fallback is False
+
+
+def test_STL长常数序列不报假告警():
+    """⚠️ 浮点噪声随 n 累积 —— 长序列也要判「没有结构」，不能报 ok + 一堆告警。"""
+    from anomaly_lab.contracts import SeriesBundle
+    from anomaly_lab.detectors.statistical import STLResidualDetector
+
+    for n in (1000, 5000):
+        series = SeriesBundle(
+            "s",
+            np.full(n, 5.0),
+            np.arange(n).astype("datetime64[m]"),
+            "1min",
+        )
+        result = STLResidualDetector(period=24).detect(series)
+        assert result.scale_source == "none", n
+        assert result.status == "undetermined", n
+        assert not result.is_anomaly.any(), n
+
+
+@pytest.mark.parametrize("constant", [0.001, 0.01, 0.3, 1e-6])
+def test_季节性问题常数序列都判不可判(constant):
+    from anomaly_lab.contracts import SeriesBundle
+    from anomaly_lab.detectors.statistical import SeasonalDetector
+
+    series = SeriesBundle(
+        "s",
+        np.full(240, constant),
+        np.arange(240).astype("datetime64[m]"),
+        "1min",
+    )
+    result = SeasonalDetector(period=24).detect(series)
+    assert result.scale_source == "none", constant
+    assert result.status == "undetermined", constant
+
+
+def test_季节性问题周期大于点数时判不可判():
+    from anomaly_lab.contracts import SeriesBundle
+    from anomaly_lab.detectors.statistical import SeasonalDetector
+
+    rng = np.random.default_rng(0)
+    series = SeriesBundle(
+        "s",
+        rng.normal(0, 1, 100),
+        np.arange(100).astype("datetime64[m]"),
+        "1min",
+    )
+    result = SeasonalDetector(period=200).detect(series)
+    assert result.scale_source == "none"
+    assert result.status == "undetermined"

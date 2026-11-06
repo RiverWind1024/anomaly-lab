@@ -257,6 +257,7 @@ class SeasonalDetector(TimedDetector):
         floor = numeric_floor(values)
         global_scale, global_source = self._global_scale(estimate)
         worst = "mad"                       # 相位组正常时用的是组内 MAD
+        filled = False                      # 是否至少填过一组
         for phase in range(self.period):
             mask = phases == phase
             if mask.sum() < 2:
@@ -264,21 +265,27 @@ class SeasonalDetector(TimedDetector):
             group = estimate[mask]
             med = float(np.median(group))
             mad = float(np.median(np.abs(group - med))) * 1.4826
-            if mad <= 0:
-                mad = float(np.std(group))
-                if mad > floor:
+            if mad <= floor:
+                # ⚠️ 组内值完全相同时 `np.std` 会因求和舍入返回**正的噪声**，
+                #    不能只看 `<= 0`，否则会把浮点噪声当真实尺度。
+                std = float(np.std(group))
+                if std > floor:
+                    mad = std
                     worst = _worse(worst, "std")
+                else:
+                    mad = 0.0
             if mad <= 0:
                 # 组内完全确定：用一个正的尺度兜底，避免除零与 NaN
                 mad = global_scale
                 worst = _worse(worst, global_source)
             if mad <= 0:
-                worst = "none"
                 continue
             center[mask] = med
             scale[mask] = mad
-        self._last_scale_source = worst
-        self._phase_cache = (values.copy(), center, scale, worst)
+            filled = True
+        source = worst if filled else "none"
+        self._last_scale_source = source
+        self._phase_cache = (values.copy(), center, scale, source)
         return center, scale
 
     def _global_scale(self, values: np.ndarray) -> tuple[float, str]:
@@ -356,6 +363,15 @@ class STLResidualDetector(TimedDetector):
         self, values: np.ndarray, estimate: np.ndarray | None = None
     ) -> tuple[np.ndarray, np.ndarray, float]:
         """返回 (拟合曲线, 残差绝对值, 残差尺度)。结果会缓存，score 与 bands 共用。"""
+        # ⚠️ 输入本身没有可分辨的波动（传感器卡死、指标恒为常数）时，
+        #    STL 的残差全是浮点噪声 —— 长序列上这些噪声会超过 numeric_floor，
+        #    被当成真实尺度，报出一堆假告警。
+        #    这里直接判「没有结构」，而不是把 floor 调大（调大 fence 会误伤真实小波动）。
+        if np.ptp(values) <= numeric_floor(values):
+            self._last_scale_source = "none"
+            self._last_status = "undetermined"
+            zeros = np.zeros_like(values)
+            return zeros, zeros, 0.0
         cached = self._residual_cache
         if cached is not None and np.array_equal(cached[0], values):
             # ⚠️ 缓存命中时也必须恢复来源（`_timed_detect` 每次都会先清空）
