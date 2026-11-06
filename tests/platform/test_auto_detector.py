@@ -68,14 +68,14 @@ def test_auto_picks_the_recommended_detector_when_supported():
     from anomaly_lab.classification.classifier import classify
 
     sparse = np.zeros(240)
-    sparse[::60] = 5.0  # 稀疏事件 → 首选 poisson_count
+    sparse[::60] = 5.0  # 稀疏事件 → 首选 event_count
     assert classify(_bundle(sparse)).recommendation.detectors == [
-        "poisson_count",
         "event_count",
+        "poisson_count",
         "zero_inflated_iqr",
     ]
     resolution = resolve_detector(AUTO_DETECTOR, _bundle(sparse))
-    assert resolution.detector == "poisson_count"
+    assert resolution.detector == "event_count"
     assert resolution.fallback is False
 
 

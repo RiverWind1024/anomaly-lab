@@ -67,13 +67,18 @@ _RULES: dict[str, tuple[list[str], dict[str, dict], str]] = {
         "零值会破坏 IQR/MAD 的分母；先看非零部分的幅度，或看事件频率",
     ),
     "sparse_event": (
-        ["poisson_count", "event_count", "zero_inflated_iqr"],
+        ["event_count", "poisson_count", "zero_inflated_iqr"],
         {
-            "poisson_count": {"window": [10, 100]},
             "event_count": {"window": [20, 100]},
+            "poisson_count": {"window": [10, 100]},
             "zero_inflated_iqr": {"k": [2.0, 4.0]},
         },
-        "稀疏事件先看「发生了多少次」（泊松），幅度只有在非零点足够多时才估得准",
+        (
+            "零值 95%+ 的稀疏事件，先看「有没有发生」——"
+            "二值化计数的信噪比高于直接拿值做泊松检验"
+            "（合成评测集：点级 F1 0.215 vs 0.161）；"
+            "幅度只有在非零点足够多时才估得准"
+        ),
     ),
 }
 
