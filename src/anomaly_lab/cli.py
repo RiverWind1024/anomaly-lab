@@ -582,15 +582,18 @@ def _cmd_report(args: argparse.Namespace) -> int:
 
 
 def _cmd_serve(args: argparse.Namespace) -> int:
+    import atexit
+
     import uvicorn
 
+    from anomaly_lab.observability import get_observability
     from anomaly_lab.web.app import create_app
 
-    uvicorn.run(
-        create_app(start_scheduler=not args.no_scheduler),
-        host=args.host,
-        port=args.port,
-    )
+    app = create_app(start_scheduler=not args.no_scheduler)
+    # ⚠️ OTel 的 BatchSpanProcessor 与 PeriodicExportingMetricReader 都是后台线程，
+    #    进程直接退出会丢掉最后一批还没发送的数据 —— 显式 flush 一次。
+    atexit.register(get_observability().shutdown)
+    uvicorn.run(app, host=args.host, port=args.port)
     return 0
 
 
