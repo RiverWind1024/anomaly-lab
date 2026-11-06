@@ -587,6 +587,10 @@ class EventCountDetector(TimedDetector):
         known = np.isfinite(history)
         rate = np.where(known, history, 1.0)
         scores = poisson.cdf(counts - 1, np.maximum(rate * effective, 1e-6))
+        # ⚠️ 只在**当前点本身就是事件**时才报。
+        #    否则一次 5 连事件会让它后面 5 个 0 值点都报满分，
+        #    用户看到的是「0 次 / 分数 1.0」的告警 —— 那是窗口的尾巴，不是异常点。
+        scores = np.where(nonzero > 0, scores, 0.0)
         return np.where(known, scores, 0.0)
 
     def detect(

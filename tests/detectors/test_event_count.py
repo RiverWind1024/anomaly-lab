@@ -52,3 +52,18 @@ def test_截断不变性_后面加数据不影响前面的分数():
     after = EventCountDetector(window=10).detect(_series(changed)).scores
 
     np.testing.assert_allclose(after[:150], base[:150])
+
+
+def test_事件结束后的零值点不再被报():
+    """⚠️ 窗口的尾巴不是异常点 —— 告警必须落在真正发生事件的位置。
+
+    否则一次 5 连事件会让后面 5 个 0 值点都报满分，
+    用户看到「0 次 / 分数 1.0」，无法理解。
+    """
+    values = np.zeros(100)
+    values[50:55] = 1.0
+    result = EventCountDetector(window=10).detect(_series(values))
+
+    assert result.is_anomaly[50:55].any()
+    assert not result.is_anomaly[55:].any()
+    assert (result.scores[55:] == 0).all()
