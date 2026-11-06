@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+import random
 import sqlite3
 from datetime import timedelta
 
@@ -156,6 +158,39 @@ def test_零膨胀数据判定为不可用并给出_iqr_警告(tmp_path):
     assert capability["verdict"] == "unsuitable"
     assert capability["zero_ratio"] == 1 - 1 / 60
     assert "iqr" in {item["detector"] for item in capability["warnings"]}
+
+
+def test_无周期数据在试跑里提示季节性算法不适用(tmp_path):
+    """零值率不高、但完全没有周期 —— 这时 seasonal / stl_residual 的前提不成立。"""
+    rng = random.Random(0)
+    values = [10.0 + rng.gauss(0, 2) for _ in range(200)]
+    client, _store, job_id = _client(tmp_path)
+    _overwrite_series(tmp_path, values)
+
+    capacity = client.post(f"/api/platform/jobs/{job_id}/test-run").json()["results"][0][
+        "capability"
+    ]
+    # ⚠️ 形态不适配不改变 verdict —— 数据本身没问题
+    assert capacity["verdict"] == "ok"
+    assert capacity["has_period"] is False
+    names = {item["detector"] for item in capacity["shape_warnings"]}
+    assert "seasonal" in names and "stl_residual" in names
+
+
+def test_周期数据在试跑里提示趋势算法拟合不完整(tmp_path):
+    rng = random.Random(1)
+    # ⚠️ 任务窗口只有 60 点 —— 周期要选得让窗口里至少 3 个完整周期（此处 6 个）
+    values = [10.0 + 3 * math.sin(2 * math.pi * index / 10) + rng.gauss(0, 0.3) for index in range(60)]
+    client, _store, job_id = _client(tmp_path)
+    _overwrite_series(tmp_path, values)
+
+    capacity = client.post(f"/api/platform/jobs/{job_id}/test-run").json()["results"][0][
+        "capability"
+    ]
+    assert capacity["has_period"] is True
+    names = {item["detector"] for item in capacity["shape_warnings"]}
+    assert "seasonal" not in names
+    assert "trend_residual_iqr" in names and "theil_sen" in names
 
 
 def test_test_run_unknown_job_returns_404(tmp_path):

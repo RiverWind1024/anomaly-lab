@@ -104,3 +104,56 @@ def test_catalog_每个检测器都带首选尺度():
     for row in rows.values():
         assert "prefer_scale" in row
 
+
+
+def test_无周期数据提示季节性算法会退化():
+    """没有可信周期时，seasonal / stl_residual 的前提不成立。"""
+    values = np.random.default_rng(0).normal(10, 2, 500)
+    cap = probe(values)
+    assert cap.has_period is False
+    names = {w.detector for w in cap.shape_warnings}
+    assert "seasonal" in names and "stl_residual" in names
+    # ⚠️ 形态不适配**不参与** verdict —— 数据本身没问题，只是这两个算法不适用。
+    #    否则几乎所有非周期序列都会被判成 unsuitable，这个字段就没意义了。
+    assert cap.verdict == "ok"
+    assert cap.warnings == []
+
+
+def test_周期数据不提示缺少周期():
+    rng = np.random.default_rng(1)
+    t = np.arange(500)
+    values = 10 + 3 * np.sin(2 * np.pi * t / 24) + rng.normal(0, 0.3, 500)
+    cap = probe(values)
+    assert cap.has_period is True
+    names = {w.detector for w in cap.shape_warnings}
+    assert "seasonal" not in names and "stl_residual" not in names
+
+
+def test_周期数据提示趋势算法拟合不完整():
+    """线性趋势线解释不了周期波动 —— 残差里仍是一个完整的正弦。"""
+    rng = np.random.default_rng(1)
+    t = np.arange(500)
+    values = 10 + 3 * np.sin(2 * np.pi * t / 24) + rng.normal(0, 0.3, 500)
+    cap = probe(values)
+    assert cap.detrended_structure >= 0.3
+    names = {w.detector for w in cap.shape_warnings}
+    assert "theil_sen" in names and "trend_residual_iqr" in names
+
+
+def test_纯线性趋势不提示非线性():
+    """⚠️ 反例守卫：线性趋势 + 噪声必须被判成近似线性，不能一有趋势就报警。"""
+    rng = np.random.default_rng(2)
+    values = np.linspace(0, 100, 500) + rng.normal(0, 1, 500)
+    cap = probe(values)
+    assert cap.detrended_structure < 0.3
+    names = {w.detector for w in cap.shape_warnings}
+    assert "theil_sen" not in names and "trend_residual_iqr" not in names
+
+
+def test_阶梯数据提示趋势算法():
+    rng = np.random.default_rng(3)
+    values = np.concatenate([np.zeros(250), np.full(250, 10.0)]) + rng.normal(0, 1, 500)
+    cap = probe(values)
+    assert cap.detrended_structure >= 0.3
+    names = {w.detector for w in cap.shape_warnings}
+    assert "theil_sen" in names

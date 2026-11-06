@@ -259,6 +259,13 @@ def _capability_section(cap) -> dict:
         "count_ready": cap.count_ready,
         "scale_probe": cap.scale_probe,
         "warnings": [{"detector": w.detector, "reason": w.reason} for w in cap.warnings],
+        # 形态与算法的适配性 —— 与 warnings 分开，不参与 verdict
+        "has_period": cap.has_period,
+        "detrended_structure": cap.detrended_structure,
+        "shape_warnings": [
+            {"detector": w.detector, "reason": w.reason}
+            for w in cap.shape_warnings
+        ],
     }
 
 
@@ -294,7 +301,7 @@ def _compute_job(
     for series in series_list:
         # ⚠️ 能力探测必须在检测**之前**、且只算一次 ——
         #    决策链记录的是这次实际看到的数据，不是检测后重新猜的。
-        cap = probe(series.values)
+        cap = probe(series.values, series.freq)
         sufficient = bool(series.meta.get("sufficient", True))
         if not sufficient:
             # 有效点太少：明确标记「数据不足」，绝不能当成「一切正常」

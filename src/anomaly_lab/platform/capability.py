@@ -9,9 +9,18 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import numpy as np
+from scipy.ndimage import uniform_filter1d
 
+from anomaly_lab.detectors.period import estimate_period
 from anomaly_lab.detectors.scale import numeric_floor, robust_scale
 from anomaly_lab.detectors.zero_inflated import MIN_NONZERO_SAMPLES
+
+#: 线性去趋势后残差「仍有结构」的门槛 —— 用滑动平均能解释的残差方差比例衡量。
+#:
+#: 实测（120 条合成序列）：白噪声 / 纯线性趋势 ≈ 0.07–0.17，
+#: 周期型 ≈ 0.66–0.89，阶梯型 ≈ 0.34–0.86。
+#: 0.30 落在两者之间：不会把线性趋势误判成非线性，也不会漏掉周期 / 阶梯。
+DETRENDED_STRUCTURE_THRESHOLD = 0.30
 
 
 @dataclass(frozen=True)
@@ -35,9 +44,81 @@ class Capability:
     count_ready: bool = False
     warnings: list[CapabilityWarning] = field(default_factory=list)
     message: str = ""
+    #: 有没有**可信**周期（`estimate_period` 认为可用）——
+    #: 只用于「形态 × 算法」适配性，不参与 verdict。
+    has_period: bool = False
+    #: 线性去趋势后残差的结构强度（0–1）——
+    #: 接近 1 说明残差几乎全是平滑成分（周期 / 阶梯 / 非线性趋势）。
+    detrended_structure: float = 0.0
+    #: 「算法 × 形态」不适配的说明。
+    #:
+    #: ⚠️ 与 `warnings` **分开**：这些算法（seasonal / stl_residual /
+    #:    trend_residual_iqr / theil_sen）对数据形态有前提，数据本身没问题，
+    #:    只是这类算法不适用。放进 `warnings` 会让几乎所有非周期序列
+    #:    都被判成 `unsuitable`，verdict 就失去意义了。
+    shape_warnings: list[CapabilityWarning] = field(default_factory=list)
 
 
-def probe(values: np.ndarray) -> Capability:
+def _detrended_structure(values: np.ndarray) -> float:
+    """线性去趋势后，残差里还有多少「平滑结构」。
+
+    1 = 残差几乎全是平滑成分（周期 / 阶梯 / 非线性趋势）；
+    0 = 残差接近白噪声（线性趋势 + 噪声）。
+    """
+    n = int(values.size)
+    if n < 10:
+        return 0.0
+    t = np.arange(n, dtype=float)
+    residual = values - np.polyval(np.polyfit(t, values, 1), t)
+    total = float(np.var(residual))
+    if total <= 0.0:
+        return 0.0
+    # 窗口取序列长度的 2%，至少 5 点：足够跨过噪声，又短于任何真实周期。
+    window = max(5, n // 50)
+    if window % 2 == 0:
+        window += 1
+    smooth = uniform_filter1d(residual, size=window, mode="nearest")
+    return float(np.clip(1.0 - np.var(residual - smooth) / total, 0.0, 1.0))
+
+
+def _shape_warnings(
+    values: np.ndarray, freq: str | None
+) -> tuple[bool, float, list[CapabilityWarning]]:
+    """形态与算法的适配性 —— 返回 (有周期, 残差结构, 警告)。"""
+    period = estimate_period(values, freq or "1min")
+    has_period = bool(period.usable)
+    structure = _detrended_structure(values)
+
+    warnings: list[CapabilityWarning] = []
+    if not has_period:
+        warnings.append(
+            CapabilityWarning(
+                "seasonal",
+                "没有可识别的周期，相位分组会退化成全局稳健统计（与 IQR 类似）",
+            )
+        )
+        warnings.append(
+            CapabilityWarning(
+                "stl_residual",
+                "没有可信周期，STL 会估出伪周期，残差里混入季节项",
+            )
+        )
+    if structure >= DETRENDED_STRUCTURE_THRESHOLD:
+        detail = (
+            f"主周期约 {period.period_points} 点，周期波动会被当成趋势残差"
+            if has_period
+            else f"去线性趋势后残差仍有结构（平滑成分解释 {structure:.0%} 的残差方差）"
+        )
+        warnings.append(
+            CapabilityWarning("trend_residual_iqr", f"{detail}，趋势线拟合不完整")
+        )
+        warnings.append(
+            CapabilityWarning("theil_sen", f"{detail}，趋势线拟合不完整")
+        )
+    return has_period, structure, warnings
+
+
+def probe(values: np.ndarray, freq: str | None = None) -> Capability:
     v = np.asarray(values, dtype=float)
     v = v[np.isfinite(v)]
     n = int(v.size)
@@ -105,13 +186,21 @@ def probe(values: np.ndarray) -> Capability:
             CapabilityWarning("zscore", "计数型数据近似泊松，用标准差标准化会失真")
         )
 
+    has_period, structure, shape_warnings = _shape_warnings(v, freq)
+
     if not warnings:
         return Capability(
             n, zero_ratio, n_nonzero, looks_like_counts, probe_scales, "ok",
             count_ready=count_ready,
+            has_period=has_period,
+            detrended_structure=round(structure, 4),
+            shape_warnings=shape_warnings,
         )
     return Capability(
         n, zero_ratio, n_nonzero, looks_like_counts, probe_scales,
         "unsuitable", count_ready=count_ready, warnings=warnings,
         message="；".join(w.reason for w in warnings),
+        has_period=has_period,
+        detrended_structure=round(structure, 4),
+        shape_warnings=shape_warnings,
     )

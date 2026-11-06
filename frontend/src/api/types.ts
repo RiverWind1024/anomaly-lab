@@ -357,6 +357,17 @@ export interface Capability {
   verdict: 'ok' | 'unsuitable' | 'undetermined'
   warnings: CapabilityWarningItem[]
   message: string
+  /**
+   * 「算法 × 形态」不适配的说明（无周期、趋势不近似线性）。
+   *
+   * ⚠️ 与 `warnings` 分开：这类问题不改变 `verdict` ——
+   *    数据本身没病，只是这几个算法不适用。老产物没有这个键。
+   */
+  shape_warnings?: CapabilityWarningItem[]
+  /** 有没有可信周期（`seasonal` / `stl_residual` 的前提）。 */
+  has_period?: boolean
+  /** 线性去趋势后残差的结构强度（0–1）。 */
+  detrended_structure?: number
 }
 
 export interface SeriesEntry {

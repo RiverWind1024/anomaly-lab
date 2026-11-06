@@ -680,10 +680,34 @@ runner 写库时就把连续告警点合并成区间存下来了，
 - 预览：`GET /api/platform/jobs/{id}/preview` 原样返回 `decision`；
 - 数据不足时只有 `quality` + `capability` 两段，不编造 `select` / `threshold`。
 
+## 能力探测
+
+`platform/capability.py` 只看数据、不改数据，结论分两类：
+
+- **`verdict` / `warnings`** —— 数据本身的质量问题：尺度退化（IQR / MAD 归零）、
+  非零点太少、零膨胀、计数型数据被 zscore 标准化。没有这些问题时 `verdict="ok"`。
+- **`shape_warnings`** —— 数据本身没病，但某些算法的**形态前提**不成立：
+  没有可信周期时 `seasonal` 会退化成全局稳健统计、`stl_residual` 会估出伪周期；
+  线性去趋势后残差仍有结构（周期 / 阶梯 / 强非线性）时，
+  `trend_residual_iqr` / `theil_sen` 的拟合不完整。
+
+⚠️ `shape_warnings` **不参与 `verdict`** —— 否则几乎所有非周期序列都会被判成
+`unsuitable`（本仓库 120 条合成序列里有 100 条没有周期），这个字段就失去区分力了。
+前端只展示与**当前序列实际使用的算法**匹配的那一条。
+
+判据都来自实际计算，不用百分比近似：周期用 `detectors/period.py` 的
+`estimate_period`（置信度门槛同检测器），「残差是否还有结构」用线性去趋势后
+滑动平均能解释的残差方差比例（白噪声 / 纯线性 ≈ 0.07–0.17，周期型 ≈ 0.66–0.89）。
+
 ## 基线与告警分级
 
-平台只接受能给出上下界的算法：`iqr` / `mad` / `zscore` / `seasonal` / `stl_residual` /
-`trend_residual_iqr` / `theil_sen`。
+平台接受两类算法：
+
+- **有基线的**（`iqr` / `mad` / `zscore` / `seasonal` / `stl_residual` /
+  `trend_residual_iqr` / `theil_sen`，以及给预测区间的 `chronos`）——
+  能给出 `expected` 与上下界，「偏低 / 偏高」的方向过滤才有意义；
+- **没有基线的**（`event_count` / `poisson_count` / `zero_inflated_iqr`）——
+  分数直接由事件计数或偏离程度给出，界面上不画带，告警方向只能配「偏高」。
 
 ⚠️ `deseasonalized_iqr` 是 `trend_residual_iqr` 的**旧名** ——
 那个名字说的是「去季节化」，做的却是「去**趋势**」。

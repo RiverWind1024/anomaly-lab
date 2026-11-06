@@ -565,6 +565,8 @@ def build_router(
         detector_rationale = ""
         detector_fallback = False
         score_type = ""
+        # 能力探测的周期判定要用真实频率 —— 用错频率会把长周期误判成不存在
+        freq = store.get_metric(job.metric_id).freq
         for outcome in result.outcomes:
             entry = dict(outcome.entry)
             entry.pop("file", None)
@@ -574,7 +576,7 @@ def build_router(
             #    这个键，前端只在 `sufficient` 时读它。
             cap_payload: dict | None = None
             if arrays:
-                cap = probe(arrays["values"])
+                cap = probe(arrays["values"], freq)
                 cap_payload = {
                     "zero_ratio": cap.zero_ratio,
                     "n_nonzero": cap.n_nonzero,
@@ -584,6 +586,12 @@ def build_router(
                         {"detector": w.detector, "reason": w.reason}
                         for w in cap.warnings
                     ],
+                    "shape_warnings": [
+                        {"detector": w.detector, "reason": w.reason}
+                        for w in cap.shape_warnings
+                    ],
+                    "has_period": cap.has_period,
+                    "detrended_structure": cap.detrended_structure,
                     "message": cap.message,
                 }
                 entry["capability"] = cap_payload

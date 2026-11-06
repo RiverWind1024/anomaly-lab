@@ -113,4 +113,24 @@ describe('DecisionTraceTimeline', () => {
     )
     expect(indexes).toEqual(['6'])
   })
+
+  it('数据本身没问题但有形态不适配时，报数量且不高亮', () => {
+    // ⚠️ 形态警告不参与 verdict —— 如果高亮，几乎所有非周期序列都会变成黄框
+    render(
+      <DecisionTraceTimeline
+        trace={{
+          capability: {
+            verdict: 'ok',
+            warnings: [],
+            shape_warnings: [
+              { detector: 'seasonal', reason: '没有可识别的周期' },
+              { detector: 'stl_residual', reason: '没有可信周期' },
+            ],
+          },
+        }}
+      />,
+    )
+    expect(screen.getByText('2 项算法 × 形态适配风险')).toBeInTheDocument()
+    expect(document.querySelector('.decision-trace__step--warn')).toBeNull()
+  })
 })

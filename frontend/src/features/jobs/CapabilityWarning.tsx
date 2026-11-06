@@ -4,7 +4,10 @@ import type { Capability } from '../../api/types'
 export interface CapabilityWarningProps {
   /** 当前序列实际用的算法（`auto` 会落到具体算法上）。 */
   detector: string
-  capability: Pick<Capability, 'verdict' | 'warnings' | 'count_ready'> | null | undefined
+  capability: Pick<
+    Capability,
+    'verdict' | 'warnings' | 'count_ready' | 'shape_warnings'
+  > | null | undefined
   /** 当前检测器的首选尺度（iqr / mad / std），来自 series entry。 */
   preferScale?: string
   /** 本次是否真的发生了尺度降级。 */
@@ -28,18 +31,22 @@ export function CapabilityWarning({
 }: CapabilityWarningProps) {
   if (!capability) return null
 
-  const hit =
-    capability.verdict === 'ok'
-      ? undefined
-      : (capability.warnings ?? []).find(
-          (w) =>
-            w.detector === detector ||
-            // ⚠️ 尺度族警告（iqr/mad 失效）要能命中「复用这一族尺度」的算法：
-            //    seasonal / stl_residual 用 mad，trend_residual_iqr 用 iqr。
-            //    但只有真的降级了才算 —— STL 在零膨胀原始值上 residual MAD 仍有效，
-            //    按族名硬匹配会反过来误报。
-            (scaleFallback === true && preferScale && w.detector === preferScale),
-        )
+  // ⚠️ 两类说明合并查：`warnings` 是「数据本身有质量问题」，
+  //    `shape_warnings` 是「数据没问题，但这个算法的形态前提不成立」。
+  //    对用户来说都是「当前算法不可靠」，没必要分两块展示。
+  const allWarnings = [
+    ...(capability.warnings ?? []),
+    ...(capability.shape_warnings ?? []),
+  ]
+  const hit = allWarnings.find(
+    (w) =>
+      w.detector === detector ||
+      // ⚠️ 尺度族警告（iqr/mad 失效）要能命中「复用这一族尺度」的算法：
+      //    seasonal / stl_residual 用 mad，trend_residual_iqr 用 iqr。
+      //    但只有真的降级了才算 —— STL 在零膨胀原始值上 residual MAD 仍有效，
+      //    按族名硬匹配会反过来误报。
+      (scaleFallback === true && preferScale && w.detector === preferScale),
+  )
   if (hit) {
     return (
       <Alert

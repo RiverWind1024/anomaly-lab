@@ -121,4 +121,50 @@ describe('CapabilityWarning', () => {
     )
     expect(container).toBeEmptyDOMElement()
   })
+
+  it('没有可信周期时提醒 seasonal 会退化', () => {
+    render(
+      <CapabilityWarning
+        detector="seasonal"
+        capability={{
+          verdict: 'ok',
+          warnings: [],
+          shape_warnings: [
+            { detector: 'seasonal', reason: '没有可识别的周期，相位分组会退化' },
+          ],
+        }}
+      />,
+    )
+    expect(screen.getByText(/没有可识别的周期/)).toBeTruthy()
+  })
+
+  it('形态警告只命中当前算法', () => {
+    const { container } = render(
+      <CapabilityWarning
+        detector="stl_residual"
+        capability={{
+          verdict: 'ok',
+          warnings: [],
+          shape_warnings: [{ detector: 'theil_sen', reason: '趋势线拟合不完整' }],
+        }}
+      />,
+    )
+    expect(container).toBeEmptyDOMElement()
+  })
+
+  it('趋势不近似线性时提醒去趋势类算法', () => {
+    render(
+      <CapabilityWarning
+        detector="trend_residual_iqr"
+        capability={{
+          verdict: 'ok',
+          warnings: [],
+          shape_warnings: [
+            { detector: 'trend_residual_iqr', reason: '去线性趋势后残差仍有结构' },
+          ],
+        }}
+      />,
+    )
+    expect(screen.getByText(/残差仍有结构/)).toBeTruthy()
+  })
 })

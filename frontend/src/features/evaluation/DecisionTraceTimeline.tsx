@@ -20,11 +20,16 @@ function summary(key: StepKey, step: Record<string, unknown>): ReactNode {
     case 'quality':
       return `${step.n} 点 · 零值 ${(Number(step.zero_ratio) * 100).toFixed(1)}% · 缺 ${step.n_missing}`
     case 'capability': {
-      if (step.verdict === 'ok') return '无失效风险'
       // ⚠️ Record<string, unknown> 下必须先收窄，否则 TS7053
       const warnings = Array.isArray(step.warnings) ? step.warnings : []
-      const first = warnings[0] as { reason?: string } | undefined
-      return first?.reason ?? String(step.verdict ?? '')
+      const shape = Array.isArray(step.shape_warnings) ? step.shape_warnings : []
+      if (step.verdict !== 'ok') {
+        const first = warnings[0] as { reason?: string } | undefined
+        return first?.reason ?? String(step.verdict ?? '')
+      }
+      // ⚠️ 形态不适配不改 verdict（数据本身没问题），但用户仍要知道 ——
+      //    这里只报数量，具体哪条在「算法选择」那步看得出来。
+      return shape.length ? `${shape.length} 项算法 × 形态适配风险` : '无失效风险'
     }
     case 'classify': {
       const metricClass = typeof step.metric_class === 'string' ? step.metric_class : ''
