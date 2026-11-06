@@ -323,6 +323,9 @@ def _compute_job(
                     "scale_source": result.scale_source or "",
                     "status": result.status,
                     "scale_fallback": bool(result.scale_fallback),
+                    # 算法的首选尺度 —— 前端据此把「IQR/MAD 失效」的警告
+                    # 匹配到 seasonal / stl_residual 这类复用同一尺度族的算法上
+                    "scale_prefer": getattr(detector, "prefer_scale", "") or "",
                     "file": _file_name(series.series_id),
                     "alert_direction": direction,
                     "direction_applied": bool(direction_applied),
