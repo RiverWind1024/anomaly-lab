@@ -104,6 +104,13 @@ export interface CatalogDetector {
    * ⚠️ 可选 —— 旧后端没有这个字段，按 `both` 处理。
    */
   direction?: 'both' | 'above'
+  /** 适用性说明；老后端可能没有。 */
+  guide?: {
+    good_for?: string
+    bad_for?: string
+    score?: string
+    needs?: string
+  }
 }
 
 export interface Catalog {

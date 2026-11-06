@@ -401,6 +401,11 @@ pre {
   color: var(--text-secondary);
 }
 
+/* 算法适用性 tooltip —— 四行说明之间留一点呼吸 */
+.algorithm-guide > div + div {
+  margin-top: 4px;
+}
+
 /* 空态 / 错误态 / 业务态的统一容器 */
 .empty-state {
   display: flex;

@@ -2,6 +2,7 @@ import { Alert, Button, Form, Input, InputNumber, Select, Space } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { hint } from '../../components/FieldHint'
 import { AlertRulesEditor } from '../../features/jobs/AlertRulesEditor'
+import { AlgorithmGuide } from '../../features/jobs/AlgorithmGuide'
 import { detectorLabel } from '../../lib/detectorLabels'
 import { useUpdateJob } from '../../features/jobs/queries'
 import { INTERVAL_SECONDS_MIN, WINDOW_POINTS_MAX, WINDOW_POINTS_MIN } from '../../features/jobs/limits'
@@ -66,8 +67,11 @@ export function JobConfigPanel({ job, metrics, detectors, enabled }: JobConfigPa
 
   /** 当前选中的算法支持哪一侧 —— 没基线只能报偏高。 */
   const selectedDetectorName = Form.useWatch('detector', form)
-  const detectorDirection =
-    detectors.find((d) => d.name === selectedDetectorName)?.direction ?? 'both'
+  const selectedDetector = useMemo(
+    () => detectors.find((d) => d.name === selectedDetectorName),
+    [detectors, selectedDetectorName],
+  )
+  const detectorDirection = selectedDetector?.direction ?? 'both'
 
   useEffect(() => {
     const current = form.getFieldValue('alert_direction')
@@ -173,7 +177,12 @@ export function JobConfigPanel({ job, metrics, detectors, enabled }: JobConfigPa
 
         <Form.Item
           name="detector"
-          label={hint('检测算法', '「自动推荐」由形态分类器挑算法，每次运行可能选到不同的算法。')}
+          label={
+            <span className="field-hint">
+              {hint('检测算法', '「自动推荐」由形态分类器挑算法，每次运行可能选到不同的算法。')}
+              <AlgorithmGuide guide={selectedDetector?.guide} />
+            </span>
+          }
           rules={[{ required: true, message: '请选择检测算法' }]}
         >
           <Select

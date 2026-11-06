@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Alert, Form, Input, InputNumber, Modal, Select, Space } from 'antd'
 import type { AlertDirection, AlertRule, CatalogDetector, CatalogMetric } from '../../api/types'
 import { AlertRulesEditor } from './AlertRulesEditor'
+import { AlgorithmGuide } from './AlgorithmGuide'
 import { directionHint, directionOptions, normalizeDirection } from '../../lib/alertDirection'
 import { detectorLabel } from '../../lib/detectorLabels'
 import { INTERVAL_SECONDS_MIN, WINDOW_POINTS_MAX, WINDOW_POINTS_MIN } from './limits'
@@ -204,7 +205,12 @@ export function JobForm({
 
         <Form.Item
           name="detector"
-          label="检测算法"
+          label={
+            <span className="field-hint">
+              检测算法
+              <AlgorithmGuide guide={selectedDetector?.guide} />
+            </span>
+          }
           rules={[{ required: true, message: '请选择检测算法' }]}
         >
           <Select options={detectorOptions} onChange={onDetectorChange} placeholder="选择算法" />
