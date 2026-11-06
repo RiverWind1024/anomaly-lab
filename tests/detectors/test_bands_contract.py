@@ -3,7 +3,6 @@ import pytest
 
 from anomaly_lab.contracts import SeriesBundle
 from anomaly_lab.detectors.bands import Bands, compute_bands
-from anomaly_lab.detectors.deep import TCNDetector, train_tcn
 from anomaly_lab.detectors.statistical import IQRDetector
 
 
@@ -47,7 +46,10 @@ def test_bands_kind_can_mark_prediction_interval():
 @pytest.mark.parametrize("detector_name", ["tcn"])
 def test_deep_detector_provides_prediction_interval(tmp_path, detector_name):
     pytest.importorskip("torch")
+    # ⚠️ deep 在模块层 import torch —— 不装 torch 时这里才会被跳过，
+    #    所以 import 必须放在 importorskip **之后**（放文件头会让整份用例收集失败）。
     from anomaly_lab.data.synthetic import generate_series
+    from anomaly_lab.detectors.deep import TCNDetector, train_tcn
 
     series = [
         generate_series("stationary", n=400, seed=200 + i, n_anomalies=0)
@@ -69,7 +71,10 @@ def test_deep_detector_provides_prediction_interval(tmp_path, detector_name):
 
 def test_deep_detector_result_carries_bands(tmp_path):
     pytest.importorskip("torch")
+    # ⚠️ deep 在模块层 import torch —— 不装 torch 时这里才会被跳过，
+    #    所以 import 必须放在 importorskip **之后**（放文件头会让整份用例收集失败）。
     from anomaly_lab.data.synthetic import generate_series
+    from anomaly_lab.detectors.deep import TCNDetector, train_tcn
 
     series = [
         generate_series("stationary", n=400, seed=210 + i, n_anomalies=0)
@@ -106,7 +111,10 @@ def test_band_kind_travels_into_the_result():
 def test_prediction_interval_band_kind_is_not_alert_boundary(tmp_path):
     """预测型检测器的带**不是**告警边界 —— 语义不能混。"""
     pytest.importorskip("torch")
+    # ⚠️ deep 在模块层 import torch —— 不装 torch 时这里才会被跳过，
+    #    所以 import 必须放在 importorskip **之后**（放文件头会让整份用例收集失败）。
     from anomaly_lab.data.synthetic import generate_series
+    from anomaly_lab.detectors.deep import TCNDetector, train_tcn
 
     series = [
         generate_series("stationary", n=400, seed=220 + i, n_anomalies=0)

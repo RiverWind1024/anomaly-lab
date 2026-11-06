@@ -122,6 +122,7 @@ def test_model_name_is_configurable(monkeypatch):
 
 def test_pipeline_class_dispatch():
     """Chronos-2 是另一个类 —— 选错类会加载失败。"""
+    pytest.importorskip("chronos")
     assert chronos_module._pipeline_class("amazon/chronos-2").__name__ == (
         "Chronos2Pipeline"
     )

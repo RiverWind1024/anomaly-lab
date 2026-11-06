@@ -200,7 +200,13 @@ def test_switching_to_chronos_actually_produces_alerts(tmp_path):
     import sqlite3
     from datetime import timedelta
 
+    from anomaly_lab.detectors.chronos import chronos_available
     from anomaly_lab.platform.runner import execute_job
+
+    # ⚠️ 这条要走**真实模型** —— 包没装或权重没缓存时跳过，
+    #    否则新克隆的仓库跑 CI 会红（optional extra 不该变成硬依赖）。
+    if not chronos_available():
+        pytest.skip("chronos 包或本地权重不可用")
     from anomaly_lab.platform.timeutil import to_iso, utcnow
 
     store, job_id = _make_store(tmp_path)
