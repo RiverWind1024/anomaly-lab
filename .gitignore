@@ -19,6 +19,10 @@ data/platform.db
 data/evaluation_exclusions.json
 .cache/
 frontend/.vitest/
+
+# 覆盖率产物
+.coverage
+coverage.xml
 notebooks/.ipynb_checkpoints/
 reports/
 *.pt
