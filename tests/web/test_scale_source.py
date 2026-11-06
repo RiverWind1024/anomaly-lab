@@ -69,6 +69,8 @@ def test_预览返回尺度来源(tmp_path):
     #    不能用 `in {...}` 这种宽松断言，否则接口兜底默认值也能通过。
     assert body["scale_source"] == "none"
     assert body["status"] == "undetermined"
+    # ⚠️ 「不可判」不是「降级」—— 两者语义不同，别把 none 也算成 fallback
+    assert body["scale_fallback"] is False
 
 
 def test_有波动序列不会被判成无法判定(tmp_path):
