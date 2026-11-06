@@ -5,12 +5,22 @@ NPM ?= npm
 
 .PHONY: setup test lint generate classify detect evaluate compare report validate-auto serve smoke platform-demo platform-smoke compliance-check clean \
 	frontend-install frontend-test frontend-build dev mock-tsdb mock-demo prune \
-	sync-detections
+	sync-detections lock
 
+# 依赖锁：requirements.lock 由 `make lock` 生成（uv pip compile）。
+#
+# ⚠️ 先按锁装依赖，再装项目本身（--no-deps）——
+#    否则 pyproject 里的 `>=` 会重新解一遍，锁就白锁了。
 setup:
 	uv python install 3.12
 	uv venv --python 3.12
-	$(PIP) install -e ".[dev]" --index-url $(PIP_INDEX)
+	$(PIP) install -r requirements.lock --index-url $(PIP_INDEX)
+	$(PIP) install -e . --no-deps --index-url $(PIP_INDEX)
+
+# 依赖变了之后重新生成锁（组合依赖 + dev extra，不把项目自身写进去）。
+lock:
+	uv pip compile pyproject.toml --extra dev --python-version 3.12 \
+		--no-emit-package anomaly-lab --no-header -o requirements.lock
 
 test:
 	$(PY) -m pytest
