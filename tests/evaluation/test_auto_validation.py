@@ -42,6 +42,9 @@ def test_validation_reports_per_detector_means():
         "stl_residual",
         "trend_residual_iqr",
         "theil_sen",
+        "event_count",
+        "poisson_count",
+        "zero_inflated_iqr",
     }
     for score in report.detector_mean_f1.values():
         assert 0.0 <= score <= 1.0

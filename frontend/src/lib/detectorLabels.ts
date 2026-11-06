@@ -28,9 +28,12 @@ export const DETECTOR_LABELS: Record<string, string> = {
   // 趋势族
   trend_residual_iqr: '去趋势残差 IQR',
   theil_sen: '稳健趋势线 Theil-Sen',
+  // 稀疏 / 计数族（无基线，只能报偏高）
+  event_count: '事件计数',
+  poisson_count: '泊松计数',
+  zero_inflated_iqr: '零膨胀 IQR',
   // 其它
   changepoint: '变点检验',
-  event_count: '事件计数',
   chronos: 'Chronos 预训练模型',
   auto: '自动推荐',
   // ⚠️ 旧名 —— 历史评测产物里还有。标签带「旧名」提示，

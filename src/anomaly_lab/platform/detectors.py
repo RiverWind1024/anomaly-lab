@@ -1,17 +1,26 @@
 """平台层支持的检测器注册表与「自动推荐」。
 
-只有能给出「基线 + 双向上下界」的算法才进入平台：前端要展示基线，
-真正没有 `bands()` 的检测器（`event_count`，以及后续的
-`poisson_count` / `zero_inflated_iqr`）留在离线评测里使用。
+⚠️ 平台上的检测器分两类（**不是**「只有带基线的算法才进平台」）：
 
-这些检测器的分数统一是「稳健 z 分数」量纲（偏离基线多少倍尺度），
-所以同一套倍数规则可以跨检测器通用。
+- **带基线**（`iqr` / `mad` / `zscore` / `seasonal` / `stl_residual` /
+  `trend_residual_iqr` / `theil_sen` / `chronos`）：`bands()` 给出
+  expected/lower/upper，前端能画「实际 vs 基线 ± 容忍带」；
+- **无基线**（`event_count` / `poisson_count` / `zero_inflated_iqr`）：
+  `bands()` 返回 None，前端不画带 —— 它们只说「这个点有多异常」，
+  给不出「正常值应该在哪」。
 
-**例外是 Chronos**：它的分数是按序列 min-max 归一化到 [0,1] 的相对越界程度
-（`score_type = "prob"`），不是「多少倍尺度」。因此：
+⚠️ 分数也**不是**统一的「稳健 z 分数」，见 `detector_score_family`：
 
-- 它的告警阈值要用**绝对值条件**表达（`>=0.5, P1`），
-  倍数条件 `0.5, P1` 在 [0,1] 分数上等价于「分数 ≥ 0.5」，也能用；
+- **prob 族**（`event_count` / `poisson_count` / `chronos`）：分数是累计概率
+  或相对越界程度，阈值是 0.99 量级，**不能**和尺度族混用；
+- **尺度族**（其余，含 `zero_inflated_iqr`）：分数是「偏离基线多少个尺度
+  单位」，阈值是倍数（2.5 / 3.5 …），同一套倍数规则可以通用。
+
+⚠️ **Chronos 不是唯一例外了** —— 别再按「唯一例外」理解这段。
+  它的特殊之处仍然成立：
+
+- 分数是按序列 min-max 归一化到 [0,1] 的相对越界程度
+  （`score_type = "prob"`），告警阈值要用**绝对值条件**表达（`>=0.5, P1`）；
 - 它有 `bands()`，但基线是模型预测中位数、带是预测区间（q10~q90），
   **没有「正常基线」语义** —— 不能拿它当「值应该在哪」的参照；
 - 它慢（约 2 秒/序列，统计检测器约 0.06 毫秒），定时任务要留足间隔。
@@ -23,6 +32,7 @@ from dataclasses import dataclass, field
 
 from anomaly_lab.detectors.chronos import ChronosDetector
 from anomaly_lab.detectors.statistical import (
+    EventCountDetector,
     IQRDetector,
     MADDetector,
     SeasonalDetector,
@@ -31,6 +41,10 @@ from anomaly_lab.detectors.statistical import (
     ZScoreDetector,
 )
 from anomaly_lab.detectors.trend import TheilSenTrendDetector
+from anomaly_lab.detectors.zero_inflated import (
+    PoissonCountDetector,
+    ZeroInflatedIQRDetector,
+)
 
 DETECTOR_FACTORIES = {
     "iqr": IQRDetector,
@@ -42,6 +56,11 @@ DETECTOR_FACTORIES = {
     "trend_residual_iqr": TrendResidualIQRDetector,
     # 趋势型专用：Theil-Sen 稳健趋势线 + 残差 MAD（抗离群点）
     "theil_sen": TheilSenTrendDetector,
+    # 稀疏 / 计数型专用：没有 bands()，分数是 prob 族（累计概率）
+    "event_count": EventCountDetector,
+    "poisson_count": PoissonCountDetector,
+    # 零膨胀：没有 bands()，但仍是尺度族（z 分数）
+    "zero_inflated_iqr": ZeroInflatedIQRDetector,
     # 预训练模型：可选依赖 + 需要本地权重，慢且没有基线
     "chronos": ChronosDetector,
 }
@@ -275,6 +294,9 @@ DETECTOR_LABELS = {
     "stl_residual": "STL 残差",
     "trend_residual_iqr": "去趋势残差 IQR",
     "theil_sen": "稳健趋势线 Theil-Sen",
+    "event_count": "事件计数",
+    "poisson_count": "泊松计数",
+    "zero_inflated_iqr": "零膨胀 IQR",
     "chronos": "Chronos 预训练模型",
 }
 
