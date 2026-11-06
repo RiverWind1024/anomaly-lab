@@ -137,6 +137,8 @@ CREATE TABLE IF NOT EXISTS run_series (
   --    标注按序列存，一条标注要复用给所有覆盖它的检测记录。
   start_ts TEXT NOT NULL DEFAULT '',
   end_ts TEXT NOT NULL DEFAULT '',
+  -- 这次检测的完整决策链（六段，JSON）。老库 / 老数据为空串。
+  decision_json TEXT NOT NULL DEFAULT '',
   PRIMARY KEY (run_id, series_id)
 );
 CREATE INDEX IF NOT EXISTS idx_run_series_content ON run_series(content_hash);
@@ -527,12 +529,13 @@ class PlatformStore:
             conn.execute(
                 "ALTER TABLE sources ADD COLUMN config TEXT NOT NULL DEFAULT '{}'"
             )
-        # 检测记录的时间范围是后加的列 —— 老库补上（空值由 sync-detections 回填）。
+        # 检测记录的时间范围 / 决策链是后加的列 —— 老库补上
+        # （时间范围空值由 sync-detections 回填，决策链老数据就是没有）。
         run_series_columns = {
             row["name"] for row in conn.execute("PRAGMA table_info(run_series)")
         }
         if run_series_columns:
-            for column in ("start_ts", "end_ts"):
+            for column in ("start_ts", "end_ts", "decision_json"):
                 if column not in run_series_columns:
                     conn.execute(
                         f"ALTER TABLE run_series ADD COLUMN {column} TEXT NOT NULL DEFAULT ''"
@@ -1208,6 +1211,7 @@ class PlatformStore:
                 str(entry.get("content_hash") or ""),
                 str(entry.get("start_ts") or ""),
                 str(entry.get("end_ts") or ""),
+                str(json.dumps(entry.get("decision") or {}, ensure_ascii=False)),
             )
             for entry in entries
         ]
@@ -1217,8 +1221,8 @@ class PlatformStore:
             conn.executemany(
                 "INSERT OR REPLACE INTO run_series (run_id, series_id, group_name, n,"
                 " n_valid, n_missing, n_alerts, n_p0, sufficient, detector, metric_class,"
-                " fallback, file, content_hash, start_ts, end_ts)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                " fallback, file, content_hash, start_ts, end_ts, decision_json)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 rows,
             )
 
@@ -1283,7 +1287,7 @@ class PlatformStore:
         sql = (
             "SELECT rs.run_id, rs.series_id, rs.group_name, rs.n, rs.n_alerts,"
             " rs.n_p0, rs.sufficient, rs.detector, rs.metric_class, rs.fallback,"
-            " rs.file, rs.content_hash, rs.start_ts, rs.end_ts,"
+            " rs.file, rs.content_hash, rs.start_ts, rs.end_ts, rs.decision_json,"
             " r.job_id, m.id AS metric_id, m.name AS metric_name,"
             " s.id AS source_id, s.name AS source_name"
             " FROM run_series rs"

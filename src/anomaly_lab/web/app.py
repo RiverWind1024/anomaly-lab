@@ -330,14 +330,17 @@ def create_app(
         if not index_path.is_file():
             raise HTTPException(status_code=404, detail="该运行没有产物")
         index = json.loads(index_path.read_text(encoding="utf-8"))
-        file_name = next(
+        matched = next(
             (
-                entry.get("file")
+                entry
                 for entry in index.get("series", [])
                 if entry.get("series_id") == series_id
             ),
             None,
         )
+        if matched is None:
+            raise HTTPException(status_code=404, detail="该运行里没有这条序列")
+        file_name = matched.get("file")
         if not file_name:
             raise HTTPException(status_code=404, detail="该运行里没有这条序列")
         npz_path = _run_dir(data_root, run_id) / file_name
@@ -359,6 +362,8 @@ def create_app(
                 "scale_source": str(data["scale_source"]) if "scale_source" in data else "",
                 "status": str(data["status"]) if "status" in data else "ok",
                 "scale_fallback": bool(data["scale_fallback"]) if "scale_fallback" in data else False,
+                # 决策链来自本次运行的 index.json；老产物没有这一段 → 空对象。
+                "decision": matched.get("decision") or {},
                 "timestamps": [str(ts)[:19] for ts in seconds],
                 "values": [float(v) for v in np.asarray(data["values"], dtype=float)],
                 "scores": [float(v) for v in np.asarray(data["scores"], dtype=float)],

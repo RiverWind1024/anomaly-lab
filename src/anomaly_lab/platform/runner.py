@@ -30,6 +30,8 @@ from anomaly_lab.platform.alerts import (
     rules_to_dicts,
     severity_from_conditions,
 )
+from anomaly_lab.platform.capability import probe
+from anomaly_lab.platform.decisions import DecisionTrace
 from anomaly_lab.platform.detectors import create_detector, resolve_detector
 from anomaly_lab.platform.models import Metric
 from anomaly_lab.platform.sources import get_connector
@@ -242,6 +244,23 @@ class TestResult:
         return sum(1 for o in self.outcomes if not o.entry.get("sufficient", True))
 
 
+def _quality_section(series, cap) -> dict:
+    return {
+        "n": series.n,
+        "n_missing": int(series.meta.get("n_missing", 0)),
+        "zero_ratio": round(cap.zero_ratio, 4),
+        "n_nonzero": cap.n_nonzero,
+    }
+
+
+def _capability_section(cap) -> dict:
+    return {
+        "verdict": cap.verdict,
+        "scale_probe": cap.scale_probe,
+        "warnings": [{"detector": w.detector, "reason": w.reason} for w in cap.warnings],
+    }
+
+
 def _compute_job(
     store: PlatformStore,
     job,
@@ -272,6 +291,9 @@ def _compute_job(
 
     outcomes: list[SeriesOutcome] = []
     for series in series_list:
+        # ⚠️ 能力探测必须在检测**之前**、且只算一次 ——
+        #    决策链记录的是这次实际看到的数据，不是检测后重新猜的。
+        cap = probe(series.values)
         sufficient = bool(series.meta.get("sufficient", True))
         if not sufficient:
             # 有效点太少：明确标记「数据不足」，绝不能当成「一切正常」
@@ -289,6 +311,12 @@ def _compute_job(
                         "file": None,
                         "alert_direction": direction,
                         "direction_applied": True,
+                        # 数据不足时没有检测结果 —— 只记能确定的段，
+                        # 绝不编造 select / threshold。
+                        "decision": DecisionTrace(
+                            quality=_quality_section(series, cap),
+                            capability=_capability_section(cap),
+                        ).to_dict(),
                     },
                     arrays={},
                     alert_rules=rules_to_dicts(rules),
@@ -305,6 +333,31 @@ def _compute_job(
         severity = severity_from_conditions(result.scores, series.values, rules)
         severity, direction_applied = apply_direction(
             severity, series.values, result.expected, direction
+        )
+        trace = DecisionTrace(
+            quality=_quality_section(series, cap),
+            capability=_capability_section(cap),
+            classify={
+                "metric_class": resolution.metric_class,
+                "confidence": resolution.confidence,
+                "reasons": resolution.reasons,
+                "candidates": resolution.candidates,
+            },
+            select={
+                "detector": resolution.detector,
+                "requested": resolution.requested,
+                "fallback": resolution.fallback,
+                "rationale": resolution.rationale,
+            },
+            threshold={
+                "scale_source": result.scale_source,
+                "status": result.status,
+                "rules": rules_to_dicts(rules),
+            },
+            detect={
+                "n_alerts": int((severity > SEVERITY_NORMAL).sum()),
+                "n_p0": int((severity == top_level).sum()),
+            },
         )
         outcomes.append(
             SeriesOutcome(
@@ -323,6 +376,7 @@ def _compute_job(
                     "scale_source": result.scale_source or "",
                     "status": result.status,
                     "scale_fallback": bool(result.scale_fallback),
+                    "decision": trace.to_dict(),
                     # 算法的首选尺度 —— 前端据此把「IQR/MAD 失效」的警告
                     # 匹配到 seasonal / stl_residual 这类复用同一尺度族的算法上
                     "scale_prefer": getattr(detector, "prefer_scale", "") or "",
