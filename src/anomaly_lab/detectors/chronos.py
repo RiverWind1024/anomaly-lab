@@ -92,21 +92,6 @@ def _pipeline_class(model_name: str):
     return ChronosPipeline
 
 
-def _is_chronos2(model_name: str) -> bool:
-    """是不是 Chronos-2 系列（需要单独的加载路径）。"""
-    lowered = model_name.lower()
-    return "chronos-2" in lowered or "chronos2" in lowered
-
-
-def _pipeline_class(model_name: str):
-    """按模型名选 pipeline 类 —— Chronos-2 是另一个类，接口兼容但类不同。"""
-    from chronos import Chronos2Pipeline, ChronosPipeline
-
-    if _is_chronos2(model_name):
-        return Chronos2Pipeline
-    return ChronosPipeline
-
-
 def _load_chronos2(model_name: str):
     """加载 Chronos-2：**绕开** `Chronos2Pipeline.from_pretrained`。
 
