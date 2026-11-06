@@ -3,7 +3,7 @@
 [![Python](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
 [![Node](https://img.shields.io/badge/node-20-339933)](https://nodejs.org/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-1350%20passed-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-1360%20passed-brightgreen)]()
 
 一个端到端的时序异常检测实验室：**合成数据 → 形态分类 → 算法推荐 → 多类检测器 → 离线评测 → 回归报告 → Web 演示**，外加一条**平台切片**：SQLite / HTTP 数据源 → SQL 指标 → 定时拉取 → 基线/上下界 → P1/P0 分级 → 前端预览。
 
@@ -137,8 +137,8 @@ MOCK_TSDB=1 make dev
 测试（CI 每次推送都跑，见 `.github/workflows/ci.yml`）：
 
 ```bash
-.venv/bin/python -m pytest -p no:warnings   # 后端 902 passed
-cd frontend && npx vitest run                # 前端 448 passed / 54 files
+.venv/bin/python -m pytest -p no:warnings   # 后端 907 passed
+cd frontend && npx vitest run                # 前端 453 passed / 54 files
 ```
 
 ⚠️ `torch` / `chronos` 是**可选依赖**：没装时相关用例自动跳过，
