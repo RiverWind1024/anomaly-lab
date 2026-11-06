@@ -3,14 +3,16 @@
 [![Python](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
 [![Node](https://img.shields.io/badge/node-20-339933)](https://nodejs.org/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-1360%20passed-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-1407%20passed-brightgreen)]()
 
 一个端到端的时序异常检测实验室：**合成数据 → 形态分类 → 算法推荐 → 多类检测器 → 离线评测 → 回归报告 → Web 演示**，外加一条**平台切片**：SQLite / HTTP 数据源 → SQL 指标 → 定时拉取 → 基线/上下界 → P1/P0 分级 → 前端预览。
 
-在此之上补了两层：
+在此之上补了三层：
 
 - **指标预检实验台**（`/lab`）—— 建告警任务**之前**先验证「这个指标到底能不能上检测」；
-- **生产检测记录评估**（`/evaluation`）—— 线上跑的那次结果 × 人工标注，回答「上线之后到底准不准」。
+- **生产检测记录评估**（`/evaluation`）—— 线上跑的那次结果 × 人工标注，回答「上线之后到底准不准」；
+- **服务监控**（`/monitoring`）—— 平台自身的 HTTP / 任务 / 算法 / 调度器指标，OpenTelemetry 埋点，
+  可选导出到任意 OTLP 后端。
 
 目标是完整走通工程闭环，并把每一步的取舍和数据都留下来。
 
@@ -25,6 +27,36 @@
 | 生产检测记录：分层采样与反算 | 标注：一条波形「核对过 / 有异常」 |
 |---|---|
 | ![生产评估](docs/images/production-eval.png) | ![标注](docs/images/annotate-reviewed.png) |
+
+## 服务监控
+
+`/monitoring` 是平台**自己**的可观测性页面 —— 回答「这个服务现在怎么样」，
+和「业务数据有没有异常」分开。
+
+| 层 | 看什么 |
+|---|---|
+| HTTP | 每分钟请求数、P50 / P95 / P99、5xx 数、进行中请求。标签用**路由模板**，不按真实 URL 爆基数 |
+| 任务 | 每次运行的总耗时与阶段耗时（取数 / 检测 / 落盘）、成功 / 失败 / 数据不足 |
+| 算法 | 每个算法被调用多少次、平均与 P95 耗时、回退次数、异常次数 |
+| 调度器 + 进程 | tick 频率与耗时、到期任务数、线程是否停滞、CPU / 内存 / DB 与 run 目录占用 |
+
+埋点走 **OpenTelemetry**：同一处代码同时写本地注册表（页面读）和 OTel instruments
+（导出到标准后端），两边不会各埋一套。
+
+- **默认不导出**：不配 `ANOMALY_OTEL_ENDPOINT` 时指标只留在进程内，页面照常工作；
+- **要接 Grafana / Jaeger / 任意 OTLP 后端**：
+
+  ```bash
+  pip install -e '.[otel]'
+  ANOMALY_OTEL_ENDPOINT=http://localhost:4318 make serve
+  ```
+
+  指标发到 `/v1/metrics`，链路发到 `/v1/traces`（Collector 默认的 HTTP 端口）；
+- 采样间隔 `ANOMALY_MONITOR_INTERVAL`（秒，默认 60），保留点数
+  `ANOMALY_MONITOR_POINTS`（默认 360，即 6 小时）。
+
+⚠️ 指标存在**进程内存**里，重启归零。这是演示项目的取舍：不引入
+Prometheus / InfluxDB，省掉一套存储与运维依赖；跨重启的历史要靠外部后端。
 
 ## 架构
 
@@ -48,10 +80,14 @@ flowchart LR
   RS --> PE[生产检测记录评估]
   AN[人工标注 + reviewed] --> PE
   RUN --> PV[任务详情页 /jobs/:id]
+  I --> OBS[服务监控 /monitoring]
+  RUN --> OBS
+  SCH --> OBS
   I --> FE[React SPA（frontend/）]
   LBR --> FE
   PE --> FE
   PV --> FE
+  OBS --> FE
 ```
 
 详见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)、[docs/ALGORITHMS.md](docs/ALGORITHMS.md)、[docs/DATA.md](docs/DATA.md)、[docs/PLATFORM.md](docs/PLATFORM.md)、[docs/LAB.md](docs/LAB.md)。

@@ -5,7 +5,7 @@
  * EXPECTED_PATHS，缺失即失败。
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { getCatalog, getOverview, createSource, createMetric, createJob, toggleJob, runJob, testRunJob, getRuns, getPreview, getCompare, createFeedback, getFeedback, getSuggestion, applySuggestion, getAlerts, getDetectionRecords, deleteJob, deleteMetric, deleteSource, updateSource, updateMetric, querySource, getStorage, pruneData, inspectLab, runLab, saveLabExperiment, listLabExperiments, getLabExperiment, getLabJobDraft, getLabWindow, evaluateLab } from './platform'
+import { getCatalog, getOverview, createSource, createMetric, createJob, toggleJob, runJob, testRunJob, getRuns, getPreview, getCompare, createFeedback, getFeedback, getSuggestion, applySuggestion, getAlerts, getDetectionRecords, getObservability, deleteJob, deleteMetric, deleteSource, updateSource, updateMetric, querySource, getStorage, pruneData, inspectLab, runLab, saveLabExperiment, listLabExperiments, getLabExperiment, getLabJobDraft, getLabWindow, evaluateLab } from './platform'
 import { getSeries, getSeriesValues, getSummary, getBadcases, getExclusions, excludeEvaluationRow, restoreEvaluationRow, getProductionEvaluation, getProductionSamples, getRunSeriesDetail } from './series'
 import { getAnnotations, saveAnnotations } from './annotate'
 
@@ -25,6 +25,7 @@ const EXPECTED_PATHS = [
   '/api/platform/overview',
   '/api/platform/alerts',
   '/api/platform/detections',
+  '/api/platform/observability',
   '/api/platform/sources',
   '/api/platform/sources/{id}',
   '/api/platform/sources/{id}/query',
@@ -161,6 +162,7 @@ describe('端点封装层', () => {
     })
     await evaluateLab({ kind: 'synthetic', start: '2026-01-01', end: '2026-01-02' })
     await getDetectionRecords({ limit: 20 })
+    await getObservability()
     await getProductionEvaluation()
     await getProductionSamples(50)
     await getRunSeriesDetail(1, 'demo-metric:web-api')

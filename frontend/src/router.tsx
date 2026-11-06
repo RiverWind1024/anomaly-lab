@@ -55,6 +55,9 @@ const AnnotatePage = lazy(() =>
 const LabPage = lazy(() =>
   import('./features/lab/LabPage').then((m) => ({ default: m.LabPage })),
 )
+const MonitoringPage = lazy(() =>
+  import('./features/monitoring/MonitoringPage').then((m) => ({ default: m.MonitoringPage })),
+)
 
 export function AppRoutes() {
   return (
@@ -85,6 +88,7 @@ export function AppRoutes() {
         <Route path="/detections" element={<DetectionsPage />} />
         <Route path="/annotate" element={<AnnotatePage />} />
         <Route path="/lab" element={<LabPage />} />
+        <Route path="/monitoring" element={<MonitoringPage />} />
         {/* 旧 URL 兼容：/report → /evaluation，/platform → /jobs，/badcases → /detections */}
         <Route path="/report" element={<Navigate to="/evaluation" replace />} />
         <Route path="/platform" element={<Navigate to="/jobs" replace />} />

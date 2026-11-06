@@ -78,6 +78,7 @@ export const NAV_ITEMS: NavItem[] = [
       { key: '/detections', label: '检测记录' },
     ],
   },
+  { key: '/monitoring', label: '服务监控' },
 ]
 
 /**
@@ -191,6 +192,8 @@ const NAV_ICON_PATHS: Record<string, ReactNode> = {
       <path d="M9.4 4.2 11.8 6.6" />
     </>
   ),
+  // 服务监控：一条心率线
+  '/monitoring': <path d="M2 8h2.2l1.4-3.4 2.2 6.8 1.7-4.2 1.3 1.6H14" />,
 }
 
 function NavIcon({ name }: { name: string }) {

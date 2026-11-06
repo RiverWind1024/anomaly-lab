@@ -1,0 +1,108 @@
+/* 服务监控页 —— 复用 ui.css 的 panel / kpis，只补这一页特有的排布。 */
+
+.monitoring {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.monitoring__stamp {
+  font-size: var(--text-xs);
+}
+
+.monitoring__kpis {
+  grid-template-columns: minmax(0, 1.3fr) repeat(5, minmax(0, 1fr));
+}
+
+.monitoring__tag {
+  margin-left: 6px;
+  font-size: var(--text-xs);
+}
+
+.monitoring__grid,
+.monitoring__tables {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(440px, 1fr));
+  gap: var(--space-3);
+}
+
+.monitoring__panel {
+  padding-bottom: 10px;
+  min-width: 0;
+}
+
+.monitoring__table {
+  min-width: 0;
+}
+
+/* 接口表列最多，占满整行 —— 否则 `/api/platform/observability` 会被挤到断词。 */
+.monitoring__table--wide {
+  grid-column: 1 / -1;
+}
+
+.monitoring__empty {
+  margin: 0;
+  padding: 56px 12px;
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+
+.monitoring__otel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 18px;
+  border: 1px solid var(--border-subtle);
+  border-left: 2px solid var(--status-p1);
+  border-radius: var(--radius-md);
+  background: var(--surface-panel);
+}
+
+.monitoring__otel strong {
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.monitoring__otel span {
+  margin-left: 6px;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.monitoring__otel code {
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.monitoring__route {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+
+.monitoring__route .mono:last-child {
+  word-break: break-word;
+  overflow-wrap: normal;
+}
+
+.monitoring .mono--warn {
+  color: var(--status-p1);
+}
+
+.monitoring .mono--bad {
+  color: var(--status-p0);
+}
+
+@media (max-width: 900px) {
+  .monitoring__kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .monitoring__grid,
+  .monitoring__tables {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

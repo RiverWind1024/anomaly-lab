@@ -13,6 +13,7 @@ import type {
   LabRunResult,
   LabEvaluateResult,
   LabWindowDetail,
+  Observability,
   Overview,
   Preview,
   PruneResult,
@@ -296,6 +297,14 @@ export const deleteSource = (sourceId: number) =>
  *    作品集演示时，「数据在自动滚动」本身就是个卖点。
  */
 export const getStorage = () => request<StorageUsage>('/api/platform/storage')
+
+/**
+ * 服务自身状态：当前值 + 最近 N 分钟的时序 + 算法/接口/任务统计。
+ *
+ * ⚠️ 一次拿全 —— 监控页每 15 秒刷新，拆成五个端点就是五倍的请求。
+ */
+export const getObservability = (windowMinutes = 60) =>
+  request<Observability>(`/api/platform/observability?window_minutes=${windowMinutes}`)
 
 /**
  * 立即清理超出保留窗口的数据。
