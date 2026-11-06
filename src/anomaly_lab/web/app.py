@@ -27,11 +27,14 @@ from anomaly_lab.evaluation.production import (
     list_samples,
 )
 from anomaly_lab.lab.truth import REVIEWED_TYPE, annotations_path, load_annotations
+from anomaly_lab.observability import configure_observability
+from anomaly_lab.observability.middleware import ObservabilityMiddleware
 from anomaly_lab.platform.store import PlatformStore
 from anomaly_lab.platform.validation import validate_identifier
 from anomaly_lab.web.biz_state import biz_headers
 from anomaly_lab.web.json_utils import clean_floats
 from anomaly_lab.web.lab_routes import build_lab_router
+from anomaly_lab.web.observability_routes import build_observability_router
 from anomaly_lab.web.platform_routes import build_router
 from anomaly_lab.web.source_query_routes import build_source_query_router
 
@@ -163,16 +166,27 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        # 监控采样线程跟着应用起停 —— 测试里建多个 app 也不会留后台线程。
+        observability.start()
         if scheduler is not None:
             scheduler.start()
         yield
         if scheduler is not None:
             scheduler.stop()
+        observability.stop()
 
+    observability = configure_observability(
+        data_root=data_root,
+        start_sampler=False,
+    )
     app = FastAPI(title="anomaly-lab", lifespan=lifespan)
+    # ⚠️ 中间件要在 include_router 之前加：Starlette 的 add_middleware
+    #    只能在应用启动前调用，路由顺序不影响它，但保持惯例。
+    app.add_middleware(ObservabilityMiddleware)
     app.include_router(build_router(get_store, lambda: data_root))
     app.include_router(build_source_query_router(get_store, lambda: data_root))
     app.include_router(build_lab_router(get_store, lambda: data_root))
+    app.include_router(build_observability_router(lambda: data_root))
 
     @app.get("/api/health")
     def health() -> dict:

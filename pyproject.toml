@@ -16,12 +16,16 @@ dependencies = [
   "fastapi>=0.110",
   "uvicorn[standard]>=0.29",
   "pydantic>=2.6",
+  "opentelemetry-api>=1.27",
+  "opentelemetry-sdk>=1.27",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-cov>=5.0", "hypothesis>=6.100", "ruff>=0.4", "httpx>=0.27"]
 torch = ["torch>=2.2"]
 chronos = ["chronos-forecasting>=2.3"]
+# 只在需要把指标/链路发到外部（Collector / Jaeger / Prometheus）时安装。
+otel = ["opentelemetry-exporter-otlp-proto-http>=1.27"]
 
 [project.scripts]
 anomaly-lab = "anomaly_lab.cli:main"

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -54,25 +55,40 @@ class Scheduler:
 
     def tick(self, now: datetime | None = None) -> list[int]:
         """执行所有到期任务，返回本次产生的 run_id。"""
+        from anomaly_lab.observability import get_observability
+
+        obs = get_observability()
+        started = time.perf_counter()
         current = now or utcnow()
         run_ids: list[int] = []
-        with self._lock:
-            for job in self.store.due_jobs(to_iso(current)):
-                try:
-                    run_ids.append(
-                        int(
-                            self.runner(
-                                self.store, job.id, data_root=self.data_root, now=current
+        try:
+            with self._lock:
+                due = self.store.due_jobs(to_iso(current))
+                obs.gauge("scheduler.due_jobs", len(due))
+                for job in due:
+                    try:
+                        run_ids.append(
+                            int(
+                                self.runner(
+                                    self.store, job.id, data_root=self.data_root, now=current
+                                )
                             )
                         )
-                    )
-                except Exception:
-                    # 失败详情已落在 runs 表，这里只记日志，避免重试风暴
-                    logger.exception("任务 %s 执行失败", job.name)
-                next_run = current + timedelta(seconds=job.interval_seconds)
-                self.store.update_job_schedule(job.id, to_iso(current), to_iso(next_run))
-        self._maybe_prune(current)
-        return run_ids
+                    except Exception:
+                        # 失败详情已落在 runs 表，这里只记日志，避免重试风暴
+                        logger.exception("任务 %s 执行失败", job.name)
+                    next_run = current + timedelta(seconds=job.interval_seconds)
+                    self.store.update_job_schedule(job.id, to_iso(current), to_iso(next_run))
+            self._maybe_prune(current)
+            return run_ids
+        finally:
+            obs.inc("scheduler.ticks")
+            # ⚠️ 用真实墙钟，而不是 tick 的 `now` —— 测试会传固定时间，
+            #    监控页判断「线程是否停滞」必须看现在几点。
+            obs.gauge("scheduler.last_tick_at", time.time())
+            obs.observe_ms(
+                "scheduler.tick_ms", (time.perf_counter() - started) * 1000.0
+            )
 
     def _maybe_prune(self, now: datetime) -> None:
         """到点就清理一次超窗数据（运行记录 + 检测结果文件）。
@@ -93,7 +109,10 @@ class Scheduler:
             return
         self._last_prune = stamp
         try:
-            result = retention.prune(self.store, self.data_root, now=now)
+            from anomaly_lab.observability import get_observability
+
+            with get_observability().timer("scheduler.prune_ms"):
+                result = retention.prune(self.store, self.data_root, now=now)
         except Exception:
             logger.exception("数据保留清理失败")
             return

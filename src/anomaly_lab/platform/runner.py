@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import threading
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -17,6 +18,7 @@ import numpy as np
 
 from anomaly_lab.contracts import SeriesBundle
 from anomaly_lab.detectors.bands import compute_bands
+from anomaly_lab.observability import get_observability
 from anomaly_lab.platform.alerts import (
     SEVERITY_NORMAL,
     apply_direction,
@@ -171,11 +173,16 @@ def execute_job(
             return existing
         run = store.create_run(job.id)
         _INFLIGHT[job.id] = run.id
+    started = time.perf_counter()
     try:
         return _run_job(
             store, job, run, data_root=data_root, start=start, end=end, now=now
         )
     finally:
+        obs = get_observability()
+        obs.observe_ms(
+            "job.duration_ms", (time.perf_counter() - started) * 1000.0, job=job.name
+        )
         with _INFLIGHT_LOCK:
             _INFLIGHT.pop(job.id, None)
 
@@ -286,7 +293,12 @@ def _compute_job(
     metric = store.get_metric(job.metric_id)
     end_time = end or now or utcnow()
     start_time = start or (end_time - freq_delta(metric.freq) * job.window_points)
+    obs = get_observability()
+    load_started = time.perf_counter()
     series_list = load_series(store, metric, data_root, start_time, end_time)
+    obs.observe_ms(
+        "job.stage_ms", (time.perf_counter() - load_started) * 1000.0, stage="load"
+    )
     rules = job_rules(job)
     direction = parse_direction(getattr(job, "alert_direction", "both"))
     # 没有倍数条件时（规则全是绝对值条件）没有「上下界宽度」可言 ——
@@ -298,6 +310,7 @@ def _compute_job(
     top_level = len(rules)
 
     outcomes: list[SeriesOutcome] = []
+    detect_started = time.perf_counter()
     for series in series_list:
         # ⚠️ 能力探测必须在检测**之前**、且只算一次 ——
         #    决策链记录的是这次实际看到的数据，不是检测后重新猜的。
@@ -333,11 +346,31 @@ def _compute_job(
             )
             continue
         resolution = resolve_detector(job.detector, series)
-        detector = create_detector(resolution.detector).fit(series)
-        # 没有倍数条件时用检测器自己的默认阈值（如 Chronos 的 0.5）
-        width = band_width if band_width is not None else float(detector.default_threshold)
-        result = detector.detect(series, threshold=width)
-        bands = compute_bands(detector, series, width)
+        detector_started = time.perf_counter()
+        try:
+            detector = create_detector(resolution.detector).fit(series)
+            # 没有倍数条件时用检测器自己的默认阈值（如 Chronos 的 0.5）
+            width = band_width if band_width is not None else float(detector.default_threshold)
+            result = detector.detect(series, threshold=width)
+            bands = compute_bands(detector, series, width)
+        except Exception:
+            obs.inc("detector.calls", detector=resolution.detector, status="error")
+            obs.observe_ms(
+                "detector.duration_ms",
+                (time.perf_counter() - detector_started) * 1000.0,
+                detector=resolution.detector,
+            )
+            raise
+        obs.observe_ms(
+            "detector.duration_ms",
+            (time.perf_counter() - detector_started) * 1000.0,
+            detector=resolution.detector,
+        )
+        obs.inc(
+            "detector.calls",
+            detector=resolution.detector,
+            status="fallback" if resolution.fallback else "ok",
+        )
         severity = severity_from_conditions(result.scores, series.values, rules)
         severity, direction_applied = apply_direction(
             severity, series.values, result.expected, direction
@@ -426,6 +459,9 @@ def _compute_job(
                 levels=levels,
             )
         )
+    obs.observe_ms(
+        "job.stage_ms", (time.perf_counter() - detect_started) * 1000.0, stage="detect"
+    )
     return outcomes
 
 
@@ -439,12 +475,14 @@ def _run_job(
     end: datetime | None = None,
     now: datetime | None = None,
 ) -> int:
+    obs = get_observability()
     try:
         outcomes = _compute_job(
             store, job, data_root=data_root, start=start, end=end, now=now
         )
         target = run_dir(data_root, run.id)
         target.mkdir(parents=True, exist_ok=True)
+        persist_started = time.perf_counter()
         entries: list[dict] = []
         db_entries: list[dict] = []
         alert_rows: list[dict] = []
@@ -498,13 +536,22 @@ def _run_job(
         #    否则「有哪些检测记录」只能扫产物目录（实测 8700 多个目录 = 0.47s）。
         store.record_run_series(run.id, db_entries)
         store.record_alert_events(run.id, job.id, alert_rows)
+        obs.observe_ms(
+            "job.stage_ms", (time.perf_counter() - persist_started) * 1000.0, stage="persist"
+        )
+        # ⚠️ 按**告警区间**计数，不是按告警点 —— 用户问「触发了多少次告警」，
+        #    一次 P1 持续 20 个点仍然是一段告警。
+        for row in alert_rows:
+            obs.inc("alerts.fired", level=str(row.get("level") or "unknown"))
         status = "insufficient_data" if entries and n_insufficient == len(entries) else "success"
         store.finish_run(
             run.id, status, n_series=len(entries), n_alerts=total_alerts
         )
+        obs.inc("job.runs", job=job.name, status=status)
         return run.id
     except Exception as exc:
         store.finish_run(run.id, "failed", error=f"{type(exc).__name__}: {exc}")
+        obs.inc("job.runs", job=job.name, status="failed")
         raise
 
 

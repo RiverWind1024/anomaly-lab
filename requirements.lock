@@ -71,7 +71,15 @@ numpy==2.5.4
     #   scipy
     #   statsmodels
 opentelemetry-api==1.45.2
-    # via fastapi
+    # via
+    #   anomaly-lab (pyproject.toml)
+    #   fastapi
+    #   opentelemetry-sdk
+    #   opentelemetry-semantic-conventions
+opentelemetry-sdk==1.45.2
+    # via anomaly-lab (pyproject.toml)
+opentelemetry-semantic-conventions==0.66b2
+    # via opentelemetry-sdk
 packaging==26.3
     # via
     #   matplotlib
@@ -139,6 +147,8 @@ typing-extensions==4.16.0
     #   fastapi
     #   formulaic
     #   opentelemetry-api
+    #   opentelemetry-sdk
+    #   opentelemetry-semantic-conventions
     #   pydantic
     #   pydantic-core
     #   starlette

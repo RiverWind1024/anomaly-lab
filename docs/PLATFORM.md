@@ -1137,6 +1137,59 @@ DELETE /api/platform/sources/{source_id}
 ⚠️ 概览页的「累计运行」因此改成了「**保留期运行**」——
 清理后这个数字不再是无界的累计值，叫「累计」就是撒谎。
 
+## 服务监控
+
+`/monitoring` 展示平台自身的运行状态，数据来自进程内指标注册表
+（`src/anomaly_lab/observability/`），同一次埋点也写进 OpenTelemetry instruments。
+
+### 采集了什么
+
+| 指标 | 类型 | 标签 | 来源 |
+|---|---|---|---|
+| `http.requests` / `http.errors` | counter | `method` / `route` / `status` | ASGI 中间件 |
+| `http.request_ms` | histogram | `method` / `route` | 同上 |
+| `http.inflight` | gauge | — | 同上 |
+| `job.runs` | counter | `job` / `status` | `runner._run_job` |
+| `job.duration_ms` | histogram | `job` | `runner.execute_job` |
+| `job.stage_ms` | histogram | `stage`（load / detect / persist） | `runner` |
+| `detector.calls` | counter | `detector` / `status`（ok / fallback / error） | `runner._compute_job` |
+| `detector.duration_ms` | histogram | `detector` | 同上（含 fit + detect + 生成基线） |
+| `scheduler.ticks` / `scheduler.tick_ms` | counter / histogram | — | `Scheduler.tick` |
+| `scheduler.due_jobs` | gauge | — | 同上 |
+| `alerts.fired` | counter | `level`（P1 / P0） | `runner._run_job`（按告警**区间**计数） |
+| `process.cpu_percent` / `process.memory_mb` | gauge | — | 60 秒采样线程 |
+| `storage.db_bytes` / `storage.runs_bytes` / `storage.runs_count` | gauge | — | 同上 |
+
+### 为什么标签用路由模板
+
+`route` 取 Starlette 的 `scope["route"].path`（如 `/api/platform/jobs/{job_id}`），
+不是真实 URL。否则每个 `job_id` 都是一条新时间序列，监控页会被自己的基数拖垮。
+匹配不到路由时记 `<unmatched>`；SPA 兜底路由单独标成「前端页面」。
+
+### 本地存储
+
+- 每 60 秒把累计直方图/计数器**差成增量**，写入 `deque(maxlen=360)`（6 小时）；
+- 分位数在桶内做线性插值（桶上界 1ms ~ 5min），不是精确分位；
+- 重启归零，不做持久化 —— 跨重启历史交给外部后端。
+
+### 接 OTLP
+
+```bash
+pip install -e '.[otel]'
+ANOMALY_OTEL_ENDPOINT=http://localhost:4318 make serve
+```
+
+- 不配端点时仍创建真实的 OTel instruments，只是没有 reader，几乎零成本；
+- 配了之后 metrics → `/v1/metrics`、traces → `/v1/traces`
+  （只写 `http://host:4318` 会自动补路径）；
+- 全局 MeterProvider 只设置一次（OTel 的限制），测试里反复建 app 不会打架。
+
+### 已知边界
+
+- **单进程**：指标是进程内的，`uvicorn --workers > 1` 会各算各的；
+- **采样线程不持久化**：进程被杀时最多丢 60 秒；
+- **没有链路存储**：span 只导出，不在本地页面展示（本地页面看的是决策链，不是 trace）。
+
 ## 调度语义
 
 - 内置调度器随 `serve` 启动（`--no-scheduler` 可关闭），单线程串行执行任务。
