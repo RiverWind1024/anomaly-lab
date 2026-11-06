@@ -51,3 +51,11 @@ def test_无基线时above保持原样():
     out, applied = apply_direction(severity, np.array([0.0, 1.0, 5.0]), None, "above")
     assert applied is True
     assert list(out) == [0, 2, 3]
+
+
+def test_基线长度不符时不假装过滤过():
+    """长度对不上说明检测器坏了 —— 原样返回并标记未过滤，不能宣称已按方向筛过。"""
+    severity = np.array([0, 2, 3])
+    out, applied = apply_direction(severity, np.arange(3.0), np.array([10.0]), "above")
+    assert applied is False
+    assert list(out) == [0, 2, 3]

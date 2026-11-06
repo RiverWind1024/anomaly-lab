@@ -123,7 +123,7 @@ TanStack Query + ECharts），后端只提供 JSON API 并托管构建产物。
 |---|---|---|
 | 数据源 Source | `data/platform.db` 的 `sources` | 名称、类型（`sqlite` / `http`）、路径（SQLite 源用：相对数据根目录或绝对路径）、类型专属配置（`config` JSON） |
 | 指标 Metric | `metrics` | 数据源、SQL、时间列、值列、分组列、时间格式、源时区、缺失值策略、采样频率 |
-| 告警任务 Job | `jobs` | 指标、算法（可填 `auto`）、告警规则表、窗口点数、执行间隔、启用状态 |
+| 告警任务 Job | `jobs` | 指标、算法（可填 `auto`）、告警规则表、告警方向（`both` / `above` / `below`，默认 `both`）、窗口点数、执行间隔、启用状态 |
 
 运行记录在 `runs`，人工反馈在 `feedback`。
 
@@ -597,6 +597,20 @@ make mock-tsdb              # 重新起
 { "alert_rules": [ {"multiplier": 2.5, "level": "P1"},
                    {"multiplier": 3.75, "level": "P0"} ] }
 ```
+
+也接受 `alert_direction` 选择告警方向：
+
+```json
+{ "alert_direction": "below" }
+```
+
+- `both`（默认）：两侧都报，保持既有行为
+- `above`：只报「值高于基线」的异常
+- `below`：只报「值低于基线」的异常
+
+⚠️ 方向按「值与检测器基线的比较」判断，不是按分数；过滤发生在告警分级之后，
+所以生产评估（`severity > 0`）与线上口径一致。没有基线的检测器
+（`event_count` 等）不支持 `below`，配了也一条都不报。
 
 ⚠️ **规则表与阈值必须一致**，两边互为快捷视图：
 

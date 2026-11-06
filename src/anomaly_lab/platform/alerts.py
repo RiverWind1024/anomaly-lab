@@ -62,18 +62,25 @@ def apply_direction(
     severity = np.asarray(severity)
     if direction == "both":
         return severity, True
+    if direction not in ("above", "below"):
+        raise ValueError(f"未知告警方向: {direction!r}")
 
-    if baseline is None or len(baseline) != len(values):
+    if baseline is None:
         if direction == "above":
             # 无基线时分数本身就是「偏高程度」，above 与 both 等价
             return severity, True
         return np.zeros_like(severity), False
+    if len(baseline) != len(values):
+        # 契约上 expected 长度必须等于 n；真出现说明检测器坏了，别假装过滤过
+        return severity, False
 
     base = np.asarray(baseline, dtype=float)
     values = np.asarray(values, dtype=float)
     with np.errstate(invalid="ignore"):
         keep = values > base if direction == "above" else values < base
-    # 基线是 NaN 的点（滚动窗口暖机段）分数本来就是 0，keep=False 不影响结果
+    # ⚠️ 基线是 NaN 的点（例如 Chronos 的前 8 个上下文点）无法判断方向 ——
+    #    这里按「不报」处理。注意它比「分数为 0」更强：绝对值规则
+    #    （`value >= 5`）在 NaN 基线上本来能命中，也会被这条一起丢掉。
     return np.where(keep, severity, SEVERITY_NORMAL), True
 
 

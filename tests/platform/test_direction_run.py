@@ -7,7 +7,9 @@ import sqlite3
 from datetime import UTC, datetime, timedelta
 
 import numpy as np
+import pytest
 
+from anomaly_lab.platform.alerts import apply_direction
 from anomaly_lab.platform.runner import execute_job, run_dir
 from anomaly_lab.platform.store import PlatformStore
 
@@ -148,14 +150,49 @@ def test_方向可以更新且非法值被拒绝(tmp_path):
 
 
 def test_老库迁移补上alert_direction列(tmp_path):
-    """没有该列的老库 → 打开后自动补列，默认 both。"""
+    """真实旧 schema（有 alert_rules、无 alert_direction）→ 打开后补列且能读回。"""
     db = tmp_path / "platform.db"
     conn = sqlite3.connect(db)
-    conn.execute("CREATE TABLE jobs (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT)")
+    conn.execute(
+        """
+        CREATE TABLE jobs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          metric_id INTEGER NOT NULL,
+          name TEXT NOT NULL UNIQUE,
+          detector TEXT NOT NULL,
+          alert_threshold REAL NOT NULL,
+          critical_threshold REAL NOT NULL,
+          window_points INTEGER NOT NULL,
+          interval_seconds INTEGER NOT NULL,
+          enabled INTEGER NOT NULL DEFAULT 1,
+          last_run_at TEXT,
+          next_run_at TEXT,
+          created_at TEXT NOT NULL,
+          alert_rules TEXT NOT NULL DEFAULT '[]'
+        )
+        """
+    )
+    conn.execute(
+        "INSERT INTO jobs (metric_id, name, detector, alert_threshold,"
+        " critical_threshold, window_points, interval_seconds, created_at, alert_rules)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            1,
+            "old-job",
+            "iqr",
+            2.5,
+            3.75,
+            240,
+            300,
+            "2026-01-01T00:00:00",
+            '[{"multiplier": 2.5, "level": "P1"}]',
+        ),
+    )
     conn.commit()
     conn.close()
 
     PlatformStore(db)
+    reopened = PlatformStore(db)
 
     conn = sqlite3.connect(db)
     columns = {row[1]: row for row in conn.execute("PRAGMA table_info(jobs)")}
@@ -163,3 +200,22 @@ def test_老库迁移补上alert_direction列(tmp_path):
     assert "alert_direction" in columns
     # PRAGMA 行：(cid, name, type, notnull, dflt_value, pk)
     assert columns["alert_direction"][4] == "'both'"
+
+    jobs = reopened.list_jobs()
+    assert len(jobs) == 1
+    assert jobs[0].alert_direction == "both"
+
+
+def test_both方向与关闭过滤完全一致():
+    """⚠️ 默认方向必须是结构性 no-op —— 不是「过滤后碰巧相等」。"""
+    severity = np.array([0, 1, 2, 3, 0, 2])
+    values = np.array([10.0, 12.0, 8.0, 15.0, 10.0, 5.0])
+    baseline = np.array([10.0, 10.0, 10.0, 10.0, 10.0, 10.0])
+    out, applied = apply_direction(severity, values, baseline, "both")
+    assert applied is True
+    assert np.array_equal(out, severity)
+
+
+def test_未知方向直接报错():
+    with pytest.raises(ValueError, match="未知告警方向"):
+        apply_direction(np.array([0, 1]), np.array([1.0, 2.0]), None, "up")

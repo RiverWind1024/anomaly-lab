@@ -341,7 +341,6 @@ def _compute_job(
                     ),
                     "alert_rules": np.array(json.dumps(rules_to_dicts(rules), ensure_ascii=False)),
                     "levels": np.array(json.dumps(levels, ensure_ascii=False)),
-                    "alert_direction": np.array(direction),
                     "detector": np.array(result.detector),
                     "requested_detector": np.array(job.detector),
                     "metric_class": np.array(resolution.metric_class or ""),
