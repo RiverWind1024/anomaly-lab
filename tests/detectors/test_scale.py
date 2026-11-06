@@ -168,6 +168,10 @@ def test_高量级数据不会被判成无法判定():
 
     rng = np.random.default_rng(0)
     values = 1e9 + rng.normal(0, 1e-4, 400)
+    # ⚠️ 必须放一个**真实尖峰**：只靠高斯噪声的 2.7σ 最大偏差，
+    #    测不出「高量级数据里真正的异常能不能被检出」——
+    #    将来若有人把尺度改回 1e-12 量级的下限，这条测试仍会是绿的。
+    values[200] += 1e-2
     series = SeriesBundle(
         series_id="s",
         values=values,
@@ -177,10 +181,7 @@ def test_高量级数据不会被判成无法判定():
     result = IQRDetector().detect(series)
     assert result.scale_source == "iqr"
     assert result.status == "ok"
-    # ⚠️ 断言用 2.5（默认阈值）而不是 3.0：400 点 N(0,1) 的最大偏差约 3.74σ，
-    #    除以 IQR(≈1.349σ) 只有约 2.77 —— 3.0 在高斯噪声下数学上达不到。
-    assert result.scores.max() > 2.5
-    assert result.is_anomaly.any()
+    assert result.is_anomaly[200]
 
 
 def test_MAD滚动窗口在暖机段降级到iqr():
@@ -221,7 +222,7 @@ def test_滚动窗口下零膨胀仍能报出来():
     assert result.scores.max() > 2.5
 
 
-def test_窗口比序列还长时标记无法判定():
+def test_窗口超过半个序列时标记无法判定():
     # ⚠️ window > n/2 时可用点不足一半 —— 这是有意的保守行为，用测试固定住
     from anomaly_lab.contracts import SeriesBundle
     from anomaly_lab.detectors.statistical import IQRDetector
