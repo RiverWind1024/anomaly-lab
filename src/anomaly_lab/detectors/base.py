@@ -77,6 +77,10 @@ class TimedDetector:
     name: str = ""
     score_type: str = ""
     default_threshold: float = 0.0
+    #: 上次 `score()` 用的尺度来源；`_timed_detect` 负责清空与读取
+    _last_scale_source: str | None = None
+    #: 检测器可以显式覆盖状态（例如「非零点太少」）；None = 按尺度来源推断
+    _last_status: str | None = None
 
     def estimate_values(self, values: np.ndarray) -> np.ndarray:
         """**估计**用的值：周期、基线、分解都基于它。
@@ -101,18 +105,21 @@ class TimedDetector:
         self, series: SeriesBundle, threshold: float | None = None
     ) -> DetectionResult:
         started = time.perf_counter()
+        # ⚠️ 先清空 —— 否则上一个序列/上一次调用的状态会串到这次结果里
+        self._last_scale_source = None
+        self._last_status = None
         scores = self.score(series)
         elapsed_ms = (time.perf_counter() - started) * 1000.0
+        # ⚠️ 必须在 `bands()` **之前**读：bands() 也会调 `_center_scale`，
+        #    对某些检测器（seasonal / trend_residual_iqr）它用的输入与 score() 不同，
+        #    晚读会拿到「基线的尺度」而不是「分数的尺度」。
+        source = self._last_scale_source
+        status = self._last_status or (
+            "undetermined" if source == "none" else "ok"
+        )
         chosen = self.default_threshold if threshold is None else float(threshold)
         # 基线是**可选输出**：检测器没实现就返回 None，不影响主流程
         bands = self.bands(series, chosen)
-
-        # 尺度来源由检测器在 `_center_scale` 里写进实例属性 ——
-        # 这样 `make_result` 不必改签名，也能把「降级」暴露到结果里。
-        source = getattr(self, "_last_scale_source", None)
-        status = getattr(self, "_last_status", None) or (
-            "undetermined" if source == "none" else "ok"
-        )
         return make_result(
             series,
             scores,

@@ -151,3 +151,88 @@ def test_全常数序列标记为无法判定():
     result = IQRDetector().detect(series)
     assert result.status == "undetermined"
     assert not result.is_anomaly.any()
+
+
+def test_高量级数据的真实波动不算噪声():
+    # ⚠️ 1e9 量级、1e-4 波动 —— 远高于浮点分辨率（约 7e-6），不是噪声
+    rng = np.random.default_rng(0)
+    values = 1e9 + rng.normal(0, 1e-4, 400)
+    est = robust_scale(values, prefer="iqr")
+    assert est.source == "iqr"
+    assert est.value > 1e-5
+
+
+def test_高量级数据不会被判成无法判定():
+    from anomaly_lab.contracts import SeriesBundle
+    from anomaly_lab.detectors.statistical import IQRDetector
+
+    rng = np.random.default_rng(0)
+    values = 1e9 + rng.normal(0, 1e-4, 400)
+    series = SeriesBundle(
+        series_id="s",
+        values=values,
+        timestamps=np.arange(400).astype("datetime64[m]"),
+        freq="1min",
+    )
+    result = IQRDetector().detect(series)
+    assert result.scale_source == "iqr"
+    assert result.status == "ok"
+    # ⚠️ 断言用 2.5（默认阈值）而不是 3.0：400 点 N(0,1) 的最大偏差约 3.74σ，
+    #    除以 IQR(≈1.349σ) 只有约 2.77 —— 3.0 在高斯噪声下数学上达不到。
+    assert result.scores.max() > 2.5
+    assert result.is_anomaly.any()
+
+
+def test_MAD滚动窗口在暖机段降级到iqr():
+    # ⚠️ 滚动 MAD 需要 2×window 才有效（两次 rolling 各 shift 一次），
+    #    暖机段必须降级到 iqr —— 不能静默返回 0 分。
+    from anomaly_lab.contracts import SeriesBundle
+    from anomaly_lab.detectors.statistical import IQRDetector, MADDetector
+
+    rng = np.random.default_rng(7)
+    values = rng.normal(0, 1, 400)
+    series = SeriesBundle(
+        series_id="s",
+        values=values,
+        timestamps=np.arange(400).astype("datetime64[m]"),
+        freq="1min",
+    )
+    mad_scores = MADDetector(window=50).score(series)
+    iqr_scores = IQRDetector(window=50).score(series)
+    # 暖机段（50..99）两者一致；稳定段（100 之后）应该不同
+    assert np.allclose(mad_scores[50:100], iqr_scores[50:100])
+    assert not np.allclose(mad_scores[100:], iqr_scores[100:])
+
+
+def test_滚动窗口下零膨胀仍能报出来():
+    from anomaly_lab.contracts import SeriesBundle
+    from anomaly_lab.detectors.statistical import IQRDetector
+
+    rng = np.random.default_rng(3)
+    values = np.zeros(400)
+    values[::40] = rng.normal(10, 2, 10)   # 每 40 点一次事件，有幅度
+    series = SeriesBundle(
+        series_id="s",
+        values=values,
+        timestamps=np.arange(400).astype("datetime64[m]"),
+        freq="1min",
+    )
+    result = IQRDetector(k=2.5, window=50).detect(series)
+    assert result.scores.max() > 2.5
+
+
+def test_窗口比序列还长时标记无法判定():
+    # ⚠️ window > n/2 时可用点不足一半 —— 这是有意的保守行为，用测试固定住
+    from anomaly_lab.contracts import SeriesBundle
+    from anomaly_lab.detectors.statistical import IQRDetector
+
+    rng = np.random.default_rng(5)
+    values = rng.normal(0, 1, 60)
+    series = SeriesBundle(
+        series_id="s",
+        values=values,
+        timestamps=np.arange(60).astype("datetime64[m]"),
+        freq="1min",
+    )
+    result = IQRDetector(window=50).detect(series)
+    assert result.status == "undetermined"

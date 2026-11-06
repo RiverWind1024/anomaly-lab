@@ -92,7 +92,7 @@ class DetectionResult:
     ⚠️ 降级必须**可见** —— 否则「用 std 兜底」也是一种静默。
     """
 
-    status: str = "ok"
+    status: Literal["ok", "undetermined"] = "ok"
     """ok / undetermined。
 
     ⚠️ `undetermined` = 数据里没有可用的尺度（全常数序列），

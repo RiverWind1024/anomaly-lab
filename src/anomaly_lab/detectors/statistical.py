@@ -17,11 +17,11 @@ DEFAULT_PERIOD = 24
 
 
 class _WindowedDetector(TimedDetector):
+    """|x - center| / scale 型检测器的公共骨架（IQR / MAD / ZScore）。"""
+
     score_type = "zscore"
-    #: 降级链的起点
+    #: 降级链的起点（iqr / mad / std）
     prefer_scale = "iqr"
-    #: 最近一次 `_center_scale` 实际用的尺度来源（iqr / mad / std / none）
-    _last_scale_source: str | None = None
 
     def __init__(self, k: float, window: int | None = None) -> None:
         self.k = float(k)
@@ -32,8 +32,38 @@ class _WindowedDetector(TimedDetector):
         return self
 
     def _center_scale(self, values: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        """返回 `(center, scale)`；**同时**把来源写进 `_last_scale_source`。"""
-        raise NotImplementedError
+        """返回 `(center, scale)`；**同时**把尺度来源写进 `_last_scale_source`。
+
+        ⚠️ IQR 与 MAD 只差 `prefer_scale`，所以实现在基类 ——
+           两份拷贝将来改候选（比如加一档）必然漂移。
+        """
+        if self.window is None:
+            med = float(np.median(values))
+            center = np.full_like(values, med)
+            cand = {
+                "iqr": np.full_like(
+                    values,
+                    float(np.percentile(values, 75))
+                    - float(np.percentile(values, 25)),
+                ),
+                "mad": np.full_like(values, float(np.median(np.abs(values - med))) * 1.4826),
+                "std": np.full_like(values, float(np.std(values))),
+            }
+        else:
+            center = _rolling_quantile(values, self.window, 0.5)
+            cand = {
+                "iqr": _rolling_quantile(values, self.window, 0.75)
+                - _rolling_quantile(values, self.window, 0.25),
+                "mad": _rolling_mad(values, self.window),
+                "std": _rolling_std(values, self.window),
+            }
+        scale, source = pick_scale(
+            prefer=self.prefer_scale,
+            candidates=cand,
+            floor=numeric_floor(values),
+        )
+        self._last_scale_source = majority_source(source)
+        return center, scale
 
     def score(self, series: SeriesBundle) -> np.ndarray:
         values = np.asarray(series.values, dtype=float)
@@ -93,33 +123,6 @@ class IQRDetector(_WindowedDetector):
     def __init__(self, k: float = 2.5, window: int | None = None) -> None:
         super().__init__(k=k, window=window)
 
-    def _center_scale(self, values: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        if self.window is None:
-            center = np.full_like(values, np.median(values))
-            med = np.median(values)
-            cand = {
-                "iqr": np.full_like(
-                    values, np.percentile(values, 75) - np.percentile(values, 25)
-                ),
-                "mad": np.full_like(values, np.median(np.abs(values - med)) * 1.4826),
-                "std": np.full_like(values, np.std(values)),
-            }
-        else:
-            center = _rolling_quantile(values, self.window, 0.5)
-            cand = {
-                "iqr": _rolling_quantile(values, self.window, 0.75)
-                - _rolling_quantile(values, self.window, 0.25),
-                "mad": _rolling_mad(values, self.window),
-                "std": _rolling_std(values, self.window),
-            }
-        scale, source = pick_scale(
-            prefer=self.prefer_scale,
-            candidates=cand,
-            floor=numeric_floor(values),
-        )
-        self._last_scale_source = majority_source(source)
-        return center, scale
-
 
 class MADDetector(_WindowedDetector):
     """|x - median| / (1.4826 * MAD)。"""
@@ -129,33 +132,6 @@ class MADDetector(_WindowedDetector):
 
     def __init__(self, k: float = 3.5, window: int | None = None) -> None:
         super().__init__(k=k, window=window)
-
-    def _center_scale(self, values: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        if self.window is None:
-            center = np.full_like(values, np.median(values))
-            med = np.median(values)
-            cand = {
-                "iqr": np.full_like(
-                    values, np.percentile(values, 75) - np.percentile(values, 25)
-                ),
-                "mad": np.full_like(values, np.median(np.abs(values - med)) * 1.4826),
-                "std": np.full_like(values, np.std(values)),
-            }
-        else:
-            center = _rolling_quantile(values, self.window, 0.5)
-            cand = {
-                "iqr": _rolling_quantile(values, self.window, 0.75)
-                - _rolling_quantile(values, self.window, 0.25),
-                "mad": _rolling_mad(values, self.window),
-                "std": _rolling_std(values, self.window),
-            }
-        scale, source = pick_scale(
-            prefer=self.prefer_scale,
-            candidates=cand,
-            floor=numeric_floor(values),
-        )
-        self._last_scale_source = majority_source(source)
-        return center, scale
 
 
 class ZScoreDetector(_WindowedDetector):
@@ -179,7 +155,7 @@ class ZScoreDetector(_WindowedDetector):
             std_values = rolling.std(ddof=0).shift(1).to_numpy()
         # ZScore 只提供 std —— 不能因为链里有 iqr 就 KeyError
         scale, source = pick_scale(
-            prefer="std",
+            prefer=self.prefer_scale,
             candidates={"std": std_values},
             floor=numeric_floor(values),
         )

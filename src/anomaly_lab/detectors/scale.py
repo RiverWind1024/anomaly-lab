@@ -57,11 +57,18 @@ def numeric_floor(values: np.ndarray) -> float:
 
     ⚠️ 常数序列经过 polyfit / STL 之后残差不是精确的 0，而是 1e-16 量级。
        直接拿它当尺度，会把数值噪声放大成几十倍的分数 —— 常数序列报出一堆假告警。
+
+    ⚠️ 系数是 **32 × eps**（约 7.1e-15），不是 1e-12：
+       1e-12 会被数据量级吃掉 —— 1e9 量级、1e-4 波动的数据
+       会被判成「全是噪声」，整段分数归零。
+       32 倍 eps 是浮点加减法累积误差的保守上界，
+       既能盖住 polyfit/STL 在常数序列上的 1e-16 残差，
+       又不会碰伤 1e9 量级里真实存在的 1e-4 波动。
     """
     v = np.asarray(values, dtype=float)
     if v.size == 0:
         return 0.0
-    return 1e-12 * max(1.0, float(np.max(np.abs(v))))
+    return 32.0 * float(np.finfo(float).eps) * float(np.max(np.abs(v)))
 
 
 def robust_scale(values: np.ndarray, *, prefer: str = "iqr") -> ScaleEstimate:
