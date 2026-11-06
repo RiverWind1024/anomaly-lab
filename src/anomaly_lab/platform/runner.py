@@ -352,6 +352,9 @@ def _compute_job(
             },
             threshold={
                 "scale_source": result.scale_source,
+                # ⚠️ 用布尔而不是让前端猜 `scale_source == "std"` ——
+                #    zscore 的原生尺度就是 std，按字符串判断会把它每次标成降级。
+                "scale_fallback": bool(result.scale_fallback),
                 "status": result.status,
                 "rules": rules_to_dicts(rules),
             },
