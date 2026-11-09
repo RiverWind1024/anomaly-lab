@@ -1,6 +1,9 @@
 # anomaly-lab v1 Implementation Plan
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+>
+> **状态（2026-11-07）：** 本文件是执行前的计划原貌，任务复选框**未回填**，不代表未完成。
+> 实际完成情况、验收结果与未达标项见 [ROADMAP.md](ROADMAP.md) 的「v1 验收与开放项（2026-10-29）」及后续章节。
 
 **Goal:** 建成一个可离线跑通的时序异常检测全流程学习项目：合成数据 → 指标形态分类 → 算法推荐 → 多类检测器（统计 / 自训深度 / 预训练）→ 离线评测闭环 → Bad Case 归因 → 回归对比报告 → 轻量 Web 标注与评估页。
 

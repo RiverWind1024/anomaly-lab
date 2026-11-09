@@ -175,12 +175,14 @@ MOCK_TSDB=1 make dev
 测试（CI 每次推送都跑，见 `.github/workflows/ci.yml`）：
 
 ```bash
-.venv/bin/python -m pytest -p no:warnings   # 后端 907 passed
-cd frontend && npx vitest run                # 前端 453 passed / 54 files
+.venv/bin/python -m pytest -p no:warnings   # 后端 934 passed
+.venv/bin/python -m mypy                     # 类型检查（src/anomaly_lab）
+cd frontend && npx tsc --noEmit              # 前端类型检查
+cd frontend && npx vitest run                # 前端 477 passed / 57 files
 ```
 
 ⚠️ `torch` / `chronos` 是**可选依赖**：没装时相关用例自动跳过，
-不会变成「克隆下来就红」（全新环境实测 800 passed / 6 skipped）。
+不会变成「克隆下来就红」。
 
 依赖变了之后用 `make lock` 重新生成 `requirements.lock`。
 

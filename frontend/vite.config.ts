@@ -44,12 +44,15 @@ export default defineConfig({
         //    **静态摇树消不掉**（AntD 官方已知问题，见 ant-design#41607）。
         //    路径引入（antd/es/table）与 barrel 引入差别 <20 KB，不值得为它改写法。
         //
-        //    所以真正的优化手段只有两个，都已实施：
+        //    所以真正的优化手段有三个，都已实施：
         //      1. **不用 antd 的 App 组件** —— 它拉进 message/modal/notification，
         //         实测 +254 KB。我们用不到 App.useApp()。
-        //      2. **路由级懒加载** —— ECharts 有 1 MB+，只该在任务详情页加载。
+        //      2. **路由级懒加载** —— ECharts 只在图表页加载。
+        //      3. **ECharts 按需引入**（`src/lib/echartsCore.ts`）——
+        //         全量入口 1,146 KB → 670 KB（gzip 385 → 227 KB）。
+        //         ⚠️ 新增图表类型/组件时必须在那里补注册。
         //
-        //    现状：全部 chunk gzip 合计 ≈ 288 KB，首屏 ≈ 287 KB。
+        //    现状：首屏 JS gzip ≈ 190 KB；图表页另拉 227 KB 的共享 chunk。
         //    对内部监控工具可接受；不再为 AntD 的固有成本继续挖。
         manualChunks(id) {
           // 只把 React 核心拆出来（它变动最少，缓存收益最大）
@@ -71,7 +74,11 @@ export default defineConfig({
     // 限制 worker 数：机器负载高时（CPU 抢占 / I/O 繁忙），
     // 默认按 CPU 核数开 worker 会让测试进程抢不到调度而**卡住**
     // （实测 load average 88 时，默认 16 worker 直接挂住不退出）。
-    // 2 个 worker 跑完 78 个用例只要 6 秒，没必要开更多。
+    // 2 个 worker 跑完 57 个文件 / 477 个用例约 110 秒。
     maxWorkers: 2,
+    // antd + userEvent 的交互在负载高时偶发超过默认的 5s
+    // （实测全量跑曾出现 DataBrowser 用例超时，单独重跑通过）。
+    // 放宽到 15s，避免本地并行任务或慢 CI runner 随机变红。
+    testTimeout: 15_000,
   },
 })
