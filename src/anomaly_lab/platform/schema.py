@@ -42,7 +42,8 @@ CREATE TABLE IF NOT EXISTS jobs (
   last_run_at TEXT,
   next_run_at TEXT,
   created_at TEXT NOT NULL,
-  alert_direction TEXT NOT NULL DEFAULT 'both'
+  alert_direction TEXT NOT NULL DEFAULT 'both',
+  detect_points INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS runs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -149,6 +150,11 @@ def migrate(conn: sqlite3.Connection) -> None:
     if "alert_direction" not in job_columns:
         conn.execute(
             "ALTER TABLE jobs ADD COLUMN alert_direction TEXT NOT NULL DEFAULT 'both'"
+        )
+    if "detect_points" not in job_columns:
+        # 0 = 检测整个窗口 —— 老任务的既有行为不变。
+        conn.execute(
+            "ALTER TABLE jobs ADD COLUMN detect_points INTEGER NOT NULL DEFAULT 0"
         )
     source_columns = {
         row["name"] for row in conn.execute("PRAGMA table_info(sources)")

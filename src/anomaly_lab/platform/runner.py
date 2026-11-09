@@ -372,6 +372,12 @@ def _compute_job(
             status="fallback" if resolution.fallback else "ok",
         )
         severity = severity_from_conditions(result.scores, series.values, rules)
+        # 只对窗口**最后 detect_points 个点**判定告警；更早的点仅参与基线统计。
+        # 0 = 检测整个窗口（旧行为）。实际点数可能少于配置值（缺数据），
+        # 此时切片自然为空，等价于「全部检测」。
+        detect_points = int(getattr(job, "detect_points", 0) or 0)
+        if 0 < detect_points:
+            severity[:-detect_points] = SEVERITY_NORMAL
         severity, direction_applied = apply_direction(
             severity, series.values, result.expected, direction
         )

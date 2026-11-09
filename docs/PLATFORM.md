@@ -123,7 +123,7 @@ TanStack Query + ECharts），后端只提供 JSON API 并托管构建产物。
 |---|---|---|
 | 数据源 Source | `data/platform.db` 的 `sources` | 名称、类型（`sqlite` / `http`）、路径（SQLite 源用：相对数据根目录或绝对路径）、类型专属配置（`config` JSON） |
 | 指标 Metric | `metrics` | 数据源、SQL、时间列、值列、分组列、时间格式、源时区、缺失值策略、采样频率 |
-| 告警任务 Job | `jobs` | 指标、算法（可填 `auto`）、告警规则表、告警方向（`both` / `above` / `below`，默认 `both`）、窗口点数、执行间隔、启用状态 |
+| 告警任务 Job | `jobs` | 指标、算法（可填 `auto`）、告警规则表、告警方向（`both` / `above` / `below`，默认 `both`）、窗口点数（取多少历史数据）、检测点数（只对最近 N 点判定告警，`0` = 整个窗口）、执行间隔、启用状态 |
 
 运行记录在 `runs`，人工反馈在 `feedback`。
 

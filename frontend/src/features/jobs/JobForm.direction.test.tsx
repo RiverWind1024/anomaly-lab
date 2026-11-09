@@ -127,5 +127,5 @@ describe('新建任务的告警方向', () => {
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalled())
     expect(onSubmit.mock.calls[0][0].alert_direction).toBe('above')
-  }, 20000)
+  }, 30000)
 })

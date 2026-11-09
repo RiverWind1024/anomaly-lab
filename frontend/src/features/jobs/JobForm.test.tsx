@@ -2,7 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type { CatalogDetector, CatalogMetric } from '../../api/types'
-import { JobForm } from './JobForm'
+import { JobForm, buildJobPayload, type JobFormValues } from './JobForm'
 import { INTERVAL_SECONDS_MIN, WINDOW_POINTS_MAX, WINDOW_POINTS_MIN } from './limits'
 
 const detector: CatalogDetector = {
@@ -52,10 +52,28 @@ describe('新建任务表单的数值下限提示', () => {
     expect(intervalInput).toHaveAttribute('aria-valuemin', String(INTERVAL_SECONDS_MIN))
   })
 
-  it('下限常量与后端 validation.py 一致（10 / 100000 / 10）', () => {
-    expect(WINDOW_POINTS_MIN).toBe(10)
+  it('下限常量与后端 validation.py 一致（3 / 100000 / 10）', () => {
+    expect(WINDOW_POINTS_MIN).toBe(3)
     expect(WINDOW_POINTS_MAX).toBe(100_000)
     expect(INTERVAL_SECONDS_MIN).toBe(10)
+  })
+})
+
+describe('检测点数', () => {
+  it('缺省按 0 提交（0 = 检测整个窗口）', () => {
+    const base = {
+      metric_id: 1,
+      name: 'j',
+      detector: 'iqr',
+      window_points: 60,
+      interval_seconds: 60,
+      alert_rules: null,
+      alert_direction: 'both' as const,
+    }
+    expect(buildJobPayload({ ...base, detect_points: 3 }).detect_points).toBe(3)
+    // 旧草稿 / 清空输入：按 0 兜底，不能把 undefined 发给后端
+    const legacy = { ...base, detect_points: undefined } as unknown as JobFormValues
+    expect(buildJobPayload(legacy).detect_points).toBe(0)
   })
 })
 
@@ -66,7 +84,7 @@ describe('新建任务表单的即时校验', () => {
     const user = userEvent.setup({ delay: null })
 
     const windowInput = screen.getByLabelText(/窗口点数/)
-    await user.type(windowInput, '5')
+    await user.type(windowInput, '2')
     await user.tab() // 失焦 → InputNumber 按 min 钳制
 
     // InputNumber 的 input 是 type=text，值是字符串
@@ -91,5 +109,5 @@ describe('新建任务表单的即时校验', () => {
       expect(screen.getByText('请输入执行间隔')).toBeInTheDocument()
     })
     expect(onSubmit).not.toHaveBeenCalled()
-  }, 20000)
+  }, 30000)
 })

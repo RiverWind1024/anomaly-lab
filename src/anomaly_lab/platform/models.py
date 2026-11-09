@@ -71,6 +71,9 @@ class Job:
     alert_rules: list[dict] = field(default_factory=list)
     #: 告警方向：both / above / below
     alert_direction: str = "both"
+    #: 只对窗口最后 N 个点判定告警；0 = 检测整个窗口（旧行为）。
+    #: 前 `window_points - detect_points` 个点仍参与基线统计，但不产生告警。
+    detect_points: int = 0
 
 
 @dataclass(frozen=True)

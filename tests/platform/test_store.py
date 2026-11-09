@@ -112,6 +112,79 @@ def test_job_rejects_unknown_detector(tmp_path):
         )
 
 
+def test_job_detect_points_defaults_to_whole_window(tmp_path):
+    """不配置检测点数 = 0 = 检测整个窗口（老任务行为不变）。"""
+    store = PlatformStore(tmp_path / "platform.db")
+    source = _source(store)
+    metric = _metric(store, source.id)
+    job = store.add_job(
+        metric_id=metric.id,
+        name="cpu-job",
+        detector="iqr",
+        alert_threshold=2.5,
+        critical_threshold=4.0,
+        window_points=60,
+        interval_seconds=60,
+    )
+    assert job.detect_points == 0
+    updated = store.update_job_config(job.id, detect_points=3)
+    assert updated.detect_points == 3
+    # 改回 0 也要生效
+    assert store.update_job_config(job.id, detect_points=0).detect_points == 0
+
+
+def test_job_detect_points_cannot_exceed_window(tmp_path):
+    store = PlatformStore(tmp_path / "platform.db")
+    source = _source(store)
+    metric = _metric(store, source.id)
+    base = {
+        "metric_id": metric.id,
+        "name": "cpu-job",
+        "detector": "iqr",
+        "alert_threshold": 2.5,
+        "critical_threshold": 4.0,
+        "window_points": 3,
+        "interval_seconds": 60,
+    }
+    with pytest.raises(ValueError, match="detect_points"):
+        store.add_job(**base, detect_points=4)
+
+    job = store.add_job(**base, detect_points=3)
+    with pytest.raises(ValueError, match="detect_points"):
+        store.update_job_config(job.id, detect_points=4)
+    with pytest.raises(ValueError, match="detect_points"):
+        store.update_job_config(job.id, detect_points=-1)
+
+
+def test_old_jobs_table_gets_detect_points_column(tmp_path):
+    """老库的 jobs 表没有 detect_points —— 迁移后默认 0。"""
+    db_path = tmp_path / "platform.db"
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "CREATE TABLE jobs (id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " metric_id INTEGER NOT NULL, name TEXT NOT NULL UNIQUE,"
+        " detector TEXT NOT NULL, alert_threshold REAL NOT NULL,"
+        " critical_threshold REAL NOT NULL, window_points INTEGER NOT NULL,"
+        " interval_seconds INTEGER NOT NULL, enabled INTEGER NOT NULL DEFAULT 1,"
+        " last_run_at TEXT, next_run_at TEXT, created_at TEXT NOT NULL,"
+        " alert_rules TEXT NOT NULL DEFAULT '[]',"
+        " alert_direction TEXT NOT NULL DEFAULT 'both')"
+    )
+    conn.execute(
+        "INSERT INTO jobs (metric_id, name, detector, alert_threshold,"
+        " critical_threshold, window_points, interval_seconds, enabled, created_at,"
+        " alert_rules)"
+        " VALUES (1, 'old', 'iqr', 2.5, 4.0, 60, 60, 1, '2026-01-01T00:00:00+00:00',"
+        " '[{\"level\": \"P1\", \"multiplier\": 2.5},"
+        " {\"level\": \"P0\", \"multiplier\": 4.0}]')"
+    )
+    conn.commit()
+    conn.close()
+
+    store = PlatformStore(db_path)
+    assert store.get_job(1).detect_points == 0
+
+
 def test_due_jobs_reconcile_and_schedule_update(tmp_path):
     store = PlatformStore(tmp_path / "platform.db")
     source = _source(store)

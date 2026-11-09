@@ -97,8 +97,10 @@ def validate_name(value: str, label: str) -> str:
 
 
 def validate_window_points(value: int) -> int:
-    if value < 10:
-        raise ValueError("window_points 至少为 10")
+    # 3 点是能算出有意义离散度的下限：1~2 个点的 IQR / MAD 会退化成 0
+    # 或极不稳定，检测结果没有参考价值。
+    if value < 3:
+        raise ValueError("window_points 至少为 3")
     if value > 100_000:
         raise ValueError("window_points 不能超过 100000")
     return int(value)
@@ -108,6 +110,22 @@ def validate_interval_seconds(value: int) -> int:
     if value < 10:
         raise ValueError("interval_seconds 至少为 10 秒")
     return int(value)
+
+
+def validate_detect_points(value: int, window_points: int) -> int:
+    """只对窗口最后 N 个点判定告警；0 = 检测整个窗口。
+
+    ⚠️ 上限是 `window_points` —— 检测段不能比取数窗口还长。
+       等于窗口时等价于「检测全部」（与 0 等价）。
+    """
+    value = int(value)
+    if value < 0:
+        raise ValueError("detect_points 不能为负数")
+    if value > int(window_points):
+        raise ValueError(
+            f"detect_points 不能超过窗口点数（{value} > {window_points}）"
+        )
+    return value
 
 
 def validate_kind(value: str) -> str:

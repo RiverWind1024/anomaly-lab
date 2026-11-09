@@ -8,6 +8,8 @@
  * `tests/web/test_api_contract.py` 会读这个文件做交叉校验，漂移会红。
  */
 
-export const WINDOW_POINTS_MIN = 10
+export const WINDOW_POINTS_MIN = 3
 export const WINDOW_POINTS_MAX = 100_000
 export const INTERVAL_SECONDS_MIN = 10
+/** 检测点数下限：0 = 检测整个窗口（旧行为）。 */
+export const DETECT_POINTS_MIN = 0

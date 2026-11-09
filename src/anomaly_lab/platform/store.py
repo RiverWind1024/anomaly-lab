@@ -35,6 +35,7 @@ from anomaly_lab.platform.schema import SCHEMA as _SCHEMA
 from anomaly_lab.platform.schema import migrate
 from anomaly_lab.platform.timeutil import freq_delta, to_iso, utcnow
 from anomaly_lab.platform.validation import (
+    validate_detect_points,
     validate_http_config,
     validate_identifier,
     validate_interval_seconds,
@@ -652,6 +653,7 @@ class PlatformStore:
         enabled: bool = True,
         alert_rules: list[dict] | None = None,
         alert_direction: str = "both",
+        detect_points: int = 0,
     ) -> Job:
         name = validate_name(name, "任务名称")
         if detector != AUTO_DETECTOR and detector not in DETECTOR_FACTORIES:
@@ -659,6 +661,7 @@ class PlatformStore:
         alert_direction = parse_direction(alert_direction)
         window_points = validate_window_points(int(window_points))
         interval_seconds = validate_interval_seconds(int(interval_seconds))
+        detect_points = validate_detect_points(detect_points, window_points)
         self.get_metric(metric_id)
         if alert_rules:
             # 规则表为准：阈值由规则推导（最低档/最高档的倍数）
@@ -677,8 +680,9 @@ class PlatformStore:
                 cursor = conn.execute(
                     "INSERT INTO jobs (metric_id, name, detector, alert_threshold,"
                     " critical_threshold, window_points, interval_seconds, enabled,"
-                    " last_run_at, next_run_at, alert_rules, alert_direction, created_at)"
-                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)",
+                    " last_run_at, next_run_at, alert_rules, alert_direction,"
+                    " detect_points, created_at)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)",
                     (
                         metric_id,
                         name,
@@ -691,6 +695,7 @@ class PlatformStore:
                         created_at,
                         rules_json,
                         alert_direction,
+                        detect_points,
                         created_at,
                     ),
                 )
@@ -751,6 +756,10 @@ class PlatformStore:
         )
         interval_seconds = validate_interval_seconds(
             int(_pick(fields, "interval_seconds", current.interval_seconds))
+        )
+        detect_points = validate_detect_points(
+            int(_pick(fields, "detect_points", current.detect_points)),
+            window_points,
         )
         enabled = fields.get("enabled", current.enabled)
         direction = parse_direction(
@@ -864,7 +873,8 @@ class PlatformStore:
                     conn.execute(
                         "UPDATE jobs SET name = ?, metric_id = ?, detector = ?,"
                         " alert_threshold = ?, critical_threshold = ?, window_points = ?,"
-                        " interval_seconds = ?, enabled = ?, alert_direction = ?"
+                        " interval_seconds = ?, enabled = ?, alert_direction = ?,"
+                        " detect_points = ?"
                         " WHERE id = ?",
                         (
                             name,
@@ -876,6 +886,7 @@ class PlatformStore:
                             interval_seconds,
                             1 if enabled else 0,
                             direction,
+                            detect_points,
                             job_id,
                         ),
                     )
@@ -884,7 +895,7 @@ class PlatformStore:
                         "UPDATE jobs SET name = ?, metric_id = ?, detector = ?,"
                         " alert_threshold = ?, critical_threshold = ?, window_points = ?,"
                         " interval_seconds = ?, enabled = ?, alert_rules = ?,"
-                        " alert_direction = ? WHERE id = ?",
+                        " alert_direction = ?, detect_points = ? WHERE id = ?",
                         (
                             name,
                             metric_id,
@@ -896,6 +907,7 @@ class PlatformStore:
                             1 if enabled else 0,
                             rules_json,
                             direction,
+                            detect_points,
                             job_id,
                         ),
                     )

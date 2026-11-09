@@ -91,6 +91,52 @@ def test_severity_levels_follow_thresholds(tmp_path):
     assert np.all(severity[scores < alert] == 0)
 
 
+def test_detect_points_limits_alerts_to_last_n(tmp_path):
+    """`detect_points=3` 时只有最后 3 个点参与告警，更早的点只用于统计基线。
+
+    种子数据在 i=30 有一个尖峰 —— 它落在历史段里，不该再产生告警；
+    分数仍然照常算出（图表能看到历史曲线的偏离），只是 severity 为 0。
+    """
+    store, job, start = _seed(tmp_path)
+    store.update_job_config(job.id, detect_points=3)
+    run_id = execute_job(
+        store,
+        job.id,
+        data_root=tmp_path,
+        start=start,
+        end=start + timedelta(minutes=300),
+    )
+    index = json.loads((run_dir(tmp_path, run_id) / "index.json").read_text(encoding="utf-8"))
+    entry = next(item for item in index["series"] if item["group"] == "a")
+    payload = np.load(run_dir(tmp_path, run_id) / entry["file"])
+    severity = payload["severity"]
+    scores = payload["scores"]
+    assert len(severity) == 60
+    # 历史段：分数照常算，但不告警
+    assert np.all(severity[:-3] == 0)
+    assert scores[30] > 0
+    # 告警计数只统计检测段
+    assert entry["n_alerts"] == int((severity > 0).sum())
+    assert entry["n_p0"] == int((severity == 2).sum())
+
+
+def test_detect_points_zero_keeps_whole_window(tmp_path):
+    """0 = 检测整个窗口（旧行为）—— 历史尖峰照常告警。"""
+    store, job, start = _seed(tmp_path)
+    run_id = execute_job(
+        store,
+        job.id,
+        data_root=tmp_path,
+        start=start,
+        end=start + timedelta(minutes=300),
+    )
+    index = json.loads((run_dir(tmp_path, run_id) / "index.json").read_text(encoding="utf-8"))
+    entry = next(item for item in index["series"] if item["group"] == "a")
+    payload = np.load(run_dir(tmp_path, run_id) / entry["file"])
+    assert entry["n_alerts"] > 0
+    assert np.any(payload["severity"][:-3] > 0)
+
+
 def test_absolute_condition_raises_level_on_high_values(tmp_path):
     """绝对值条件作为后处理并行生效：值 > 40 的点直接抬到 P1 档。"""
     store, job, start = _seed(tmp_path)

@@ -180,6 +180,7 @@ def build_router(
                 enabled=payload.enabled,
                 alert_rules=rule_dicts or None,
                 alert_direction=payload.alert_direction or "both",
+                detect_points=payload.detect_points,
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc

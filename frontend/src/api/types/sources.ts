@@ -68,6 +68,8 @@ export interface CatalogJob {
   alert_rules: AlertRule[]
   /** 报哪一侧的异常。旧后端没有这个字段时按 `both` 处理。 */
   alert_direction: AlertDirection
+  /** 只对窗口最后 N 个点判定告警；0 = 检测整个窗口。旧后端没有这个字段。 */
+  detect_points?: number
 }
 
 export interface CatalogDetector {

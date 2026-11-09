@@ -175,10 +175,10 @@ MOCK_TSDB=1 make dev
 测试（CI 每次推送都跑，见 `.github/workflows/ci.yml`）：
 
 ```bash
-.venv/bin/python -m pytest -p no:warnings   # 后端 934 passed
+.venv/bin/python -m pytest -p no:warnings   # 后端 939 passed
 .venv/bin/python -m mypy                     # 类型检查（src/anomaly_lab）
 cd frontend && npx tsc --noEmit              # 前端类型检查
-cd frontend && npx vitest run                # 前端 477 passed / 57 files
+cd frontend && npx vitest run                # 前端 478 passed / 57 files
 ```
 
 ⚠️ `torch` / `chronos` 是**可选依赖**：没装时相关用例自动跳过，

@@ -5,7 +5,7 @@ import { AlertRulesEditor } from './AlertRulesEditor'
 import { AlgorithmGuide } from './AlgorithmGuide'
 import { directionHint, directionOptions, normalizeDirection } from '../../lib/alertDirection'
 import { detectorLabel } from '../../lib/detectorLabels'
-import { INTERVAL_SECONDS_MIN, WINDOW_POINTS_MAX, WINDOW_POINTS_MIN } from './limits'
+import { DETECT_POINTS_MIN, INTERVAL_SECONDS_MIN, WINDOW_POINTS_MAX, WINDOW_POINTS_MIN } from './limits'
 import { defaultRuleList } from './rules'
 
 export interface JobFormValues {
@@ -14,6 +14,8 @@ export interface JobFormValues {
   detector: string
   window_points: number
   interval_seconds: number
+  /** 只对窗口最后 N 个点判定告警；0 = 检测整个窗口。 */
+  detect_points: number
   alert_rules: AlertRule[] | null
   alert_direction: AlertDirection
 }
@@ -27,10 +29,12 @@ export interface JobFormValues {
  */
 export type JobFormInitialValues = Omit<
   JobFormValues,
-  'alert_rules' | 'alert_direction'
+  'alert_rules' | 'alert_direction' | 'detect_points'
 > & {
   alert_rules?: AlertRule[] | null
   alert_direction?: AlertDirection
+  /** 旧草稿没有这个字段 —— 按 0（检测整个窗口）兜底。 */
+  detect_points?: number
 }
 
 export interface JobFormProps {
@@ -225,7 +229,7 @@ export function JobForm({
           <Select options={directionOptions(detectorDirection)} />
         </Form.Item>
 
-        <Space size="large" style={{ display: 'flex' }}>
+        <Space size="large" wrap style={{ display: 'flex' }}>
           <Form.Item
             name="window_points"
             label="窗口点数"
@@ -242,10 +246,33 @@ export function JobForm({
             <InputNumber
               min={WINDOW_POINTS_MIN}
               max={WINDOW_POINTS_MAX}
-              step={100}
+              step={1}
               placeholder="500"
               style={{ width: 180 }}
             />
+          </Form.Item>
+          <Form.Item
+            name="detect_points"
+            label="检测点数"
+            initialValue={0}
+            extra="0 = 检测整个窗口；填 N 则只对最近 N 个点判定告警，更早的点只用于统计基线"
+            rules={[
+              ({ getFieldValue }) => ({
+                validator: (_, value) => {
+                  if (value === undefined || value === null) return Promise.resolve()
+                  if (value < DETECT_POINTS_MIN) {
+                    return Promise.reject(new Error('检测点数不能为负数'))
+                  }
+                  const windowPoints = getFieldValue('window_points')
+                  if (typeof windowPoints === 'number' && value > windowPoints) {
+                    return Promise.reject(new Error('检测点数不能超过窗口点数'))
+                  }
+                  return Promise.resolve()
+                },
+              }),
+            ]}
+          >
+            <InputNumber min={DETECT_POINTS_MIN} step={1} style={{ width: 180 }} />
           </Form.Item>
           <Form.Item
             name="interval_seconds"
@@ -283,6 +310,7 @@ export function buildJobPayload(values: JobFormValues) {
     detector: values.detector,
     window_points: values.window_points,
     interval_seconds: values.interval_seconds,
+    detect_points: values.detect_points ?? 0,
     alert_rules: values.alert_rules,
     // ⚠️ 兜底 both —— 旧草稿 / 旧表单值可能没有这个字段。
     alert_direction: values.alert_direction ?? 'both',

@@ -170,6 +170,7 @@ export const createJob = (payload: {
   critical_threshold?: number
   window_points?: number
   interval_seconds?: number
+  detect_points?: number
   enabled?: boolean
   alert_rules?: AlertRule[] | null
   alert_direction?: 'both' | 'above' | 'below'
@@ -195,6 +196,7 @@ export const updateJob = (
     critical_threshold?: number
     window_points?: number
     interval_seconds?: number
+    detect_points?: number
     alert_rules?: AlertRule[]
     alert_direction?: 'both' | 'above' | 'below'
   },

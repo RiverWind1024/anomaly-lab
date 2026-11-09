@@ -88,6 +88,8 @@ class JobIn(BaseModel):
     enabled: bool = True
     alert_rules: list[AlertRuleIn] | None = None
     alert_direction: str | None = None
+    #: 只对窗口最后 N 个点判定告警；0 = 检测整个窗口（旧行为）。
+    detect_points: int = 0
 
 
 class AlertRuleIn(BaseModel):
@@ -123,6 +125,7 @@ class JobToggleIn(BaseModel):
     interval_seconds: int | None = None
     alert_rules: list[AlertRuleIn] | None = None
     alert_direction: str | None = None
+    detect_points: int | None = None
 
 
 class FeedbackIn(BaseModel):
