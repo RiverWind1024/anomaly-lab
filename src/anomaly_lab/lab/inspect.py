@@ -167,6 +167,8 @@ def _fetch_public(spec: DataSpec, data_root: Path) -> list[SeriesBundle]:
             limit=public.limit,
             auto_download=False,
         )
+    if public.name is None:
+        raise ValueError("公开集必须指定序列名（public.name）")
     return [
         load_public_series(
             public.name,
@@ -479,11 +481,15 @@ def prepare(
             # ⚠️ 大半窗口是空的 —— 通常是「时间范围没覆盖到实际数据」，
             #    而不是「数据本身稀疏」。不提示的话，用户会以为指标没数据。
             if empty * 2 > len(windows):
-                start, end = _data_span(series)
-                span = f"（数据实际覆盖 {_short(start)} ~ {_short(end)}）" if start and end else ""
+                data_start, data_end = _data_span(series)
+                coverage_note = (
+                    f"（数据实际覆盖 {_short(data_start)} ~ {_short(data_end)}）"
+                    if data_start and data_end
+                    else ""
+                )
                 warnings.append(
                     f"序列 {series.series_id} 的 {len(windows)} 个窗口里有 {empty} 个没有数据 —— "
-                    f"时间范围可能没覆盖到实际数据{span}，请把范围调到数据实际所在区间"
+                    f"时间范围可能没覆盖到实际数据{coverage_note}，请把范围调到数据实际所在区间"
                 )
         prepared.append(PreparedSeries(series=series, windows=windows))
 

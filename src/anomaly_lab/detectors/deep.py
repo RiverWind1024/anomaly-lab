@@ -253,7 +253,7 @@ class _DeepDetector(TimedDetector):
         if high - low < 1e-12:
             width = np.zeros_like(err)
         else:
-            width = low + float(threshold) * (high - low)
+            width = np.full_like(err, low + float(threshold) * (high - low))
         return Bands(
             baseline=recon,
             lower=recon - width,

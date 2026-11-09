@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 
@@ -63,8 +64,11 @@ def _load_rows(data_dir: Path) -> list[BacktestRow]:
             if series is None:
                 continue
             data = np.load(path, allow_pickle=False)
+            assert series.labels is not None
             truth = series.labels.astype(bool)
-            scores = data["scores"].astype(float)
+            raw_scores = data["scores"]
+            assert raw_scores is not None
+            scores = raw_scores.astype(float)
             searched = search_threshold(scores, str(data["score_type"]), truth)
             pred = scores > searched.threshold
             precision, recall, f1 = precision_recall_f1(pred, truth)
@@ -317,7 +321,9 @@ def _cmd_evaluate(args: argparse.Namespace) -> int:
     return 0
 
 
-def _ensure_deep_models(series_list, epochs: int) -> dict[str, object]:
+def _ensure_deep_models(
+    series_list, epochs: int
+) -> dict[str, Callable[..., object]]:
     import importlib.util
 
     if importlib.util.find_spec("torch") is None:
@@ -386,7 +392,7 @@ def _cmd_compare(args: argparse.Namespace) -> int:
             print("没有匹配的检测器", file=sys.stderr)
             return 1
 
-    factories: dict[str, object] = {}
+    factories: dict[str, Callable[..., object]] = {}
     if any(spec[0] in {"TCN", "LSTM"} for spec in specs):
         try:
             factories.update(_ensure_deep_models(series_list, args.epochs))

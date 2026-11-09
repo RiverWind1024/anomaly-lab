@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import Protocol
+from typing import Literal, Protocol, cast
 
 import numpy as np
 
@@ -68,7 +68,8 @@ def make_result(
         upper=None if bands is None else np.asarray(bands.upper, dtype=float),
         band_kind=None if bands is None else bands.kind,
         scale_source=scale_source,
-        status=status,
+        # status 由检测器自行覆盖（str），契约只接受两种值
+        status=cast(Literal["ok", "undetermined"], status),
         scale_fallback=scale_fallback,
     )
 
@@ -83,6 +84,10 @@ class TimedDetector:
     _last_scale_source: str | None = None
     #: 检测器可以显式覆盖状态（例如「非零点太少」）；None = 按尺度来源推断
     _last_status: str | None = None
+
+    def score(self, series: SeriesBundle) -> np.ndarray:
+        """具体检测器必须实现：返回逐点异常分数（越大越异常）。"""
+        raise NotImplementedError
 
     def estimate_values(self, values: np.ndarray) -> np.ndarray:
         """**估计**用的值：周期、基线、分解都基于它。

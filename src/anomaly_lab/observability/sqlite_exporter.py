@@ -210,8 +210,8 @@ class SqliteMetricExporter(MetricExporter):
                                 float(point.value),
                             )
                     elif isinstance(data, Histogram):
-                        for point in data.data_points:
-                            self._add_histogram(metric.name, point)
+                        for hist_point in data.data_points:
+                            self._add_histogram(metric.name, hist_point)
 
     def _add_number(
         self,

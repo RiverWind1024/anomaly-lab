@@ -7,6 +7,8 @@ anyio==4.16.0
     #   httpx
     #   starlette
     #   watchfiles
+ast-serialize==0.13.1
+    # via mypy
 certifi==2026.10.23
     # via
     #   httpcore
@@ -53,8 +55,14 @@ joblib==1.6.0
     #   scikit-learn
 kiwisolver==1.5.1
     # via matplotlib
+librt==0.16.0
+    # via mypy
 matplotlib==3.11.2
     # via anomaly-lab (pyproject.toml)
+mypy==2.4.1
+    # via anomaly-lab (pyproject.toml)
+mypy-extensions==1.2.0
+    # via mypy
 narwhals==2.28.0
     # via
     #   formulaic
@@ -91,6 +99,8 @@ pandas==3.1.1
     #   anomaly-lab (pyproject.toml)
     #   formulaic
     #   statsmodels
+pathspec==1.1.1
+    # via mypy
 patsy==1.0.3
     # via statsmodels
 pillow==13.0.0
@@ -146,6 +156,7 @@ typing-extensions==4.16.0
     #   anyio
     #   fastapi
     #   formulaic
+    #   mypy
     #   opentelemetry-api
     #   opentelemetry-sdk
     #   opentelemetry-semantic-conventions

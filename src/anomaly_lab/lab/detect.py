@@ -316,7 +316,7 @@ def _window_detector_detail(
     lower = np.asarray(bands.lower, dtype=float) if bands else np.array([])
     upper = np.asarray(bands.upper, dtype=float) if bands else np.array([])
 
-    def _clean(array: np.ndarray) -> list[float]:
+    def _clean(array: np.ndarray) -> list[float | None]:
         """NaN / Inf 不能进 JSON —— 转成 null。"""
         return [None if not np.isfinite(v) else float(v) for v in array.tolist()]
 

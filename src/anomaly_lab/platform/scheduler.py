@@ -22,7 +22,7 @@ from anomaly_lab.platform.timeutil import to_iso, utcnow
 
 logger = logging.getLogger(__name__)
 
-Runner = Callable[..., object]
+Runner = Callable[..., int]
 
 
 class Scheduler:

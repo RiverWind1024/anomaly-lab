@@ -39,7 +39,8 @@ def _freq_delta(freq: str) -> np.timedelta64:
     mapping = {"min": "m", "m": "m", "h": "h", "s": "s", "d": "D"}
     if unit not in mapping:
         raise ValueError(f"不支持的频率: {freq}")
-    return np.timedelta64(n, mapping[unit])
+    # mypy 把第二个参数收窄成 Literal，映射表的 str 类型对不上；运行时安全。
+    return np.timedelta64(n, mapping[unit])  # type: ignore[call-overload]
 
 
 def _timestamps(n: int, freq: str, start: np.datetime64) -> np.ndarray:
@@ -315,7 +316,8 @@ def generate_series(
         start, end = _choose_interval(anomaly_type, rng, n, occupied)
         injector = _INJECTORS[anomaly_type]
         if anomaly_type == "freq_shift":
-            values, start, end = injector(
+            # only freq_shift 支持 period 参数；上面的 key 判断保证分派正确
+            values, start, end = injector(  # type: ignore[call-arg]
                 values, rng, start, end, period=base_params.get("period")
             )
         else:

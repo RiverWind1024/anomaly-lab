@@ -495,7 +495,8 @@ def _run_job(
             fingerprint = ""
             start_ts = end_ts = ""
             if file_name:
-                np.savez_compressed(target / file_name, **outcome.arrays)
+                # numpy 的 stub 把 **kwargs 收窄成 bool，实际是「数组名 → 数组」。
+                np.savez_compressed(target / file_name, **outcome.arrays)  # type: ignore[arg-type]
                 stamps = outcome.arrays["timestamps"]
                 fingerprint = content_hash(
                     str(entry.get("series_id", "")),

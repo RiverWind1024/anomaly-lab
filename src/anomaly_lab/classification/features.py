@@ -177,6 +177,7 @@ def _estimate_period(values: np.ndarray, freq: str | None) -> int | None:
     estimate = estimate_period(values, freq or "1min")
     if not estimate.usable:
         return None
+    assert estimate.period_points is not None  # usable 时一定有
     return int(estimate.period_points)
 
 

@@ -8,6 +8,7 @@ report.json 是 `make evaluate` 的产物，重跑会把它整个覆盖掉，
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -61,7 +62,7 @@ class ExclusionStore:
         self._save(kept)
         return True
 
-    def _save(self, items: list[dict]) -> None:
+    def _save(self, items: Sequence[dict]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.write_text(
             json.dumps({"excluded": items}, ensure_ascii=False, indent=2), encoding="utf-8"

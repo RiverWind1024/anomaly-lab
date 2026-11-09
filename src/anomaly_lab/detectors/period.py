@@ -468,6 +468,7 @@ def usable_period(series) -> int | None:
     estimate = estimate_period(series.values, series.freq)
     if not estimate.usable:
         return None
+    assert estimate.period_points is not None  # usable 时一定有
     period = int(estimate.period_points)
     if period * 2 > len(series.values):
         return None

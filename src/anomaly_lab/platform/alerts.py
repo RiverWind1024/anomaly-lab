@@ -20,7 +20,9 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass
+from typing import cast
 
 import numpy as np
 
@@ -128,13 +130,17 @@ class AlertRule:
 
     def as_dict(self) -> dict:
         if self.is_absolute:
+            assert self.value is not None  # is_absolute 的定义就是「没有倍数」
             return {"op": self.op, "value": float(self.value), "level": self.level}
+        assert self.multiplier is not None
         return {"multiplier": float(self.multiplier), "level": self.level}
 
     def matches(self, scores: np.ndarray, values: np.ndarray | None) -> np.ndarray:
         """该规则命中的位置。"""
         if not self.is_absolute:
+            assert self.multiplier is not None
             return scores >= float(self.multiplier)
+        assert self.value is not None
         if values is None:
             return np.zeros(len(scores), dtype=bool)
         if self.op == ">":
@@ -153,7 +159,8 @@ def parse_rules(raw: object) -> list[AlertRule]:
     if isinstance(raw, str):
         raw = json.loads(raw)
     rules: list[AlertRule] = []
-    for item in raw:
+    # raw 可能是 JSON 字符串（已转 list）或调用方传的任意可迭代对象
+    for item in cast(Iterable[object], raw):
         if not isinstance(item, dict):
             raise TypeError("告警规则必须是对象列表")
         level = str(item.get("level", "")).strip()

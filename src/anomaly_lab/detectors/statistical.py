@@ -240,9 +240,9 @@ class SeasonalDetector(TimedDetector):
         if not self.seasonal:
             # 无季节性模式：全局中位数 + 全局 MAD（等价于一个稳健检测器）
             median = float(np.median(estimate))
-            scale, source = self._global_scale(estimate)
+            single_scale, source = self._global_scale(estimate)
             center = np.full(n, median)
-            scale_arr = np.full(n, scale) if scale > 0 else np.zeros(n)
+            scale_arr = np.full(n, single_scale) if single_scale > 0 else np.zeros(n)
             self._last_scale_source = source
             self._phase_cache = (values.copy(), center, scale_arr, source)
             return center, scale_arr

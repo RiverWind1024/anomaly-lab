@@ -235,7 +235,7 @@ def create_app(
                         status_code=422,
                         detail="「整条记录核对过」必须带 run_id",
                     )
-                record = {
+                record: dict[str, object] = {
                     "series_id": series_id,
                     "type": item.type,
                     "created_at": created_at,
@@ -492,7 +492,8 @@ def create_app(
         result = DetectionResult(
             series_id=series_id,
             scores=data["scores"].astype(float),
-            score_type=str(data["score_type"]),
+            # 落盘的 score_type 是自由字符串；契约校验在写入侧已做过
+            score_type=str(data["score_type"]),  # type: ignore[arg-type]
             is_anomaly=data["is_anomaly"].astype(bool),
             threshold=float(data["threshold"]),
             detector=str(data["detector"]),
@@ -549,7 +550,7 @@ def create_app(
     #    注册在它之后的 catch-all 永远不会被命中。
     dist = frontend_dist if frontend_dist is not None else _find_frontend_dist()
     has_dist = dist is not None and dist.is_dir()
-    assets_dir = dist / "assets" if has_dist else None
+    assets_dir = dist / "assets" if dist is not None and has_dist else None
 
     # /assets 只在目录存在时挂载。
     # ⚠️ 不要用 check_dir=False 当安全网：Starlette 只跳过构造期检查，
@@ -562,7 +563,7 @@ def create_app(
         # 拼错的 API 不该拿到 HTML —— 这个判断要在 503 之前
         if full_path.startswith("api/"):
             raise HTTPException(status_code=404, detail="Not Found")
-        if not has_dist:
+        if not has_dist or dist is None:
             raise HTTPException(
                 status_code=503,
                 detail="前端未构建，请先执行 make frontend-build",

@@ -76,7 +76,8 @@ def _make_timestamps(n: int, freq: str) -> np.ndarray:
     unit = "".join(ch for ch in freq if ch.isalpha()).lower()
     mapping = {"min": "m", "m": "m", "h": "h", "s": "s", "d": "D"}
     step = int(digits) if digits else 1
-    delta = np.timedelta64(step, mapping.get(unit, "m")).astype("timedelta64[ns]")
+    # mypy 把第二个参数收窄成 Literal，映射表的 str 类型对不上；运行时安全。
+    delta = np.timedelta64(step, mapping.get(unit, "m")).astype("timedelta64[ns]")  # type: ignore[call-overload]
     return SYNTHETIC_EPOCH + np.arange(n) * delta
 
 

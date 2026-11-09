@@ -119,6 +119,7 @@ class DetectionResult:
         if all(present):
             n = len(self.scores)
             for name, arr in zip(("expected", "lower", "upper"), bands):
+                assert arr is not None  # all(present) 已保证
                 if len(arr) != n:
                     raise ValueError(f"{name} 长度必须等于 scores 长度")
 

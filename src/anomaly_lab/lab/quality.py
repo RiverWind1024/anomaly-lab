@@ -73,6 +73,10 @@ def window_quality(
     n_missing = max(0, expected - n)
     missing_ratio = n_missing / expected if expected else 0.0
 
+    vmin: float | None
+    vmax: float | None
+    mean: float | None
+    std: float | None
     if n:
         zero_ratio = float(np.mean(values == 0.0))
         vmin = float(np.min(values))

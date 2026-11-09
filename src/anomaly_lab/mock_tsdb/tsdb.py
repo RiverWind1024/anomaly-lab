@@ -267,7 +267,7 @@ class MockTsdb:
 
         ⚠️ 断流的点**不写**（那段时间就是没有数据）。
         """
-        rows = [
+        rows: list[tuple[str, str, float | None]] = [
             (self.timestamp_for(index), name, value)
             for name, index, value, kind in produced
             if kind != KIND_GAP and value is not None

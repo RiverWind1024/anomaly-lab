@@ -3,7 +3,7 @@ PIP := uv pip
 PIP_INDEX ?= https://pypi.tuna.tsinghua.edu.cn/simple
 NPM ?= npm
 
-.PHONY: setup test lint generate classify detect evaluate evaluate-all compare report validate-auto serve smoke platform-demo platform-smoke compliance-check clean \
+.PHONY: setup test lint typecheck generate classify detect evaluate evaluate-all compare report validate-auto serve smoke platform-demo platform-smoke compliance-check clean \
 	frontend-install frontend-test frontend-build dev mock-tsdb mock-demo prune \
 	sync-detections lock
 
@@ -27,6 +27,9 @@ test:
 
 lint:
 	$(PY) -m ruff check scripts src tests
+
+typecheck:
+	$(PY) -m mypy
 
 generate:
 	$(PY) -m anomaly_lab.cli generate --n 120 --seed 42

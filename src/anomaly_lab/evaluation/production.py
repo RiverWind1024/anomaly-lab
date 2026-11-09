@@ -629,7 +629,7 @@ def evaluate_production(
     layer_reports: list[dict[str, Any]] = []
     for stats in layer_stats:
         key = (stats["source_id"], stats["metric_id"], stats["outcome"])
-        bucket = layer_totals.get(key)
+        bucket_totals = layer_totals.get(key)
         metric_id = stats["metric_id"]
         outcome = stats["outcome"]
         n_events = sum(
@@ -640,8 +640,8 @@ def evaluate_production(
             {
                 **stats,
                 "n_events": n_events,
-                "n_annotated": int(bucket["n"]) if bucket else 0,
-                **_prf(bucket),
+                "n_annotated": int(bucket_totals["n"]) if bucket_totals else 0,
+                **_prf(bucket_totals),
             }
         )
 

@@ -166,12 +166,13 @@ def time_filter_parts(
         )
         return condition, (low, high)
     if fmt == "epoch_s":
-        low, high = int(start.timestamp()), int(end.timestamp())
+        low_epoch, high_epoch = int(start.timestamp()), int(end.timestamp())
     elif fmt == "epoch_ms":
-        low, high = int(start.timestamp() * 1000), int(end.timestamp() * 1000)
+        low_epoch = int(start.timestamp() * 1000)
+        high_epoch = int(end.timestamp() * 1000)
     else:
         raise ValueError(f"不支持的 time_format: {fmt}")
-    return f"{quoted} >= ? AND {quoted} < ?", (low, high)
+    return f"{quoted} >= ? AND {quoted} < ?", (low_epoch, high_epoch)
 
 
 def series_from_frame(frame: pd.DataFrame, metric: Metric) -> list[SeriesBundle]:
