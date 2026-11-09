@@ -1,4 +1,5 @@
-import ReactECharts from 'echarts-for-react'
+import ReactEChartsCore from 'echarts-for-react/lib/core'
+import echarts from '../../lib/echartsCore'
 import { cssVar, invalidateCssVarCache } from '../../theme/cssVar'
 import { useThemeModeValue } from '../../theme/ThemeModeContext'
 import { seriesColors } from '../../lib/palette'
@@ -82,7 +83,8 @@ export function SensitivityChart(props: SensitivityChartProps) {
 
   return (
     <div className="lab-chart">
-      <ReactECharts
+      <ReactEChartsCore
+        echarts={echarts}
         option={option as never}
         notMerge
         style={{ height: 280, width: '100%' }}

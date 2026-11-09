@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
-import ReactECharts from 'echarts-for-react'
+import ReactEChartsCore from 'echarts-for-react/lib/core'
+import echarts from '../../lib/echartsCore'
 import { cssVar, cssVarAlpha, invalidateCssVarCache, withAlpha } from '../../theme/cssVar'
 import { useThemeModeValue } from '../../theme/ThemeModeContext'
 import type { Preview } from '../../api/types'
@@ -195,7 +196,8 @@ export function AlertChart({ preview, startTs, endTs }: AlertChartProps) {
   )
   return (
     <div className="alert-chart">
-      <ReactECharts
+      <ReactEChartsCore
+        echarts={echarts}
         option={option as never}
         notMerge
         style={{ height: 360, width: '100%' }}

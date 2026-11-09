@@ -1,4 +1,5 @@
-import ReactECharts from 'echarts-for-react'
+import ReactEChartsCore from 'echarts-for-react/lib/core'
+import echarts from '../../lib/echartsCore'
 import { cssVar, cssVarAlpha, invalidateCssVarCache } from '../../theme/cssVar'
 import { useThemeModeValue } from '../../theme/ThemeModeContext'
 import type { CompareDetector } from '../../api/types'
@@ -152,7 +153,8 @@ export function CompareChart(props: CompareChartProps) {
 
   return (
     <div className="compare-chart">
-      <ReactECharts
+      <ReactEChartsCore
+        echarts={echarts}
         option={option as never}
         notMerge
         style={{ height: 420, width: '100%' }}

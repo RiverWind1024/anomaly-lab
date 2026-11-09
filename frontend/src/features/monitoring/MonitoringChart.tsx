@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
-import ReactECharts from 'echarts-for-react'
+import ReactEChartsCore from 'echarts-for-react/lib/core'
+import echarts from '../../lib/echartsCore'
 import { cssVar, withAlpha } from '../../theme/cssVar'
 import { useThemeModeValue } from '../../theme/ThemeModeContext'
 
@@ -111,7 +112,8 @@ export function MonitoringChart({
   }, [themeMode, times, series, leftUnit, rightUnit, showRightAxis, showSymbol])
 
   return (
-    <ReactECharts
+    <ReactEChartsCore
+      echarts={echarts}
       option={option as never}
       notMerge
       style={{ height, width: '100%' }}

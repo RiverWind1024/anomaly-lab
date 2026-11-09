@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, Button, Select, Space, Tag, message } from 'antd'
-import ReactECharts from 'echarts-for-react'
+import ReactEChartsCore from 'echarts-for-react/lib/core'
+import echarts from '../../lib/echartsCore'
 import type { ECharts } from 'echarts'
 import { StateBoundary } from '../../components/StateBoundary'
 import { cssVar, cssVarAlpha, invalidateCssVarCache } from '../../theme/cssVar'
@@ -161,7 +162,8 @@ function AnnotateChart({ data, annotations, onBrush }: AnnotateChartProps) {
 
   return (
     <div className="annotate-chart">
-      <ReactECharts
+      <ReactEChartsCore
+        echarts={echarts}
         option={option as never}
         notMerge
         style={{ height: 420, width: '100%' }}

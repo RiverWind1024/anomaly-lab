@@ -1,4 +1,5 @@
-import ReactECharts from 'echarts-for-react'
+import ReactEChartsCore from 'echarts-for-react/lib/core'
+import echarts from '../../lib/echartsCore'
 import { Empty } from 'antd'
 import { cssVar, cssVarAlpha, invalidateCssVarCache } from '../../theme/cssVar'
 import { useThemeModeValue } from '../../theme/ThemeModeContext'
@@ -281,7 +282,8 @@ export function BrowseChart(props: BrowseChartProps) {
 
   return (
     <div className="browse-chart">
-      <ReactECharts
+      <ReactEChartsCore
+        echarts={echarts}
         option={option as never}
         notMerge
         style={{ height: 340, width: '100%' }}

@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { Space } from 'antd'
-import ReactECharts from 'echarts-for-react'
+import ReactEChartsCore from 'echarts-for-react/lib/core'
+import echarts from '../../lib/echartsCore'
 import { useThemeModeValue } from '../../theme/ThemeModeContext'
 import { buildDetectionOption } from './detectionChart'
 import type { Badcases } from '../../api/types'
@@ -16,7 +17,8 @@ export function DetectionChart({ data }: { data: Badcases }) {
 
   return (
     <div className="badcase-chart">
-      <ReactECharts
+      <ReactEChartsCore
+        echarts={echarts}
         option={option as never}
         notMerge
         style={{ height: 420, width: '100%' }}
