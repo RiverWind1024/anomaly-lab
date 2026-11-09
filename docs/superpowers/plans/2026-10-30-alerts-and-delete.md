@@ -113,7 +113,7 @@ def test_empty_input_yields_no_interval():
 - [ ] **Step 2: 运行测试确认失败**
 
 ```bash
-cd /home/jiangzifeng/Project/anomaly-lab && .venv/bin/python -m pytest tests/platform/test_alert_events.py -q
+cd ~/Project/anomaly-lab && .venv/bin/python -m pytest tests/platform/test_alert_events.py -q
 ```
 
 Expected: FAIL —— `ModuleNotFoundError: No module named 'anomaly_lab.platform.alert_events'`
@@ -199,7 +199,7 @@ def merge_alert_intervals(severity: np.ndarray) -> list[tuple[int, int, int]]:
 - [ ] **Step 4: 运行测试确认通过**
 
 ```bash
-cd /home/jiangzifeng/Project/anomaly-lab && .venv/bin/python -m pytest tests/platform/test_alert_events.py -q
+cd ~/Project/anomaly-lab && .venv/bin/python -m pytest tests/platform/test_alert_events.py -q
 ```
 
 Expected: 7 passed
@@ -207,7 +207,7 @@ Expected: 7 passed
 - [ ] **Step 5: 提交**
 
 ```bash
-cd /home/jiangzifeng/Project/anomaly-lab && git add src/anomaly_lab/platform/alert_events.py tests/platform/test_alert_events.py && git commit -m "feat(platform): 告警事件的数据结构与区间合并"
+cd ~/Project/anomaly-lab && git add src/anomaly_lab/platform/alert_events.py tests/platform/test_alert_events.py && git commit -m "feat(platform): 告警事件的数据结构与区间合并"
 ```
 
 ---
@@ -272,7 +272,7 @@ def test_event_level_falls_back_when_index_out_of_range():
 - [ ] **Step 2: 运行测试确认失败**
 
 ```bash
-cd /home/jiangzifeng/Project/anomaly-lab && .venv/bin/python -m pytest tests/platform/test_alert_events.py -q
+cd ~/Project/anomaly-lab && .venv/bin/python -m pytest tests/platform/test_alert_events.py -q
 ```
 
 Expected: FAIL —— `ImportError: cannot import name 'events_from_series'`
@@ -333,7 +333,7 @@ def events_from_series(
 - [ ] **Step 4: 运行测试确认通过**
 
 ```bash
-cd /home/jiangzifeng/Project/anomaly-lab && .venv/bin/python -m pytest tests/platform/test_alert_events.py -q
+cd ~/Project/anomaly-lab && .venv/bin/python -m pytest tests/platform/test_alert_events.py -q
 ```
 
 Expected: 10 passed
@@ -341,7 +341,7 @@ Expected: 10 passed
 - [ ] **Step 5: 提交**
 
 ```bash
-cd /home/jiangzifeng/Project/anomaly-lab && git add src/anomaly_lab/platform/alert_events.py tests/platform/test_alert_events.py && git commit -m "feat(platform): 从单条序列的 severity 产出告警事件"
+cd ~/Project/anomaly-lab && git add src/anomaly_lab/platform/alert_events.py tests/platform/test_alert_events.py && git commit -m "feat(platform): 从单条序列的 severity 产出告警事件"
 ```
 
 ---
@@ -427,7 +427,7 @@ def test_alerts_contract_fields(tmp_path):
 - [ ] **Step 2: 运行测试确认失败**
 
 ```bash
-cd /home/jiangzifeng/Project/anomaly-lab && .venv/bin/python -m pytest tests/web/test_alerts_endpoint.py -q
+cd ~/Project/anomaly-lab && .venv/bin/python -m pytest tests/web/test_alerts_endpoint.py -q
 ```
 
 Expected: FAIL —— 404（端点不存在）
@@ -577,7 +577,7 @@ from anomaly_lab.platform.alert_events import collect_alert_events
 - [ ] **Step 5: 运行测试确认通过**
 
 ```bash
-cd /home/jiangzifeng/Project/anomaly-lab && .venv/bin/python -m pytest tests/web/test_alerts_endpoint.py -q
+cd ~/Project/anomaly-lab && .venv/bin/python -m pytest tests/web/test_alerts_endpoint.py -q
 ```
 
 Expected: 3 passed
@@ -585,7 +585,7 @@ Expected: 3 passed
 - [ ] **Step 6: 跑全量测试确认没打破别的**
 
 ```bash
-cd /home/jiangzifeng/Project/anomaly-lab && .venv/bin/python -m pytest -q 2>&1 | tail -3
+cd ~/Project/anomaly-lab && .venv/bin/python -m pytest -q 2>&1 | tail -3
 ```
 
 Expected: 全绿（原有 306 + 新增 13）
@@ -593,7 +593,7 @@ Expected: 全绿（原有 306 + 新增 13）
 - [ ] **Step 7: 提交**
 
 ```bash
-cd /home/jiangzifeng/Project/anomaly-lab && git add src/anomaly_lab/platform/alert_events.py src/anomaly_lab/web/platform_routes.py tests/web/test_alerts_endpoint.py && git commit -m "feat(platform): 告警中心端点（跨任务汇总 + 筛选 + skipped 报告）"
+cd ~/Project/anomaly-lab && git add src/anomaly_lab/platform/alert_events.py src/anomaly_lab/web/platform_routes.py tests/web/test_alerts_endpoint.py && git commit -m "feat(platform): 告警中心端点（跨任务汇总 + 筛选 + skipped 报告）"
 ```
 
 ---
@@ -684,7 +684,7 @@ import 补 `AlertListResponse`。
 - [ ] **Step 3: 跑类型检查与现有测试**
 
 ```bash
-cd /home/jiangzifeng/Project/anomaly-lab/frontend && npx tsc --noEmit && npm test 2>&1 | grep -E "Test Files|Tests "
+cd ~/Project/anomaly-lab/frontend && npx tsc --noEmit && npm test 2>&1 | grep -E "Test Files|Tests "
 ```
 
 Expected: tsc 无错误；测试仍全绿
@@ -692,7 +692,7 @@ Expected: tsc 无错误；测试仍全绿
 - [ ] **Step 4: 提交**
 
 ```bash
-cd /home/jiangzifeng/Project/anomaly-lab && git add frontend/src/api/types.ts frontend/src/api/platform.ts && git commit -m "feat(frontend): 告警中心的 API 封装与类型"
+cd ~/Project/anomaly-lab && git add frontend/src/api/types.ts frontend/src/api/platform.ts && git commit -m "feat(frontend): 告警中心的 API 封装与类型"
 ```
 
 ---
@@ -813,7 +813,7 @@ describe('AlertList', () => {
 - [ ] **Step 2: 运行测试确认失败**
 
 ```bash
-cd /home/jiangzifeng/Project/anomaly-lab/frontend && npx vitest run src/features/alerts/alerts.test.tsx
+cd ~/Project/anomaly-lab/frontend && npx vitest run src/features/alerts/alerts.test.tsx
 ```
 
 Expected: FAIL —— `Cannot find module './AlertList'`
@@ -1072,7 +1072,7 @@ const AlertsPage = lazy(() =>
 - [ ] **Step 7: 运行测试确认通过**
 
 ```bash
-cd /home/jiangzifeng/Project/anomaly-lab/frontend && npx vitest run src/features/alerts/alerts.test.tsx
+cd ~/Project/anomaly-lab/frontend && npx vitest run src/features/alerts/alerts.test.tsx
 ```
 
 Expected: 5 passed
@@ -1083,7 +1083,7 @@ Expected: 5 passed
 - [ ] **Step 8: 全量验证**
 
 ```bash
-cd /home/jiangzifeng/Project/anomaly-lab/frontend && npx tsc --noEmit && npm test 2>&1 | grep -E "Test Files|Tests " && npm run build 2>&1 | tail -2
+cd ~/Project/anomaly-lab/frontend && npx tsc --noEmit && npm test 2>&1 | grep -E "Test Files|Tests " && npm run build 2>&1 | tail -2
 ```
 
 Expected: tsc 无错误；测试全绿；build 通过
@@ -1091,7 +1091,7 @@ Expected: tsc 无错误；测试全绿；build 通过
 - [ ] **Step 9: 提交**
 
 ```bash
-cd /home/jiangzifeng/Project/anomaly-lab && git add frontend/src/features/alerts frontend/src/pages/AlertsPage.tsx frontend/src/router.tsx frontend/src/components/AppLayout.tsx && git commit -m "feat(frontend): 告警中心页面（跨任务事件列表 + 筛选 + skipped 展示）"
+cd ~/Project/anomaly-lab && git add frontend/src/features/alerts frontend/src/pages/AlertsPage.tsx frontend/src/router.tsx frontend/src/components/AppLayout.tsx && git commit -m "feat(frontend): 告警中心页面（跨任务事件列表 + 筛选 + skipped 展示）"
 ```
 
 ---
@@ -1136,7 +1136,7 @@ def test_alerts_contract():
 - [ ] **Step 2: 运行测试**
 
 ```bash
-cd /home/jiangzifeng/Project/anomaly-lab && .venv/bin/python -m pytest tests/web/test_api_contract.py -q
+cd ~/Project/anomaly-lab && .venv/bin/python -m pytest tests/web/test_api_contract.py -q
 ```
 
 Expected: 全绿
@@ -1144,7 +1144,7 @@ Expected: 全绿
 - [ ] **Step 3: 提交**
 
 ```bash
-cd /home/jiangzifeng/Project/anomaly-lab && git add tests/web/test_api_contract.py && git commit -m "test(web): 告警中心的字段契约守卫"
+cd ~/Project/anomaly-lab && git add tests/web/test_api_contract.py && git commit -m "test(web): 告警中心的字段契约守卫"
 ```
 
 ---
@@ -1252,7 +1252,7 @@ def test_delete_response_reports_cascade_counts(tmp_path):
 - [ ] **Step 2: 运行测试确认失败**
 
 ```bash
-cd /home/jiangzifeng/Project/anomaly-lab && .venv/bin/python -m pytest tests/web/test_delete_endpoints.py -q
+cd ~/Project/anomaly-lab && .venv/bin/python -m pytest tests/web/test_delete_endpoints.py -q
 ```
 
 Expected: FAIL —— 405（DELETE 方法不允许）
@@ -1433,7 +1433,7 @@ def is_running(job_id: int) -> bool:
 - [ ] **Step 6: 运行测试确认通过**
 
 ```bash
-cd /home/jiangzifeng/Project/anomaly-lab && .venv/bin/python -m pytest tests/web/test_delete_endpoints.py -q
+cd ~/Project/anomaly-lab && .venv/bin/python -m pytest tests/web/test_delete_endpoints.py -q
 ```
 
 Expected: 5 passed
@@ -1441,7 +1441,7 @@ Expected: 5 passed
 - [ ] **Step 7: 提交**
 
 ```bash
-cd /home/jiangzifeng/Project/anomaly-lab && git add src/anomaly_lab/platform/store.py src/anomaly_lab/platform/runner.py src/anomaly_lab/web/platform_routes.py tests/web/test_delete_endpoints.py && git commit -m "feat(platform): 任务/指标/数据源的级联删除端点"
+cd ~/Project/anomaly-lab && git add src/anomaly_lab/platform/store.py src/anomaly_lab/platform/runner.py src/anomaly_lab/web/platform_routes.py tests/web/test_delete_endpoints.py && git commit -m "feat(platform): 任务/指标/数据源的级联删除端点"
 ```
 
 ---
@@ -1498,7 +1498,7 @@ def test_deleting_running_job_returns_409(tmp_path):
 - [ ] **Step 2: 运行测试**
 
 ```bash
-cd /home/jiangzifeng/Project/anomaly-lab && .venv/bin/python -m pytest tests/web/test_delete_endpoints.py -q
+cd ~/Project/anomaly-lab && .venv/bin/python -m pytest tests/web/test_delete_endpoints.py -q
 ```
 
 Expected: 第一个测试可能已通过（`_delete_run_dirs` 已实现）；第二个应通过（`is_running` 已实现）
@@ -1511,7 +1511,7 @@ Expected: 第一个测试可能已通过（`_delete_run_dirs` 已实现）；第
 - [ ] **Step 4: 运行全量测试**
 
 ```bash
-cd /home/jiangzifeng/Project/anomaly-lab && .venv/bin/python -m pytest -q 2>&1 | tail -3 && .venv/bin/python -m ruff check src tests
+cd ~/Project/anomaly-lab && .venv/bin/python -m pytest -q 2>&1 | tail -3 && .venv/bin/python -m ruff check src tests
 ```
 
 Expected: 全绿
@@ -1519,7 +1519,7 @@ Expected: 全绿
 - [ ] **Step 5: 提交**
 
 ```bash
-cd /home/jiangzifeng/Project/anomaly-lab && git add tests/web/test_delete_endpoints.py src/anomaly_lab/platform && git commit -m "test(platform): 删除时清理 run 目录文件；运行中的任务返回 409"
+cd ~/Project/anomaly-lab && git add tests/web/test_delete_endpoints.py src/anomaly_lab/platform && git commit -m "test(platform): 删除时清理 run 目录文件；运行中的任务返回 409"
 ```
 
 ---
@@ -1605,7 +1605,7 @@ describe('impactText', () => {
 - [ ] **Step 2: 运行测试确认失败**
 
 ```bash
-cd /home/jiangzifeng/Project/anomaly-lab/frontend && npx vitest run src/features/delete/DeleteButton.test.tsx
+cd ~/Project/anomaly-lab/frontend && npx vitest run src/features/delete/DeleteButton.test.tsx
 ```
 
 Expected: FAIL —— `Cannot find module './impact'`
@@ -1760,7 +1760,7 @@ export function DeleteButton({
 - [ ] **Step 7: 运行测试确认通过**
 
 ```bash
-cd /home/jiangzifeng/Project/anomaly-lab/frontend && npx vitest run src/features/delete/DeleteButton.test.tsx
+cd ~/Project/anomaly-lab/frontend && npx vitest run src/features/delete/DeleteButton.test.tsx
 ```
 
 Expected: 4 passed
@@ -1768,7 +1768,7 @@ Expected: 4 passed
 - [ ] **Step 8: 提交**
 
 ```bash
-cd /home/jiangzifeng/Project/anomaly-lab && git add frontend/src/features/delete frontend/src/api/platform.ts && git commit -m "feat(frontend): 删除按钮 + 影响范围文案"
+cd ~/Project/anomaly-lab && git add frontend/src/features/delete frontend/src/api/platform.ts && git commit -m "feat(frontend): 删除按钮 + 影响范围文案"
 ```
 
 ---
@@ -1891,7 +1891,7 @@ import { useDeleteSource } from '../features/delete/queries'
 - [ ] **Step 5: 全量验证**
 
 ```bash
-cd /home/jiangzifeng/Project/anomaly-lab/frontend && npx tsc --noEmit && npm test 2>&1 | grep -E "Test Files|Tests " && npm run build 2>&1 | tail -2
+cd ~/Project/anomaly-lab/frontend && npx tsc --noEmit && npm test 2>&1 | grep -E "Test Files|Tests " && npm run build 2>&1 | tail -2
 ```
 
 Expected: tsc 无错误；测试全绿；build 通过
@@ -1899,7 +1899,7 @@ Expected: tsc 无错误；测试全绿；build 通过
 - [ ] **Step 6: 提交**
 
 ```bash
-cd /home/jiangzifeng/Project/anomaly-lab && git add frontend/src && git commit -m "feat(frontend): 三个列表页接上删除入口"
+cd ~/Project/anomaly-lab && git add frontend/src && git commit -m "feat(frontend): 三个列表页接上删除入口"
 ```
 
 ---
@@ -1911,7 +1911,7 @@ cd /home/jiangzifeng/Project/anomaly-lab && git add frontend/src && git commit -
 - [ ] **Step 1: 起一个临时实例**
 
 ```bash
-cd /home/jiangzifeng/Project/anomaly-lab && \
+cd ~/Project/anomaly-lab && \
 ANOMALY_LAB_DATA_DIR=/tmp/opencode/deltest/work \
   .venv/bin/python -m anomaly_lab.cli serve --port 8018 --no-scheduler &
 sleep 8
@@ -1923,8 +1923,8 @@ sleep 8
 
 ```bash
 cd /tmp/opencode/deltest/work && \
-/home/jiangzifeng/Project/anomaly-lab/.venv/bin/python -m anomaly_lab.cli demo --force 2>/dev/null || \
-/home/jiangzifeng/Project/anomaly-lab/.venv/bin/python -c "
+~/Project/anomaly-lab/.venv/bin/python -m anomaly_lab.cli demo --force 2>/dev/null || \
+~/Project/anomaly-lab/.venv/bin/python -c "
 from pathlib import Path
 from anomaly_lab.platform.demo import seed_demo
 print(seed_demo(Path('/tmp/opencode/deltest/work')))
@@ -1967,7 +1967,7 @@ pkill -f "cli serve --port 8018"
 - [ ] **Step 6: 跑一次完整验证**
 
 ```bash
-cd /home/jiangzifeng/Project/anomaly-lab && .venv/bin/python -m pytest -q 2>&1 | tail -3 && \
+cd ~/Project/anomaly-lab && .venv/bin/python -m pytest -q 2>&1 | tail -3 && \
 .venv/bin/python -m ruff check src tests && \
 cd frontend && npx tsc --noEmit && npm test 2>&1 | grep -E "Test Files|Tests " && npm run build 2>&1 | tail -2
 ```
@@ -2044,7 +2044,7 @@ Expected: 全绿
 - [ ] **Step 4: 提交**
 
 ```bash
-cd /home/jiangzifeng/Project/anomaly-lab && \
+cd ~/Project/anomaly-lab && \
 git reset -q HEAD docs/my-thought.md 2>/dev/null; \
 git add docs/PLATFORM.md docs/ROADMAP.md README.md && \
 git commit -m "docs: 告警中心与删除功能的说明"

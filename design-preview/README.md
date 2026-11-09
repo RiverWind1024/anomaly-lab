@@ -50,9 +50,9 @@ node design-preview/snapshot.mjs http://127.0.0.1:8000
 ## 检查
 
 ```bash
-node /home/jiangzifeng/Project/.opencode/skills/design-taste-frontend/scripts/lint.mjs --app design-preview
+node ~/Project/.opencode/skills/design-taste-frontend/scripts/lint.mjs --app design-preview
 for f in index alerts jobs evaluation sources detections annotate; do
-  node /home/jiangzifeng/Project/.opencode/skills/design-taste-frontend/scripts/inspect.mjs \
+  node ~/Project/.opencode/skills/design-taste-frontend/scripts/inspect.mjs \
     design-preview/$f.html --app --out .taste-skill/p-$f
 done
 ```

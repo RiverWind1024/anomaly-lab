@@ -18,7 +18,7 @@
 | torch | 2.12.0+cu130 | ✅（系统已装 CUDA 版；项目内用 CPU 版） |
 | fastapi | 0.136.1 | ✅ |
 | statsmodels | **未安装** | STL / ADF 必需 → 项目 venv 装 |
-| uv | `/home/jiangzifeng/.local/bin/uv` | ✅ 用于建 3.12 venv |
+| uv | `~/.local/bin/uv` | ✅ 用于建 3.12 venv |
 | CPU | 16 核 | 足够并行评估 + CPU 训练 TCN |
 | 内存 | 14 GB | 足够 |
 | 磁盘 | 731 GB 空闲 | 足够 |
