@@ -44,7 +44,6 @@ def _store(tmp_path, db_path):
         time_column="ts",
         value_column="value",
         group_column="series",
-        freq="1h",
     )
     return store, metric
 

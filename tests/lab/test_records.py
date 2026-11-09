@@ -209,7 +209,6 @@ def test_running_same_spec_twice_gives_same_fingerprint(tmp_path: Path):
         time_column="ts",
         value_column="value",
         group_column="series",
-        freq="1h",
     )
     spec = DataSpec(
         kind="metric",
@@ -234,8 +233,8 @@ def test_job_draft_fills_production_fields(tmp_path: Path):
     draft = build_job_draft(load_experiment(tmp_path, saved["id"]))
 
     assert draft["metric_id"] == 12
-    # 窗口点数必须与实验一致 —— 否则「实验所见」不是「上线所得」
-    assert draft["window_points"] == 200
+    # 时间窗口必须与实验一致 —— 否则「实验所见」不是「上线所得」
+    assert draft["window_seconds"] == 200 * 300
     assert draft["interval_seconds"] == 300  # 5min
     assert draft["detector"] == "auto"
     assert draft["alert_rules"]

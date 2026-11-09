@@ -52,6 +52,9 @@ const DetectionsPage = lazy(() =>
 const AnnotatePage = lazy(() =>
   import('./features/annotate/AnnotatePage').then((m) => ({ default: m.AnnotatePage })),
 )
+const ArchivesPage = lazy(() =>
+  import('./features/archive/ArchivesPage').then((m) => ({ default: m.ArchivesPage })),
+)
 const LabPage = lazy(() =>
   import('./features/lab/LabPage').then((m) => ({ default: m.LabPage })),
 )
@@ -86,6 +89,7 @@ export function AppRoutes() {
         <Route path="/alerts" element={<AlertsPage />} />
         <Route path="/evaluation" element={<EvaluationPage />} />
         <Route path="/detections" element={<DetectionsPage />} />
+        <Route path="/archives" element={<ArchivesPage />} />
         <Route path="/annotate" element={<AnnotatePage />} />
         <Route path="/lab" element={<LabPage />} />
         <Route path="/monitoring" element={<MonitoringPage />} />

@@ -22,7 +22,6 @@ const METRIC: CatalogMetric = {
   value_column: 'value',
   group_column: null,
   time_format: 'iso_utc',
-  freq: '5min',
   source_timezone: 'UTC',
   missing_policy: 'drop',
   created_at: '2026-10-30T00:00:00+00:00',
@@ -120,7 +119,6 @@ describe('新建任务的告警方向', () => {
     await pick(/指标/, 'demo-metric', user)
     await user.type(screen.getByLabelText(/任务名称/), '方向测试')
     await pick(/检测算法/, detectorLabel('iqr'), user)
-    await user.type(screen.getByLabelText(/窗口点数/), '500')
     await user.type(screen.getByLabelText(/执行间隔/), '300')
     await pick(/告警方向/, '只报偏高', user)
     await user.click(screen.getByRole('button', { name: /创\s*建/ }))

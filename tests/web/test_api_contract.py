@@ -36,7 +36,7 @@ def test_catalog_contract():
             "metric_id",
             "name",
             "detector",
-            "window_points",
+            "window_seconds",
             "interval_seconds",
             "enabled",
             "alert_rules",
@@ -165,21 +165,21 @@ def test_frontend_limits_match_backend_validation():
     """
     from anomaly_lab.platform.validation import (
         validate_interval_seconds,
-        validate_window_points,
+        validate_window_seconds,
     )
 
-    window_min = _ts_constant("WINDOW_POINTS_MIN")
-    window_max = _ts_constant("WINDOW_POINTS_MAX")
+    window_min = _ts_constant("WINDOW_SECONDS_MIN")
+    window_max = _ts_constant("WINDOW_SECONDS_MAX")
     interval_min = _ts_constant("INTERVAL_SECONDS_MIN")
 
     # 后端下限：min 合法、min-1 抛错
-    assert validate_window_points(window_min) == window_min
+    assert validate_window_seconds(window_min) == window_min
     with pytest.raises(ValueError):
-        validate_window_points(window_min - 1)
+        validate_window_seconds(window_min - 1)
     # 后端上限：max 合法、max+1 抛错
-    assert validate_window_points(window_max) == window_max
+    assert validate_window_seconds(window_max) == window_max
     with pytest.raises(ValueError):
-        validate_window_points(window_max + 1)
+        validate_window_seconds(window_max + 1)
     # 执行间隔同理
     assert validate_interval_seconds(interval_min) == interval_min
     with pytest.raises(ValueError):

@@ -162,8 +162,6 @@ function MonitoringBody({ data }: { data: Observability }) {
         </div>
       </section>
 
-      {data.otel.enabled ? null : <OtelHint />}
-
       <div className="monitoring__grid">
         <ChartPanel
           title="流量与错误"
@@ -285,21 +283,6 @@ function MonitoringBody({ data }: { data: Observability }) {
         <JobTable rows={data.jobs} />
       </div>
     </>
-  )
-}
-
-function OtelHint() {
-  return (
-    <section className="monitoring__otel">
-      <div>
-        <strong>指标目前只在本机。</strong>
-        <span>
-          要接 Grafana / Jaeger / 任意 OTLP 后端，装上导出器再配置端点即可 ——
-          本地页面会继续工作，同一份埋点同时往外发。
-        </span>
-      </div>
-      <code>pip install -e &apos;.[otel]&apos; · ANOMALY_OTEL_ENDPOINT=http://localhost:4318 make serve</code>
-    </section>
   )
 }
 

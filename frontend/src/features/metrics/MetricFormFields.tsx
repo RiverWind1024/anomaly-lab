@@ -1,7 +1,6 @@
 import { Form, Input, Select } from 'antd'
 import { hint } from '../../components/FieldHint'
 import type { CatalogSource } from '../../api/types'
-import { freqValidator } from './freq'
 
 export interface MetricFormValues {
   source_id: number
@@ -13,7 +12,6 @@ export interface MetricFormValues {
   time_format: string
   source_timezone: string
   missing_policy: string
-  freq: string
 }
 
 /** 时间格式的取值（后端 `TimeFormat`）。 */
@@ -87,18 +85,6 @@ export function MetricFormFields({ sources }: MetricFormFieldsProps) {
           <Input placeholder="host" spellCheck={false} />
         </Form.Item>
 
-        <Form.Item
-          name="freq"
-          label="频率"
-          rules={[
-            { required: true, message: '请输入频率' },
-            // 格式当场拦下，不等提交后的后端 400
-            { validator: freqValidator },
-          ]}
-        >
-          <Input placeholder="5min / 1h / 1d" spellCheck={false} />
-        </Form.Item>
-
         <Form.Item name="time_format" label="时间格式">
           <Select options={TIME_FORMAT_OPTIONS} />
         </Form.Item>
@@ -145,6 +131,5 @@ export function buildMetricPayload(values: MetricFormValues) {
     time_format: values.time_format as 'iso_utc' | 'iso_naive' | 'epoch_s' | 'epoch_ms',
     source_timezone: values.source_timezone.trim() || 'UTC',
     missing_policy: values.missing_policy as 'drop' | 'interpolate' | 'error',
-    freq: values.freq.trim(),
   }
 }

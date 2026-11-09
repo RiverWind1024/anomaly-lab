@@ -29,6 +29,7 @@ from anomaly_lab.evaluation.production import (
 from anomaly_lab.lab.truth import REVIEWED_TYPE, annotations_path, load_annotations
 from anomaly_lab.observability import configure_observability
 from anomaly_lab.observability.middleware import ObservabilityMiddleware
+from anomaly_lab.platform.series_detail import build_series_detail
 from anomaly_lab.platform.store import PlatformStore
 from anomaly_lab.platform.validation import validate_identifier
 from anomaly_lab.web.biz_state import biz_headers
@@ -128,19 +129,6 @@ def _find_frontend_dist() -> Path | None:
         if candidate.is_dir():
             return candidate
     return None
-
-
-def _npz_list(data, key: str) -> list[float]:
-    """npz 里的可选浮点数组 → 列表；缺键 / 空数组都给 `[]`。
-
-    ⚠️ 不能直接 `list(data[key])`：标量（0 维）会抛 `TypeError`，
-       而老产物里这些键可能缺失。
-    """
-    if key not in data:
-        return []
-    import numpy as np
-
-    return [float(v) for v in np.asarray(data[key], dtype=float).ravel()]
 
 
 def create_app(
@@ -298,10 +286,17 @@ def create_app(
         rate_normal: float = DEFAULT_RATE_NORMAL,
         max_per_layer: int | None = DEFAULT_MAX_PER_LAYER,
         todo: bool = False,
+        source_id: int | None = None,
+        metric_id: int | None = None,
+        detector: str | None = None,
+        metric_class: str | None = None,
+        start: str | None = None,
+        end: str | None = None,
     ) -> list[dict]:
         """采样后的生产检测记录清单 —— 标注页的下拉用它。
 
         ⚠️ `todo=true` → 只给**还没标**的（待办队列）。
+        ⚠️ 筛选在抽样之前生效（见 `list_samples`）。
         """
         samples = list_samples(
             get_store(),
@@ -312,6 +307,12 @@ def create_app(
             max_per_layer=max_per_layer,
             limit=limit,
             todo_only=todo,
+            source_id=source_id,
+            metric_id=metric_id,
+            detector=detector,
+            metric_class=metric_class,
+            start=start,
+            end=end,
         )
         return [
             {
@@ -324,6 +325,7 @@ def create_app(
                 "source_name": item.source_name,
                 "metric_id": item.metric_id,
                 "metric_name": item.metric_name,
+                "metric_class": item.metric_class,
                 "n": item.n,
                 "n_alerts": item.n_alerts,
                 "start_ts": item.start_ts,
@@ -368,48 +370,12 @@ def create_app(
         npz_path = _run_dir(data_root, run_id) / file_name
         if not npz_path.is_file():
             raise HTTPException(status_code=404, detail="该运行的检测结果文件缺失")
-
-        import numpy as np
-
-        with np.load(npz_path) as data:
-            stamps = np.asarray(data["timestamps"], dtype=np.int64)
-            # ⚠️ **先按 ns 解释，再降到秒** —— 直接 `astype("datetime64[s]")`
-            #    会把纳秒数值当成秒数，数值直接溢出。
-            seconds = stamps.astype("datetime64[ns]").astype("datetime64[s]")
-            return {
-                "run_id": run_id,
-                "series_id": series_id,
-                "detector": str(data["detector"]) if "detector" in data else "",
-                # ⚠️ 老产物没有这两个键 —— 缺失时按「正常尺度」兜底。
-                "scale_source": str(data["scale_source"]) if "scale_source" in data else "",
-                "status": str(data["status"]) if "status" in data else "ok",
-                "scale_fallback": bool(data["scale_fallback"]) if "scale_fallback" in data else False,
-                # 决策链来自本次运行的 index.json；老产物没有这一段 → 空对象。
-                "decision": matched.get("decision") or {},
-                "timestamps": [str(ts)[:19] for ts in seconds],
-                "values": [float(v) for v in np.asarray(data["values"], dtype=float)],
-                "scores": [float(v) for v in np.asarray(data["scores"], dtype=float)],
-                "severity": [int(v) for v in np.asarray(data["severity"], dtype=int)],
-                # 基线三件套 / 阈值 / 档位名 —— 有就带上，老产物缺键时给空值。
-                # ⚠️ 空数组 ≠ null：前端按长度判断「有没有带」，别把空数组当「有带」。
-                "baseline": _npz_list(data, "baseline"),
-                "lower": _npz_list(data, "lower"),
-                "upper": _npz_list(data, "upper"),
-                "alert_threshold": (
-                    float(data["alert_threshold"]) if "alert_threshold" in data else 0.0
-                ),
-                "critical_threshold": (
-                    float(data["critical_threshold"])
-                    if "critical_threshold" in data
-                    else 0.0
-                ),
-                "score_type": str(data["score_type"]) if "score_type" in data else "",
-                "levels": (
-                    json.loads(str(data["levels"])) if "levels" in data else ["正常"]
-                ),
-                # ⚠️ 生产数据没有自带真值 —— 恒为空，真值来自人工标注。
-                "labels": [],
-            }
+        return build_series_detail(
+            npz_path,
+            run_id=run_id,
+            series_id=series_id,
+            decision=matched.get("decision") or {},
+        )
 
     @app.get("/api/summary")
     def summary() -> dict:

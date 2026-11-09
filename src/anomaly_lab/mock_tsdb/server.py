@@ -24,7 +24,11 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 
-from anomaly_lab.mock_tsdb.generator import DEFAULT_RETENTION_HOURS, SAMPLE_SECONDS
+from anomaly_lab.mock_tsdb.generator import (
+    DEFAULT_HISTORY_POINTS,
+    DEFAULT_RETENTION_HOURS,
+    SAMPLE_SECONDS,
+)
 from anomaly_lab.mock_tsdb.tsdb import MockTsdb
 
 logger = logging.getLogger(__name__)
@@ -45,8 +49,8 @@ class MockConfig:
     retention_hours: int = DEFAULT_RETENTION_HOURS
     #: 采样间隔（秒）—— 决定数据的密度。
     sample_seconds: int = SAMPLE_SECONDS
-    #: 启动时回填多少个**历史**点。
-    history_points: int = 360
+    #: 启动时回填多少个**历史**点（默认 7 天）。
+    history_points: int = DEFAULT_HISTORY_POINTS
     #: 后台线程的写入间隔（秒）。
     write_interval_seconds: int = 10
     #: 后台线程是否自动启动。

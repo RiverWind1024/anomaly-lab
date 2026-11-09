@@ -104,7 +104,7 @@ export function AlertEventsPanel({
       </div>
 
       {events.length === 0 ? (
-        <p className="muted">这个序列当前没有告警</p>
+        <p className="muted">{seriesId ? '这个序列当前没有告警' : '当前没有告警'}</p>
       ) : (
         <ul className="eventlist">
           {events.slice(0, 6).map((e) => (

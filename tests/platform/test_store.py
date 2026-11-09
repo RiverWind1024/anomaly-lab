@@ -26,7 +26,6 @@ def _metric(store, source_id):
         value_column="value",
         group_column="host",
         time_format="iso_utc",
-        freq="5min",
     )
 
 
@@ -57,7 +56,6 @@ def test_add_metric_rejects_query_without_timefilter(tmp_path):
             value_column="value",
             group_column=None,
             time_format="iso_utc",
-            freq="5min",
         )
 
 
@@ -72,7 +70,7 @@ def test_add_job_defaults_schedule_to_now(tmp_path):
         detector="seasonal",
         alert_threshold=2.5,
         critical_threshold=4.0,
-        window_points=500,
+        window_seconds=500 * 300,
         interval_seconds=300,
     )
     assert job.enabled is True
@@ -91,7 +89,7 @@ def test_job_rejects_critical_not_above_alert(tmp_path):
             detector="seasonal",
             alert_threshold=4.0,
             critical_threshold=4.0,
-            window_points=500,
+            window_seconds=500 * 300,
             interval_seconds=300,
         )
 
@@ -107,7 +105,7 @@ def test_job_rejects_unknown_detector(tmp_path):
             detector="nope",
             alert_threshold=2.5,
             critical_threshold=4.0,
-            window_points=500,
+            window_seconds=500 * 300,
             interval_seconds=300,
         )
 
@@ -123,7 +121,7 @@ def test_job_detect_points_defaults_to_whole_window(tmp_path):
         detector="iqr",
         alert_threshold=2.5,
         critical_threshold=4.0,
-        window_points=60,
+        window_seconds=60 * 300,
         interval_seconds=60,
     )
     assert job.detect_points == 0
@@ -133,7 +131,7 @@ def test_job_detect_points_defaults_to_whole_window(tmp_path):
     assert store.update_job_config(job.id, detect_points=0).detect_points == 0
 
 
-def test_job_detect_points_cannot_exceed_window(tmp_path):
+def test_job_detect_points_rejects_negative(tmp_path):
     store = PlatformStore(tmp_path / "platform.db")
     source = _source(store)
     metric = _metric(store, source.id)
@@ -143,15 +141,11 @@ def test_job_detect_points_cannot_exceed_window(tmp_path):
         "detector": "iqr",
         "alert_threshold": 2.5,
         "critical_threshold": 4.0,
-        "window_points": 3,
+        "window_seconds": 3 * 300,
         "interval_seconds": 60,
     }
-    with pytest.raises(ValueError, match="detect_points"):
-        store.add_job(**base, detect_points=4)
-
+    # 窗口是时间，实际点数由 SQL 决定 —— 检测点数不再有「不能超过窗口」的上限
     job = store.add_job(**base, detect_points=3)
-    with pytest.raises(ValueError, match="detect_points"):
-        store.update_job_config(job.id, detect_points=4)
     with pytest.raises(ValueError, match="detect_points"):
         store.update_job_config(job.id, detect_points=-1)
 
@@ -185,6 +179,36 @@ def test_old_jobs_table_gets_detect_points_column(tmp_path):
     assert store.get_job(1).detect_points == 0
 
 
+def test_old_archive_records_table_gets_description_column(tmp_path):
+    """归档记录的「说明」是后加的列 —— 老库要能自动补上。"""
+    db_path = tmp_path / "platform.db"
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "CREATE TABLE archive_sets (id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " name TEXT NOT NULL UNIQUE, description TEXT NOT NULL DEFAULT '',"
+        " created_at TEXT NOT NULL)"
+    )
+    conn.execute(
+        "CREATE TABLE archive_records (id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " archive_set_id INTEGER NOT NULL, run_id INTEGER NOT NULL,"
+        " series_id TEXT NOT NULL, job_name TEXT NOT NULL DEFAULT '',"
+        " metric_name TEXT NOT NULL DEFAULT '', detector TEXT NOT NULL DEFAULT '',"
+        " n INTEGER NOT NULL DEFAULT 0, n_valid INTEGER NOT NULL DEFAULT 0,"
+        " n_alerts INTEGER NOT NULL DEFAULT 0, n_p0 INTEGER NOT NULL DEFAULT 0,"
+        " start_ts TEXT NOT NULL DEFAULT '', end_ts TEXT NOT NULL DEFAULT '',"
+        " file TEXT NOT NULL DEFAULT '', decision_json TEXT NOT NULL DEFAULT '',"
+        " content_hash TEXT NOT NULL DEFAULT '', archived_at TEXT NOT NULL)"
+    )
+    conn.commit()
+    conn.close()
+
+    PlatformStore(db_path)
+    check = sqlite3.connect(db_path)
+    columns = {row[1] for row in check.execute("PRAGMA table_info(archive_records)")}
+    check.close()
+    assert "description" in columns
+
+
 def test_due_jobs_reconcile_and_schedule_update(tmp_path):
     store = PlatformStore(tmp_path / "platform.db")
     source = _source(store)
@@ -195,7 +219,7 @@ def test_due_jobs_reconcile_and_schedule_update(tmp_path):
         detector="seasonal",
         alert_threshold=2.5,
         critical_threshold=4.0,
-        window_points=500,
+        window_seconds=500 * 300,
         interval_seconds=300,
     )
     past = to_iso(datetime(2000, 1, 1, tzinfo=UTC))
@@ -221,7 +245,7 @@ def test_disabled_job_is_not_due(tmp_path):
         detector="seasonal",
         alert_threshold=2.5,
         critical_threshold=4.0,
-        window_points=500,
+        window_seconds=500 * 300,
         interval_seconds=300,
     )
     store.set_job_enabled(job.id, False)
@@ -335,7 +359,7 @@ def test_run_lifecycle(tmp_path):
         detector="seasonal",
         alert_threshold=2.5,
         critical_threshold=4.0,
-        window_points=500,
+        window_seconds=500 * 300,
         interval_seconds=300,
     )
     run = store.create_run(job.id)

@@ -34,7 +34,6 @@ def _metric(**overrides) -> Metric:
         "value_column": "v",
         "group_column": "g",
         "time_format": "iso_utc",
-        "freq": "1min",
         "created_at": "",
     }
     base.update(overrides)

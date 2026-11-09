@@ -30,7 +30,6 @@ const METRIC: CatalogMetric = {
   value_column: 'value',
   group_column: 'host',
   time_format: 'iso_utc',
-  freq: '5min',
   source_timezone: 'UTC',
   missing_policy: 'drop',
   created_at: '2026-10-30T00:00:00+00:00',
@@ -154,11 +153,12 @@ describe('指标配置页', () => {
     expect(screen.getByRole('heading', { name: '预览数据' })).toBeTruthy()
   })
 
-  it('⚠️ 提示窗口在**告警任务**里设 —— 指标本身没有这个字段', async () => {
+  it('预览固定取最近 30 天，并说明粒度由 SQL 决定', async () => {
     renderPage('/metrics/7/edit', <MetricFormPage />)
     await waitFor(() => {
       expect((screen.getByLabelText('名称') as HTMLInputElement).value).toBe('cpu')
     })
-    expect(screen.getByText(/指标本身没有「取多少数据」的设置/)).toBeTruthy()
+    expect(screen.getAllByText(/最近 30 天/).length).toBeGreaterThan(0)
+    expect(screen.getByText(/数据粒度由指标的 SQL 决定/)).toBeTruthy()
   })
 })

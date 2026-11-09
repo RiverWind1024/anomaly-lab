@@ -49,7 +49,6 @@ export function MetricDetailPage() {
         time_format: metric.time_format,
         source_timezone: metric.source_timezone,
         missing_policy: metric.missing_policy,
-        freq: metric.freq,
       })
     }
   }, [metric, form])

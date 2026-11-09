@@ -31,7 +31,7 @@ def test_运行结果落库后能读回决策链(tmp_path):
     job = store.add_job(
         metric_id=metric.id, name="job", detector="iqr",
         alert_threshold=2.5, critical_threshold=4.0,
-        window_points=60, interval_seconds=300,
+        window_seconds=60 * 300, interval_seconds=300,
     )
     # ⚠️ run_series 有外键，必须先有 runs 行
     run = store.create_run(job.id)
@@ -71,7 +71,6 @@ def _seed(tmp_path):
         value_column="value",
         group_column="host",
         time_format="iso_utc",
-        freq="5min",
     )
     job = store.add_job(
         metric_id=metric.id,
@@ -79,7 +78,7 @@ def _seed(tmp_path):
         detector="seasonal",
         alert_threshold=1.0,
         critical_threshold=2.0,
-        window_points=60,
+        window_seconds=60 * 300,
         interval_seconds=300,
     )
     return store, job, start

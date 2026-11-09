@@ -32,7 +32,6 @@ def _seed(tmp_path):
         value_column="value",
         group_column="host",
         time_format="iso_utc",
-        freq="5min",
     )
     job = store.add_job(
         metric_id=metric.id,
@@ -40,7 +39,7 @@ def _seed(tmp_path):
         detector="seasonal",
         alert_threshold=1.0,
         critical_threshold=2.0,
-        window_points=60,
+        window_seconds=60 * 300,
         interval_seconds=300,
     )
     return store, job, start
@@ -146,7 +145,7 @@ def test_absolute_condition_raises_level_on_high_values(tmp_path):
         detector="seasonal",
         alert_threshold=3.0,
         critical_threshold=3.0,
-        window_points=60,
+        window_seconds=60 * 300,
         interval_seconds=300,
         alert_rules=[
             {"multiplier": 3.0, "level": "P2"},
@@ -198,7 +197,6 @@ def test_auto_detector_records_per_series_choice(tmp_path):
         value_column="value",
         group_column="host",
         time_format="iso_utc",
-        freq="5min",
     )
     job = store.add_job(
         metric_id=metric.id,
@@ -206,7 +204,7 @@ def test_auto_detector_records_per_series_choice(tmp_path):
         detector="auto",
         alert_threshold=2.5,
         critical_threshold=3.75,
-        window_points=240,
+        window_seconds=240 * 300,
         interval_seconds=300,
     )
     run_id = execute_job(

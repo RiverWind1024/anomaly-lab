@@ -46,7 +46,6 @@ export interface CatalogMetric {
   value_column: string
   group_column: string | null
   time_format: string
-  freq: string
   source_timezone: string
   missing_policy: string
   created_at: string
@@ -59,7 +58,7 @@ export interface CatalogJob {
   detector: string
   alert_threshold: number
   critical_threshold: number
-  window_points: number
+  window_seconds: number
   interval_seconds: number
   enabled: boolean
   last_run_at: string | null

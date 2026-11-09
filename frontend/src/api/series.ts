@@ -58,16 +58,30 @@ export const getProductionEvaluation = (
  * 采样后的生产检测记录清单 —— 标注页的下拉用它。
  *
  * ⚠️ `todo=true` → 只给还没标的（待办队列）。
+ * ⚠️ 筛选在**抽样之前**生效 —— 后端先按条件收窄候选再分层抽样。
  */
+export interface ProductionSampleFilters {
+  sourceId?: number
+  metricId?: number
+  detector?: string
+  metricClass?: string
+  /** naive ISO（`YYYY-MM-DDTHH:mm:ss`），与检测记录的时间列格式一致。 */
+  start?: string
+  end?: string
+}
+
 export const getProductionSamples = (
   limit = 50,
-  rateAlert?: number,
-  rateNormal?: number,
+  filters: ProductionSampleFilters = {},
   todo = false,
 ) => {
   const params = new URLSearchParams({ limit: String(limit) })
-  if (rateAlert !== undefined) params.set('rate_alert', String(rateAlert))
-  if (rateNormal !== undefined) params.set('rate_normal', String(rateNormal))
+  if (filters.sourceId !== undefined) params.set('source_id', String(filters.sourceId))
+  if (filters.metricId !== undefined) params.set('metric_id', String(filters.metricId))
+  if (filters.detector) params.set('detector', filters.detector)
+  if (filters.metricClass) params.set('metric_class', filters.metricClass)
+  if (filters.start) params.set('start', filters.start)
+  if (filters.end) params.set('end', filters.end)
   if (todo) params.set('todo', 'true')
   return request<ProductionSample[]>(
     `/api/evaluation/production/samples?${params.toString()}`,

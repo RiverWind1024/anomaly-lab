@@ -44,13 +44,7 @@ function renderPanel(props: Partial<React.ComponentProps<typeof MetricChartPanel
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={qc}>
-      <MetricChartPanel
-        sourceId={3}
-        config={CONFIG}
-        windowPoints={60}
-        freq="1min"
-        {...props}
-      />
+      <MetricChartPanel sourceId={3} config={CONFIG} {...props} />
     </QueryClientProvider>,
   )
 }
@@ -72,19 +66,19 @@ afterEach(() => {
 })
 
 describe('MetricChartPanel', () => {
-  it('⚠️ 请求带上 freq + window_points —— 时间范围由**后端**算', async () => {
-    renderPanel({ windowPoints: 120, freq: '5min' })
+  it('⚠️ 请求带上 start/end —— 预览固定取最近 30 天', async () => {
+    renderPanel()
 
     await waitFor(() => {
       expect((globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(0)
     })
     const call = (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0]
     const body = JSON.parse((call[1] as RequestInit).body as string)
-    expect(body.freq).toBe('5min')
-    expect(body.window_points).toBe(120)
-    // ⚠️ 不传 start/end —— 让后端按窗口算
-    expect(body.start).toBeUndefined()
-    expect(body.end).toBeUndefined()
+    // 时间范围由浏览器显式给出，不再依赖频率 × 点数
+    expect(typeof body.start).toBe('string')
+    expect(typeof body.end).toBe('string')
+    expect(body.freq).toBeUndefined()
+    expect(body.window_points).toBeUndefined()
   })
 
   it('SQL 非法 → 显示错误，不静默空着', async () => {
@@ -104,13 +98,13 @@ describe('MetricChartPanel', () => {
     })
   })
 
-  it('⚠️ SQL 里没有 $timefilter → 提醒时间窗口不生效', async () => {
+  it('⚠️ SQL 里没有 $timefilter → 提醒时间范围不生效', async () => {
     renderPanel({
       config: { ...CONFIG, query: 'SELECT ts, value FROM t' },
     })
 
     await waitFor(() => {
-      expect(screen.getByText(/时间窗口不生效/)).toBeTruthy()
+      expect(screen.getByText(/时间范围不生效/)).toBeTruthy()
     })
   })
 

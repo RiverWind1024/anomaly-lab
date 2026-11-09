@@ -1,5 +1,5 @@
 /** Lab 结果里的单条序列面板。 */
-import { Table } from 'antd'
+import { Collapse, Table } from 'antd'
 import type { LabSeries, LabWindow } from '../../api/types'
 import { fmtDateTime } from '../../lib/format'
 import { detectorLabel } from '../../lib/detectorLabels'
@@ -44,13 +44,26 @@ export function SeriesPanel({ series }: { series: LabSeries }) {
       {series.windows.length === 0 ? (
         <p className="muted">这个范围内不足一个窗口 —— 放宽时间范围或调小窗口点数。</p>
       ) : (
-        <Table<LabWindow>
+        <Collapse
           size="small"
-          rowKey="index"
-          columns={WINDOW_COLUMNS}
-          dataSource={series.windows}
-          pagination={false}
-          scroll={{ x: 960 }}
+          ghost
+          items={[
+            {
+              key: 'windows',
+              // 默认收起 —— 一屏可能有几十条序列，全展开就是几十张表格
+              label: `窗口明细（${series.windows.length} 个窗口）`,
+              children: (
+                <Table<LabWindow>
+                  size="small"
+                  rowKey="index"
+                  columns={WINDOW_COLUMNS}
+                  dataSource={series.windows}
+                  pagination={false}
+                  scroll={{ x: 960 }}
+                />
+              ),
+            },
+          ]}
         />
       )}
     </section>

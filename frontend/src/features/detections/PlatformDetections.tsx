@@ -1,17 +1,17 @@
 import { useMemo, useState } from 'react'
-import { Card, Drawer, Select, Space, Switch, Table, Tag, Tooltip } from 'antd'
+import { Button, Drawer, Popconfirm, Select, Space, Switch, Table, Tag, Tooltip, message } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import { useQuery } from '@tanstack/react-query'
-import { getDetectionRecords } from '../../api/platform'
+import { useMutation, useQuery } from '@tanstack/react-query'
+import { deleteDetection, getDetectionRecords } from '../../api/platform'
 import { getRunSeriesDetail } from '../../api/series'
 import { StateBoundary } from '../../components/StateBoundary'
-import { fmtFullDateTime, fmtMetric } from '../../lib/format'
+import { fmtFullDateTime } from '../../lib/format'
 import { detectorLabel } from '../../lib/detectorLabels'
-import { DecisionTraceTimeline } from '../evaluation/DecisionTraceTimeline'
 import { metricClassLabel } from '../jobs/ClassificationCard'
-import { PreviewChart } from '../jobs/PreviewChart'
 import { ScaleStatusTags } from '../jobs/ScaleStatusTags'
 import type { DetectionRecord, RunSeriesDetail } from '../../api/types'
+import { ArchivePickerModal } from './ArchivePickerModal'
+import { SeriesRecordDetail } from './SeriesRecordDetail'
 import './platformDetections.css'
 
 const PAGE_SIZE = 20
@@ -42,13 +42,7 @@ function usePlatformSeriesDetail(runId: number, seriesId: string) {
   })
 }
 
-/** 空数组 → null：`PreviewChart` 用「有没有带」决定画不画带。 */
-function bandOf(values: number[] | undefined): (number | null)[] | null {
-  return values && values.length > 0 ? values : null
-}
-
-/**
- * 尺度结论的一格展示。
+/** 尺度结论的一格展示。
  *
  * ⚠️ 「无法判定」和「尺度降级」是两个不同的坏消息，颜色分开：
  *    前者是「什么都没算出来」，后者是「换了一档尺度才算出来」。
@@ -75,6 +69,21 @@ export function PlatformDetections() {
 
   const records = useDetectionRecords({ jobId, onlyAlerts, page })
   const data = records.data
+  const [archiving, setArchiving] = useState<DetectionRecord | null>(null)
+
+  const remove = useMutation({
+    mutationFn: (row: DetectionRecord) => deleteDetection(row.run_id, row.series_id),
+    onSuccess: (_result, row) => {
+      message.success('已删除')
+      if (selected?.run_id === row.run_id && selected?.series_id === row.series_id) {
+        setSelected(undefined)
+      }
+      void records.refetch()
+    },
+    onError: (err) => {
+      message.error(err instanceof Error ? err.message : '删除失败')
+    },
+  })
 
   const columns: ColumnsType<DetectionRecord> = useMemo(
     () => [
@@ -151,18 +160,36 @@ export function PlatformDetections() {
         render: (_value, row) => <ScaleCell record={row} />,
       },
       {
-        title: '',
-        key: 'open',
-        width: 96,
-        // ⚠️ 固定在右侧 —— 列多时必须横向滚动，否则「查看流程」被推出屏幕，
-        //    用户根本不知道点行能打开决策链。
+        title: '操作',
+        key: 'actions',
+        width: 180,
+        // ⚠️ 固定在右侧 —— 列多时必须横向滚动，否则操作按钮被推出屏幕。
         fixed: 'right',
         render: (_value, row) => (
-          <span className="mono dim">{row.has_decision ? '查看流程 →' : '查看 →'}</span>
+          <Space size={0} onClick={(event) => event.stopPropagation()}>
+            <Button size="small" type="link" onClick={() => setSelected(row)}>
+              查看
+            </Button>
+            <Button size="small" type="link" onClick={() => setArchiving(row)}>
+              归档
+            </Button>
+            <Popconfirm
+              title="删除这条检测记录？"
+              description="删除后不可恢复；已归档的副本不受影响。"
+              okText="删除"
+              okButtonProps={{ danger: true }}
+              cancelText="取消"
+              onConfirm={() => remove.mutate(row)}
+            >
+              <Button size="small" type="link" danger loading={remove.isPending}>
+                删除
+              </Button>
+            </Popconfirm>
+          </Space>
         ),
       },
     ],
-    [],
+    [remove],
   )
 
   return (
@@ -252,15 +279,13 @@ export function PlatformDetections() {
           <PlatformRecordDetail runId={selected.run_id} seriesId={selected.series_id} />
         ) : null}
       </Drawer>
+
+      <ArchivePickerModal record={archiving} onClose={() => setArchiving(null)} />
     </div>
   )
 }
-
 /**
- * 单条平台检测记录：波形 + 决策链。
- *
- * ⚠️ 决策链放在**波形上方** —— 用户点进来最想知道的不是「长什么样」，
- *    而是「这次为什么这么判」。图是佐证，流程是结论。
+ * 单条平台检测记录：查询 + 状态边界，内容交给共享的 SeriesRecordDetail。
  */
 function PlatformRecordDetail({ runId, seriesId }: { runId: number; seriesId: string }) {
   const detail = usePlatformSeriesDetail(runId, seriesId)
@@ -273,66 +298,7 @@ function PlatformRecordDetail({ runId, seriesId }: { runId: number; seriesId: st
       emptyTitle="这条记录没有时序数据"
       emptyHint="产物文件可能已被清理（保留策略）"
     >
-      {(data: RunSeriesDetail) => (
-        <div className="platform-record">
-          <section className="panel">
-            <div className="panel__head">
-              <div>
-                <h2 className="panel__title">检测流程</h2>
-                <p className="panel__meta">
-                  数据质量 → 能力探测 → 形态判断 → 算法选择 → 阈值与分级 → 结果
-                </p>
-              </div>
-              <Space size="small" wrap>
-                <ScaleStatusTags
-                  status={data.status}
-                  scaleSource={data.scale_source}
-                  scaleFallback={data.scale_fallback}
-                />
-              </Space>
-            </div>
-            <DecisionTraceTimeline trace={data.decision ?? {}} />
-          </section>
-
-          <Card size="small" title="波形与分数" className="platform-record__chart">
-            <PreviewChart
-              timestamps={data.timestamps}
-              values={data.values}
-              scores={data.scores}
-              baseline={bandOf(data.baseline)}
-              lower={bandOf(data.lower)}
-              upper={bandOf(data.upper)}
-              severity={data.severity}
-              alertThreshold={data.alert_threshold ?? 0}
-              criticalThreshold={data.critical_threshold ?? 0}
-              levels={data.levels ?? ['正常']}
-            />
-          </Card>
-
-          <table className="kvtable">
-            <tbody>
-              <tr>
-                <th>检测器</th>
-                <td>{detectorLabel(data.detector)}</td>
-                <th>点数</th>
-                <td className="mono">{data.values.length}</td>
-              </tr>
-              <tr>
-                <th>告警点</th>
-                <td className="mono">{data.severity.filter((level) => level > 0).length}</td>
-                <th>P0 点</th>
-                <td className="mono">{data.severity.filter((level) => level >= 2).length}</td>
-              </tr>
-              <tr>
-                <th>尺度</th>
-                <td className="mono">{data.scale_source || '—'}</td>
-                <th>阈值</th>
-                <td className="mono">{fmtMetric(data.alert_threshold ?? 0)}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      )}
+      {(data: RunSeriesDetail) => <SeriesRecordDetail data={data} />}
     </StateBoundary>
   )
 }

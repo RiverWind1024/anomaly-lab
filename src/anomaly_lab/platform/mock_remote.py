@@ -12,6 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from anomaly_lab.platform.store import PlatformStore
+from anomaly_lab.platform.timeutil import freq_delta
 
 #: 数据源名（幂等键）。
 SOURCE_NAME = "mock-tsdb"
@@ -87,7 +88,6 @@ def seed_mock_remote(
             value_column="value",
             group_column="series",
             time_format="iso_utc",
-            freq=FREQ,
             source_timezone="UTC",
             missing_policy="drop",
         )
@@ -100,7 +100,8 @@ def seed_mock_remote(
             detector="iqr",
             alert_threshold=ALERT_THRESHOLD,
             critical_threshold=CRITICAL_THRESHOLD,
-            window_points=WINDOW_POINTS,
+            # 原「60 点 × 1min」的时间窗口
+            window_seconds=int(freq_delta(FREQ).total_seconds()) * WINDOW_POINTS,
             interval_seconds=INTERVAL_SECONDS,
         )
 

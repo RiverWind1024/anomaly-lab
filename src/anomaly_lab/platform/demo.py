@@ -70,7 +70,6 @@ def seed_demo(data_root: Path) -> dict:
             value_column="value",
             group_column="series",
             time_format="iso_utc",
-            freq=FREQ,
             source_timezone="UTC",
             missing_policy="drop",
         )
@@ -83,7 +82,8 @@ def seed_demo(data_root: Path) -> dict:
             detector="seasonal",
             alert_threshold=ALERT_THRESHOLD,
             critical_threshold=CRITICAL_THRESHOLD,
-            window_points=WINDOW_POINTS,
+            # 原「500 点 × 5min」的时间窗口
+            window_seconds=int(freq_delta(FREQ).total_seconds()) * WINDOW_POINTS,
             interval_seconds=INTERVAL_SECONDS,
         )
 

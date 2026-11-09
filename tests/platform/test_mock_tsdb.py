@@ -519,7 +519,6 @@ def _metric(source_id: int = 1) -> Metric:
         value_column="value",
         group_column="series",
         time_format="iso_utc",
-        freq="1min",
         created_at="",
     )
 

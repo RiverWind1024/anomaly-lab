@@ -48,35 +48,6 @@
   text-align: center;
 }
 
-.monitoring__otel {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 14px 18px;
-  border: 1px solid var(--border-subtle);
-  border-left: 2px solid var(--status-p1);
-  border-radius: var(--radius-md);
-  background: var(--surface-panel);
-}
-
-.monitoring__otel strong {
-  font-size: var(--text-sm);
-  font-weight: var(--font-weight-semibold);
-}
-
-.monitoring__otel span {
-  margin-left: 6px;
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
-}
-
-.monitoring__otel code {
-  color: var(--text-tertiary);
-  font-size: var(--text-xs);
-  overflow-x: auto;
-  white-space: nowrap;
-}
-
 .monitoring__route {
   display: flex;
   gap: 8px;

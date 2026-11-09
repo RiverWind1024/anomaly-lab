@@ -25,7 +25,7 @@ def _client(tmp_path):
         detector="iqr",
         alert_threshold=2.5,
         critical_threshold=4.0,
-        window_points=60,
+        window_seconds=60 * 300,
         interval_seconds=60,
     )
     app = create_app(platform_store=store, platform_data_root=tmp_path)

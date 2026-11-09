@@ -216,6 +216,8 @@ class ProductionSample:
     rate: float = 1.0
     #: 它所在层的候选总量（检测记录数）。
     layer_size: int = 1
+    #: 形态分类（stationary / periodic / ...）；老产物可能为空。
+    metric_class: str = ""
 
 
 @dataclass
@@ -249,6 +251,8 @@ class Candidate:
     rate: float = 1.0
     #: 该层候选的总量（分层抽样估计的 N_h）。
     layer_size: int = 1
+    #: 形态分类（stationary / periodic / ...）；老产物可能为空。
+    metric_class: str = ""
 
     @property
     def outcome(self) -> str:
@@ -296,9 +300,41 @@ def list_candidates(
             start_ts=str(row["start_ts"] or ""),
             end_ts=str(row["end_ts"] or ""),
             content_hash=str(row["content_hash"] or ""),
+            metric_class=str(row["metric_class"] or ""),
         )
         for row in rows
     ]
+
+
+def _candidate_matches(
+    item: Candidate,
+    *,
+    source_id: int | None,
+    metric_id: int | None,
+    detector: str | None,
+    metric_class: str | None,
+    start: str | None,
+    end: str | None,
+) -> bool:
+    """候选是否落在标注页的筛选条件内。
+
+    ⚠️ 时间用**区间重叠**判断，不是「完全包含」——
+       用户选 1 小时，而检测记录跨 5 小时时，它仍然包含用户要看的时段。
+    ⚠️ 时间列是 naive ISO（`2026-11-09T05:33:00`），字符串直接比较即可；
+       两边格式必须一致（前端用 `YYYY-MM-DDTHH:mm:ss`）。
+    """
+    if source_id is not None and item.source_id != int(source_id):
+        return False
+    if metric_id is not None and item.metric_id != int(metric_id):
+        return False
+    if detector and item.detector != detector:
+        return False
+    if metric_class and item.metric_class != metric_class:
+        return False
+    if start and (not item.end_ts or item.end_ts < start):
+        return False
+    starts_after_end = bool(end and (not item.start_ts or item.start_ts > end))
+    return not starts_after_end
 
 
 def _layer_key(item: Candidate) -> tuple[int, int, str]:
@@ -420,6 +456,12 @@ def list_samples(
     max_per_layer: int | None = DEFAULT_MAX_PER_LAYER,
     limit: int = 50,
     todo_only: bool = False,
+    source_id: int | None = None,
+    metric_id: int | None = None,
+    detector: str | None = None,
+    metric_class: str | None = None,
+    start: str | None = None,
+    end: str | None = None,
 ) -> list[ProductionSample]:
     """**采样后**待标注 / 已标注的生产检测记录。
 
@@ -427,8 +469,23 @@ def list_samples(
        人工标不完。所以先分层抽一批，这批才是标注对象。
 
     ⚠️ `todo_only=True` → 只给**还没标**的（标注页的待办队列）。
+
+    ⚠️ 筛选在**抽样之前**做 —— 否则「筛出某个指标的记录」会得到
+       一份按全平台分层抽样的残片，比例没有意义。
     """
-    candidates = list_candidates(store, data_root, job_id=job_id)
+    candidates = [
+        item
+        for item in list_candidates(store, data_root, job_id=job_id)
+        if _candidate_matches(
+            item,
+            source_id=source_id,
+            metric_id=metric_id,
+            detector=detector,
+            metric_class=metric_class,
+            start=start,
+            end=end,
+        )
+    ]
     sampled, _ = stratified_sample(
         candidates,
         rate_alert=rate_alert,
@@ -470,6 +527,7 @@ def list_samples(
             # ⚠️ 采样率要带到前端 —— 标注时一起存下来，反算时按它加权。
             rate=round(item.rate, 4),
             layer_size=item.layer_size,
+            metric_class=item.metric_class,
         )
         # ⚠️ 「待标」= 还没核对过 —— 光看有没有异常区间是不够的：
         #    用户可能核对过一条**正常**记录（没有异常区间）。

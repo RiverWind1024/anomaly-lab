@@ -50,7 +50,6 @@ def test_create_source_metric_job_run_and_preview(tmp_path):
             "value_column": "value",
             "group_column": "host",
             "time_format": "iso_utc",
-            "freq": "5min",
         },
     )
     assert metric.status_code == 200
@@ -63,7 +62,7 @@ def test_create_source_metric_job_run_and_preview(tmp_path):
             "detector": "seasonal",
             "alert_threshold": 1.0,
             "critical_threshold": 2.0,
-            "window_points": 60,
+            "window_seconds": 60 * 300,
             "interval_seconds": 300,
         },
     )
@@ -491,7 +490,7 @@ def test_preview_downsamples_long_series(tmp_path, monkeypatch):
             "detector": "iqr",
             "alert_threshold": 1.0,
             "critical_threshold": 2.0,
-            "window_points": 60,
+            "window_seconds": 60 * 300,
             "interval_seconds": 300,
         },
     )

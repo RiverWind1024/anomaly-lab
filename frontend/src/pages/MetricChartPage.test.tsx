@@ -19,11 +19,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { MetricChartPage } from './MetricChartPage'
 
 vi.mock('../features/metrics/MetricChartPanel', () => ({
-  MetricChartPanel: (props: { windowPoints: number; freq: string }) => (
-    <div data-testid="chart-panel">
-      {props.windowPoints}/{props.freq}
-    </div>
-  ),
+  MetricChartPanel: () => <div data-testid="chart-panel">最近 30 天</div>,
 }))
 
 const CATALOG = {
@@ -142,13 +138,12 @@ describe('MetricChartPage', () => {
     expect(screen.getByText(/mock-tsdb/)).toBeTruthy()
   })
 
-  it('⚠️ 窗口点数跟着**告警任务**走', async () => {
+  it('预览固定取最近 30 天，不跟任务窗口走', async () => {
     renderPage('?metricId=5')
     await waitFor(() => {
       expect(screen.getByTestId('chart-panel')).toBeTruthy()
     })
-    // 任务里是 120 点 —— 不是默认的 60
-    expect(screen.getByTestId('chart-panel').textContent).toContain('120')
+    expect(screen.getByTestId('chart-panel').textContent).toContain('最近 30 天')
   })
 
   it('什么都没选 → 说清楚要选什么', async () => {

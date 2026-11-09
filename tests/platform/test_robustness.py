@@ -6,7 +6,6 @@ import threading
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-import pytest
 from fastapi.testclient import TestClient
 
 from anomaly_lab.platform.models import Metric
@@ -47,7 +46,6 @@ def _metric() -> Metric:
         value_column="v",
         group_column="g",
         time_format="iso_utc",
-        freq="1min",
         created_at="",
     )
 
@@ -63,7 +61,6 @@ def _store_with_job(root: Path, db: Path, name: str = "job"):
         value_column="v",
         group_column="g",
         time_format="iso_utc",
-        freq="1min",
     )
     job = store.add_job(
         metric_id=metric.id,
@@ -71,7 +68,7 @@ def _store_with_job(root: Path, db: Path, name: str = "job"):
         detector="iqr",
         alert_threshold=2.5,
         critical_threshold=4.0,
-        window_points=60,
+        window_seconds=60 * 60,
         interval_seconds=60,
     )
     return store, job
@@ -113,25 +110,6 @@ def test_store_enables_wal_mode(tmp_path):
     assert mode.lower() == "wal"
 
 
-# ---------- #8 配置期就要拦住非法频率 ----------
-
-
-def test_add_metric_rejects_invalid_frequency(tmp_path):
-    store = PlatformStore(tmp_path / "platform.db")
-    source = store.add_source("s", "a.db")
-    with pytest.raises(ValueError, match="频率"):
-        store.add_metric(
-            source_id=source.id,
-            name="m",
-            query=QUERY,
-            time_column="ts",
-            value_column="v",
-            group_column="g",
-            time_format="iso_utc",
-            freq="每周",
-        )
-
-
 # ---------- #6 preview 不能拿别的 job 的 run ----------
 
 
@@ -147,15 +125,14 @@ def test_preview_rejects_run_from_another_job(tmp_path):
         value_column="v",
         group_column="g",
         time_format="iso_utc",
-        freq="1min",
     )
     job_a = store.add_job(
         metric_id=metric.id, name="A", detector="iqr", alert_threshold=2.5,
-        critical_threshold=4.0, window_points=60, interval_seconds=60,
+        critical_threshold=4.0, window_seconds=60 * 60, interval_seconds=60,
     )
     job_b = store.add_job(
         metric_id=metric.id, name="B", detector="iqr", alert_threshold=2.5,
-        critical_threshold=4.0, window_points=60, interval_seconds=60,
+        critical_threshold=4.0, window_seconds=60 * 60, interval_seconds=60,
     )
     app = create_app(platform_store=store, platform_data_root=tmp_path)
     client = TestClient(app)

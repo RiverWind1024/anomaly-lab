@@ -113,7 +113,6 @@ export function MetricPreviewPage() {
         ) as MetricFormValues['time_format'],
         source_timezone: payload.source_timezone,
         missing_policy: metric.missing_policy,
-        freq: metric.freq,
       }
       return updateMetric(metricId, buildMetricPayload(values))
     },

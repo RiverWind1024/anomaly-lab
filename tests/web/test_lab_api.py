@@ -38,7 +38,6 @@ def _client_and_store(tmp_path):
         time_column="ts",
         value_column="value",
         group_column="host",
-        freq="1h",
     )
     client = TestClient(create_app(platform_store=store, platform_data_root=tmp_path))
     return client, store, source, metric
@@ -121,15 +120,6 @@ def test_inspect_unknown_metric_is_404(tmp_path):
     resp = client.post("/api/lab/inspect", json=_payload(999))
 
     assert resp.status_code == 404
-
-
-def test_inspect_freq_mismatch_is_400(tmp_path):
-    client, _, _, metric = _client_and_store(tmp_path)
-
-    resp = client.post("/api/lab/inspect", json=_payload(metric.id, freq="5min"))
-
-    assert resp.status_code == 400
-    assert "freq" in resp.json()["detail"]
 
 
 def test_inspect_invalid_range_is_400(tmp_path):

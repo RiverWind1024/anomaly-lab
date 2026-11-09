@@ -106,25 +106,34 @@ def validate_window_points(value: int) -> int:
     return int(value)
 
 
+def validate_window_seconds(value: int) -> int:
+    """任务的时间窗口（秒）。
+
+    ⚠️ 至少有 1 分钟 —— 更短的窗口在 1 分钟粒度的数据上连一个点都取不到。
+    """
+    value = int(value)
+    if value < 60:
+        raise ValueError("window_seconds 至少为 60 秒")
+    if value > 365 * 86400:
+        raise ValueError("window_seconds 不能超过 365 天")
+    return value
+
+
 def validate_interval_seconds(value: int) -> int:
     if value < 10:
         raise ValueError("interval_seconds 至少为 10 秒")
     return int(value)
 
 
-def validate_detect_points(value: int, window_points: int) -> int:
+def validate_detect_points(value: int) -> int:
     """只对窗口最后 N 个点判定告警；0 = 检测整个窗口。
 
-    ⚠️ 上限是 `window_points` —— 检测段不能比取数窗口还长。
-       等于窗口时等价于「检测全部」（与 0 等价）。
+    ⚠️ 不再限制上限 —— 窗口是时间，实际点数由 SQL 决定；
+       填得比实际点数多时，运行时等价于「检测全部」。
     """
     value = int(value)
     if value < 0:
         raise ValueError("detect_points 不能为负数")
-    if value > int(window_points):
-        raise ValueError(
-            f"detect_points 不能超过窗口点数（{value} > {window_points}）"
-        )
     return value
 
 

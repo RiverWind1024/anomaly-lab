@@ -45,6 +45,17 @@ def detection_records(
     return [dict(row) for row in conn.execute(sql, params).fetchall()]
 
 
+def get_detection_record(
+    conn: sqlite3.Connection, run_id: int, series_id: str
+) -> dict | None:
+    """单条检测记录（含任务 / 指标名）；不存在返回 None。"""
+    row = conn.execute(
+        DETECTION_RECORDS_SELECT + " AND rs.run_id = ? AND rs.series_id = ?",
+        (int(run_id), series_id),
+    ).fetchone()
+    return None if row is None else dict(row)
+
+
 def detection_record_page(
     conn: sqlite3.Connection,
     *,

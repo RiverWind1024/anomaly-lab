@@ -1,6 +1,6 @@
 import { Button, Space, Table } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { StateBoundary } from '../../components/StateBoundary'
 import { DeleteButton } from '../delete/DeleteButton'
 import type { Catalog, CatalogMetric, CatalogSource } from '../../api/types'
@@ -47,6 +47,7 @@ export function MetricList({
       dataIndex: 'name',
       key: 'name',
       width: 200,
+      render: (value: string, row) => <Link to={`/metrics/${row.id}`}>{value}</Link>,
     },
     {
       title: '数据源',

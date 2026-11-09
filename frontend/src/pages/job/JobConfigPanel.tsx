@@ -5,7 +5,14 @@ import { AlertRulesEditor } from '../../features/jobs/AlertRulesEditor'
 import { AlgorithmGuide } from '../../features/jobs/AlgorithmGuide'
 import { detectorLabel } from '../../lib/detectorLabels'
 import { useUpdateJob } from '../../features/jobs/queries'
-import { DETECT_POINTS_MIN, INTERVAL_SECONDS_MIN, WINDOW_POINTS_MAX, WINDOW_POINTS_MIN } from '../../features/jobs/limits'
+import {
+  DETECT_POINTS_MIN,
+  INTERVAL_SECONDS_MIN,
+  WINDOW_UNIT_OPTIONS,
+  WINDOW_UNIT_SECONDS,
+  splitWindow,
+  type WindowUnit,
+} from '../../features/jobs/limits'
 import type { AlertRule, CatalogDetector, CatalogJob, CatalogMetric } from '../../api/types'
 import { directionHint, directionOptions, normalizeDirection } from '../../lib/alertDirection'
 
@@ -21,7 +28,8 @@ interface ConfigFormValues {
   name: string
   metric_id: number
   detector: string
-  window_points: number
+  window_value: number
+  window_unit: WindowUnit
   interval_seconds: number
   /** 只对窗口最后 N 个点判定告警；0 = 检测整个窗口。 */
   detect_points: number
@@ -58,7 +66,7 @@ export function JobConfigPanel({ job, metrics, detectors, enabled }: JobConfigPa
         name: job.name,
         metric_id: job.metric_id,
         detector: job.detector,
-        window_points: job.window_points,
+        ...splitWindow(job.window_seconds),
         interval_seconds: job.interval_seconds,
         detect_points: job.detect_points ?? 0,
         enabled: job.enabled,
@@ -147,7 +155,7 @@ export function JobConfigPanel({ job, metrics, detectors, enabled }: JobConfigPa
       name: values.name.trim(),
       metric_id: values.metric_id,
       detector: values.detector,
-      window_points: values.window_points,
+      window_seconds: values.window_value * WINDOW_UNIT_SECONDS[values.window_unit],
       interval_seconds: values.interval_seconds,
       detect_points: values.detect_points ?? 0,
       enabled: values.enabled,
@@ -210,26 +218,28 @@ export function JobConfigPanel({ job, metrics, detectors, enabled }: JobConfigPa
 
         {/* ⚠️ wrap：窄屏上这两项要能换行 —— 挤在一行会顶出屏幕右边 taste-skill-ignore */}
         <Space size="large" wrap style={{ display: 'flex' }}>
-          <Form.Item
-            name="window_points"
-            label="窗口点数"
-            rules={[
-              { required: true, message: '请输入窗口点数' },
-              {
-                type: 'number',
-                min: WINDOW_POINTS_MIN,
-                max: WINDOW_POINTS_MAX,
-                message: `窗口点数需在 ${WINDOW_POINTS_MIN} ~ ${WINDOW_POINTS_MAX} 之间`,
-              },
-            ]}
-          >
-            <InputNumber
-              min={WINDOW_POINTS_MIN}
-              max={WINDOW_POINTS_MAX}
-              step={1}
-              placeholder="500"
-              style={{ width: 180 }}
-            />
+          <Form.Item label="时间窗口" required>
+            <Space.Compact>
+              <Form.Item
+                name="window_value"
+                noStyle
+                rules={[
+                  { required: true, message: '请输入窗口时长' },
+                  { type: 'number', min: 1, message: '至少为 1' },
+                ]}
+              >
+                <InputNumber
+                  aria-label="窗口时长"
+                  min={1}
+                  step={1}
+                  placeholder="1"
+                  style={{ width: 120 }}
+                />
+              </Form.Item>
+              <Form.Item name="window_unit" noStyle>
+                <Select aria-label="窗口单位" options={WINDOW_UNIT_OPTIONS} style={{ width: 96 }} />
+              </Form.Item>
+            </Space.Compact>
           </Form.Item>
           <Form.Item
             name="detect_points"
@@ -238,19 +248,15 @@ export function JobConfigPanel({ job, metrics, detectors, enabled }: JobConfigPa
               '0 = 检测整个窗口。填 N 则只对最近 N 个点判定告警，更早的点只用于统计基线。',
             )}
             rules={[
-              ({ getFieldValue }) => ({
+              {
                 validator: (_, value) => {
                   if (value === undefined || value === null) return Promise.resolve()
                   if (value < DETECT_POINTS_MIN) {
                     return Promise.reject(new Error('检测点数不能为负数'))
                   }
-                  const windowPoints = getFieldValue('window_points')
-                  if (typeof windowPoints === 'number' && value > windowPoints) {
-                    return Promise.reject(new Error('检测点数不能超过窗口点数'))
-                  }
                   return Promise.resolve()
                 },
-              }),
+              },
             ]}
           >
             <InputNumber min={DETECT_POINTS_MIN} step={1} style={{ width: 180 }} />

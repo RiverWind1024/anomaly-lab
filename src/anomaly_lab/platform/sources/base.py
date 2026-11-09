@@ -19,6 +19,7 @@ import pandas as pd
 
 from anomaly_lab.contracts import SeriesBundle
 from anomaly_lab.platform.models import Metric
+from anomaly_lab.platform.timeutil import infer_freq
 
 MAX_ROWS = 100_000
 MIN_VALID_POINTS = 10
@@ -216,12 +217,14 @@ def series_from_frame(frame: pd.DataFrame, metric: Metric) -> list[SeriesBundle]
             timestamps = part[metric.time_column][keep].dt.tz_convert(None)
         else:
             timestamps = part[metric.time_column].dt.tz_convert(None)
+        stamps = timestamps.to_numpy(dtype="datetime64[ns]")
         result.append(
             SeriesBundle(
                 series_id=series_id,
                 values=values,
-                timestamps=timestamps.to_numpy(dtype="datetime64[ns]"),
-                freq=metric.freq,
+                timestamps=stamps,
+                # 粒度由 SQL 决定 —— 从时间戳推断，不再依赖指标配置。
+                freq=infer_freq(stamps),
                 meta={
                     "metric_id": metric.id,
                     "metric_name": metric.name,

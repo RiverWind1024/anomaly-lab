@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import asdict
+from datetime import timedelta
 from pathlib import Path
 
 import numpy as np
@@ -20,7 +21,7 @@ from anomaly_lab.platform.detectors import (
 )
 from anomaly_lab.platform.feedback import Annotation, SeriesOutcome, suggest_setting
 from anomaly_lab.platform.store import PlatformStore
-from anomaly_lab.platform.timeutil import freq_delta, utcnow
+from anomaly_lab.platform.timeutil import utcnow
 from anomaly_lab.web.platform_common import ApplySuggestionIn, FeedbackIn
 
 
@@ -127,7 +128,7 @@ def build_feedback_router(
 
     def _load_window_series(job, metric) -> list:
         end_time = utcnow()
-        start_time = end_time - freq_delta(metric.freq) * job.window_points
+        start_time = end_time - timedelta(seconds=job.window_seconds)
         # ⚠️ 走连接器层 —— HTTP 数据源的 path 是空的，不能按本地文件解析
         return runner_module.load_series(
             _store(), metric, get_data_root(), start_time, end_time

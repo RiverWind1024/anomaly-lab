@@ -1,14 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, Button, Select, Space, Tag, message } from 'antd'
+import { Alert, Button, DatePicker, Select, Space, Table, Tabs, Tag, message } from 'antd'
+import type { ColumnsType } from 'antd/es/table'
+import type { Dayjs } from 'dayjs'
 import ReactEChartsCore from 'echarts-for-react/lib/core'
 import echarts from '../../lib/echartsCore'
 import type { ECharts } from 'echarts'
 import { StateBoundary } from '../../components/StateBoundary'
 import { cssVar, cssVarAlpha, invalidateCssVarCache } from '../../theme/cssVar'
 import { useThemeModeValue } from '../../theme/ThemeModeContext'
-import type { Annotation, SeriesValues } from '../../api/types'
+import type { Annotation, ProductionSample, SeriesMeta, SeriesValues } from '../../api/types'
 import { useSeries } from '../series/queries'
 import { fmtDateTime } from '../../lib/format'
+import { detectorLabel } from '../../lib/detectorLabels'
+import type { ProductionSampleFilters } from '../../api/series'
+import { useCatalog } from '../jobs/queries'
+import { METRIC_CLASS_OPTIONS } from '../lab/labConstants'
+import { metricClassLabel } from '../jobs/ClassificationCard'
 import {
   useAnnotations,
   useProductionSamples,
@@ -193,12 +200,33 @@ function AnnotateChart({ data, annotations, onBrush }: AnnotateChartProps) {
  */
 export function AnnotatePage() {
   const series = useSeries()
-  const production = useProductionSamples()
+  const catalog = useCatalog()
+  const [filters, setFilters] = useState<{
+    sourceId?: number
+    metricId?: number
+    detector?: string
+    metricClass?: string
+    range: [Dayjs, Dayjs] | null
+  }>({ range: null })
+  const apiFilters = useMemo<ProductionSampleFilters>(
+    () => ({
+      sourceId: filters.sourceId,
+      metricId: filters.metricId,
+      detector: filters.detector,
+      metricClass: filters.metricClass,
+      start: filters.range?.[0]?.format('YYYY-MM-DDTHH:mm:ss'),
+      end: filters.range?.[1]?.format('YYYY-MM-DDTHH:mm:ss'),
+    }),
+    [filters],
+  )
+  const production = useProductionSamples(apiFilters)
   const [target, setTarget] = useState<{ seriesId: string; runId?: number } | undefined>(
     undefined,
   )
   const [pending, setPending] = useState<{ start: number; end: number } | null>(null)
   const [anomalyType, setAnomalyType] = useState<string>('spike')
+  const [tab, setTab] = useState<'production' | 'dataset'>('production')
+  const [page, setPage] = useState(1)
 
   const seriesId = target?.seriesId
   const runId = target?.runId
@@ -212,13 +240,32 @@ export function AnnotatePage() {
   const save = useSaveAnnotations(seriesId, runId)
 
   // 默认选第一条序列（旧版行为）
-  const seriesList = series.data ?? []
+  // 基准集只有几十条，客户端筛选即可；生产记录在后端筛（抽样之前生效）
+  const seriesList = useMemo(() => {
+    const all = series.data ?? []
+    const start = filters.range?.[0]?.format('YYYY-MM-DDTHH:mm:ss')
+    const end = filters.range?.[1]?.format('YYYY-MM-DDTHH:mm:ss')
+    return all.filter((item) => {
+      if (filters.metricClass && item.metric_class !== filters.metricClass) return false
+      if (start && (!item.end_ts || item.end_ts < start)) return false
+      if (end && (!item.start_ts || item.start_ts > end)) return false
+      return true
+    })
+  }, [series.data, filters.metricClass, filters.range])
   const productionList = production.data ?? []
+  // 默认优先选第一条生产记录；没有生产记录才退回基准集
   useEffect(() => {
-    if (!target && seriesList.length > 0) {
+    if (target) return
+    const firstProduction = production.data?.[0]
+    if (firstProduction) {
+      setTarget({
+        seriesId: firstProduction.series_id,
+        runId: firstProduction.run_id,
+      })
+    } else if (seriesList.length > 0) {
       setTarget({ seriesId: seriesList[0].series_id })
     }
-  }, [target, seriesList])
+  }, [target, production.data, seriesList])
 
   const handleBrush = (start: number, end: number) => {
     setPending({ start, end })
@@ -291,43 +338,93 @@ export function AnnotatePage() {
     )
   }
 
-  // ⚠️ 下拉分两组 —— 基准集与生产记录是两回事，混在一列里没法找。
-  const seriesOptions = [
+  /** 选中项：同一序列的不同 run 是两条记录，必须一起比。 */
+  const isActive = (seriesId: string, runId?: number) =>
+    target?.seriesId === seriesId && (runId === undefined || target?.runId === runId)
+
+  const productionColumns: ColumnsType<ProductionSample> = [
     {
-      label: '基准集（合成序列）',
-      options: seriesList.map((item) => ({
-        value: `dataset:${item.series_id}`,
-        label: `${item.series_id} (${item.metric_class}, n=${item.n})`,
-      })),
+      title: '序列',
+      dataIndex: 'series_id',
+      key: 'series_id',
+      render: (value: string) => <span className="mono">{value}</span>,
     },
     {
-      label: '生产检测记录',
-      options: productionList.map((item) => ({
-        value: `run:${item.run_id}:${item.series_id}`,
-        // ⚠️ **检出结果（正常/异常）要写出来** —— 两层的采样率不同，
-        //    标注任务也不同：异常记录查误报，正常记录查漏报。
-        label:
-          `${item.series_id} · run ${item.run_id} · ` +
-          `${item.outcome_label} · 告警 ${item.n_alerts}` +
-          (item.n_annotations > 0 ? ' · 已标' : ' · 待标'),
-      })),
+      title: '运行',
+      dataIndex: 'run_id',
+      key: 'run_id',
+      width: 84,
+      render: (value: number) => <span className="mono">#{value}</span>,
+    },
+    {
+      title: '数据源 / 指标',
+      key: 'metric',
+      render: (_value, row) => (
+        <div className="stacked">
+          <span>{row.source_name}</span>
+          <span className="stacked__sub mono">{row.metric_name}</span>
+        </div>
+      ),
+    },
+    {
+      title: '算法',
+      dataIndex: 'detector',
+      key: 'detector',
+      width: 130,
+      render: (value: string) => detectorLabel(value),
+    },
+    {
+      title: '告警',
+      dataIndex: 'n_alerts',
+      key: 'n_alerts',
+      width: 90,
+      align: 'right',
+    },
+    {
+      // ⚠️ 检出结果与核对状态都要写出来 —— 异常记录查误报，正常记录查漏报
+      title: '状态',
+      key: 'reviewed',
+      width: 110,
+      render: (_value, row) => (
+        <Tag color={row.reviewed ? 'green' : 'default'}>
+          {row.reviewed ? '已核对' : '待核对'}
+        </Tag>
+      ),
     },
   ]
 
-  /** 下拉的 value → 目标（序列 + 可选的 run）。 */
-  const parseTarget = (value: string) => {
-    if (value.startsWith('run:')) {
-      const [, runId, ...rest] = value.split(':')
-      return { runId: Number(runId), seriesId: rest.join(':') }
-    }
-    return { seriesId: value.replace(/^dataset:/, '') }
-  }
+  const datasetColumns: ColumnsType<SeriesMeta> = [
+    {
+      title: '序列',
+      dataIndex: 'series_id',
+      key: 'series_id',
+      render: (value: string) => <span className="mono">{value}</span>,
+    },
+    {
+      title: '形态',
+      dataIndex: 'metric_class',
+      key: 'metric_class',
+      width: 140,
+      render: (value: string) => metricClassLabel(value),
+    },
+    { title: '点数', dataIndex: 'n', key: 'n', width: 90, align: 'right' },
+    { title: '异常数', dataIndex: 'n_anomalies', key: 'n_anomalies', width: 90, align: 'right' },
+  ]
 
-  const targetValue = target
-    ? target.runId
-      ? `run:${target.runId}:${target.seriesId}`
-      : `dataset:${target.seriesId}`
-    : undefined
+  /** 切页签 → 顺带选中该列表的第一条，避免右侧还停在上一个来源的记录上。 */
+  const changeTab = (key: string) => {
+    setTab(key as 'production' | 'dataset')
+    setPage(1)
+    setPending(null)
+    if (key === 'production' && productionList[0]) {
+      setTarget({
+        seriesId: productionList[0].series_id,
+        runId: productionList[0].run_id,
+      })
+    } else if (key === 'dataset' && seriesList[0]) {
+      setTarget({ seriesId: seriesList[0].series_id })
+    }
+  }
 
   const currentSample = productionList.find(
     (item) => item.run_id === runId && item.series_id === seriesId,
@@ -339,28 +436,150 @@ export function AnnotatePage() {
         <h1>标注</h1>
       </header>
 
-      <div className="runs-view__bar">
-        <div className="runs-view">
-          <label className="runs-view__label" htmlFor="annotate-series">
-            序列
-          </label>
+      <section className="panel" style={{ marginBottom: 16 }}>
+        <Space size="middle" wrap>
           <Select
-            id="annotate-series"
-            className="runs-view__select"
-            loading={series.isPending || production.isPending}
-            value={targetValue}
-            placeholder="选择序列"
-            options={seriesOptions}
-            onChange={(value) => {
-              setTarget(parseTarget(value as string))
-              setPending(null)
-            }}
+            aria-label="数据源"
+            allowClear
+            placeholder="全部数据源"
+            style={{ minWidth: 150 }}
+            value={filters.sourceId}
+            onChange={(value) =>
+              setFilters((prev) => ({ ...prev, sourceId: value, metricId: undefined }))
+            }
+            options={(catalog.data?.sources ?? []).map((item) => ({
+              value: item.id,
+              label: item.name,
+            }))}
+          />
+          <Select
+            aria-label="指标"
+            allowClear
             showSearch
             optionFilterProp="label"
-            style={{ minWidth: 520 }}
+            placeholder="全部指标"
+            style={{ minWidth: 180 }}
+            value={filters.metricId}
+            onChange={(value) => setFilters((prev) => ({ ...prev, metricId: value }))}
+            options={(catalog.data?.metrics ?? [])
+              .filter(
+                (item) =>
+                  filters.sourceId === undefined || item.source_id === filters.sourceId,
+              )
+              .map((item) => ({ value: item.id, label: item.name }))}
           />
-        </div>
-      </div>
+          <Select
+            aria-label="检测算法"
+            allowClear
+            placeholder="全部算法"
+            style={{ minWidth: 150 }}
+            value={filters.detector}
+            onChange={(value) => setFilters((prev) => ({ ...prev, detector: value }))}
+            options={(catalog.data?.detectors ?? []).map((item) => ({
+              value: item.name,
+              label: detectorLabel(item.name),
+            }))}
+          />
+          <Select
+            aria-label="分类类型"
+            allowClear
+            placeholder="全部分类"
+            style={{ minWidth: 140 }}
+            value={filters.metricClass}
+            onChange={(value) => setFilters((prev) => ({ ...prev, metricClass: value }))}
+            options={METRIC_CLASS_OPTIONS}
+          />
+          <DatePicker.RangePicker
+            showTime
+            placeholder={['开始时间', '结束时间']}
+            value={filters.range}
+            onChange={(value) => {
+              const range =
+                value && value[0] && value[1]
+                  ? ([value[0], value[1]] as [Dayjs, Dayjs])
+                  : null
+              setFilters((prev) => ({ ...prev, range }))
+            }}
+          />
+          <Button onClick={() => setFilters({ range: null })}>重置</Button>
+          <span className="muted mono">生产记录 {productionList.length} 条</span>
+        </Space>
+      </section>
+
+      <section className="panel" style={{ marginBottom: 16 }}>
+        <Tabs
+          size="small"
+          activeKey={tab}
+          onChange={changeTab}
+          items={[
+            {
+              key: 'production',
+              label: `生产检测记录（${productionList.length}）`,
+              children: (
+                <Table<ProductionSample>
+                  size="small"
+                  rowKey={(row) => `${row.run_id}:${row.series_id}`}
+                  columns={productionColumns}
+                  dataSource={productionList}
+                  loading={production.isPending}
+                  scroll={{ x: 'max-content' }}
+                  pagination={{
+                    current: page,
+                    pageSize: 10,
+                    onChange: setPage,
+                    showSizeChanger: false,
+                    size: 'small',
+                  }}
+                  onRow={(row) => ({
+                    onClick: () => {
+                      setTarget({ seriesId: row.series_id, runId: row.run_id })
+                      setPending(null)
+                    },
+                    style: {
+                      cursor: 'pointer',
+                      background: isActive(row.series_id, row.run_id)
+                        ? 'var(--surface-raised)'
+                        : undefined,
+                    },
+                  })}
+                />
+              ),
+            },
+            {
+              key: 'dataset',
+              label: `基准集（${seriesList.length}）`,
+              children: (
+                <Table<SeriesMeta>
+                  size="small"
+                  rowKey="series_id"
+                  columns={datasetColumns}
+                  dataSource={seriesList}
+                  loading={series.isPending}
+                  pagination={{
+                    current: page,
+                    pageSize: 10,
+                    onChange: setPage,
+                    showSizeChanger: false,
+                    size: 'small',
+                  }}
+                  onRow={(row) => ({
+                    onClick: () => {
+                      setTarget({ seriesId: row.series_id })
+                      setPending(null)
+                    },
+                    style: {
+                      cursor: 'pointer',
+                      background: isActive(row.series_id)
+                        ? 'var(--surface-raised)'
+                        : undefined,
+                    },
+                  })}
+                />
+              ),
+            },
+          ]}
+        />
+      </section>
 
       <StateBoundary
         isLoading={values.isPending || series.isPending}

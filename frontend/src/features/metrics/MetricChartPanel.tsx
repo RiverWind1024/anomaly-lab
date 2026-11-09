@@ -5,9 +5,8 @@
  *    - 浏览器是**写 SQL** 看任意结果（还没定指标）；
  *    - 这里是**看一个已保存（或正在编辑）的指标**长什么样。
  *
- * ⚠️ 时间范围由**后端**按 `freq` + `window_points` 算 ——
- *    与指标运行时同一段代码（`freq_delta`），所以「预览看到的」
- *    就是「告警任务真正会跑的那一段」。
+ * ⚠️ 预览固定取**最近 30 天**。告警任务的「时间窗口」属于任务配置，
+ *    不再反向影响指标预览 —— 数据粒度由 SQL 决定。
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -30,22 +29,18 @@ export interface MetricChartConfig {
 export interface MetricChartPanelProps {
   sourceId: number
   config: MetricChartConfig
-  /** 取多少个点 —— 来自告警任务的「窗口点数」。 */
-  windowPoints: number
-  /** 采样频率 —— 与 window_points 一起决定窗口有多长。 */
-  freq: string
   /** 配置变了就自动重跑（编辑页的草稿）。 */
   auto?: boolean
 }
 
+/** 预览的时间范围 —— 最近 30 天。 */
+const PREVIEW_DAYS = 30
 /** 明细列表的单页行数 —— 与数据浏览器一致。 */
 const PAGE_SIZE = 20
 
 export function MetricChartPanel({
   sourceId,
   config,
-  windowPoints,
-  freq,
   auto = false,
 }: MetricChartPanelProps) {
   const [data, setData] = useState<{
@@ -76,14 +71,14 @@ export function MetricChartPanel({
   /**
    * 取多少行。
    *
-   * ⚠️ 窗口内是「每条序列 × window_points 个点」—— 分组数事先不知道
-   *    （取决于数据本身），只能给个够用的余量。
-   *    ⚠️ 余量给小了会**截断**：7 条序列 × 60 点 = 413 行，
-   *    只给 400 就会看到「还有更多」而看不到全貌。
+   * ⚠️ 最近 30 天的点数取决于数据粒度，事先不知道 —— 给一个够用的上限，
+   *    超出时后端会标记 `truncated`。
    */
-  const limit = Math.min(5000, Math.max(500, windowPoints * 10 + 200))
+  const limit = 5000
 
   const run = async () => {
+    const end = new Date()
+    const start = new Date(end.getTime() - PREVIEW_DAYS * 86400_000)
     setLoading(true)
     setError(null)
     try {
@@ -92,8 +87,8 @@ export function MetricChartPanel({
         time_column: config.time_column,
         time_format: config.time_format,
         source_timezone: config.source_timezone,
-        freq,
-        window_points: windowPoints,
+        start: start.toISOString(),
+        end: end.toISOString(),
         limit,
       })
       setData({
@@ -139,8 +134,6 @@ export function MetricChartPanel({
     config.time_column,
     config.time_format,
     config.source_timezone,
-    freq,
-    windowPoints,
   ])
 
   /** 明细表的列。 */
@@ -179,11 +172,11 @@ export function MetricChartPanel({
         <Alert type="error" showIcon message="预览失败" description={error} />
       )}
 
-      {/* ⚠️ 时间窗口**只喂给 `$timefilter`** ——
-          SQL 里自己写了时间条件（或压根没写），窗口就不生效（静默失效）。 */}
+      {/* ⚠️ 时间范围**只喂给 `$timefilter`** ——
+          SQL 里自己写了时间条件（或压根没写），范围就不生效（静默失效）。 */}
       {config.query && !config.query.includes('$timefilter') && (
         <p className="form-hint">
-          SQL 里没有 $timefilter —— 「最近 N 个点」的时间窗口不生效
+          SQL 里没有 $timefilter —— 「最近 30 天」的时间范围不生效
           （它只替换 $timefilter）。
         </p>
       )}
@@ -201,7 +194,7 @@ export function MetricChartPanel({
         <>
           <Typography.Text type="secondary">
             {data.total} 行{data.truncated ? '（还有更多）' : ''} · {data.elapsed} ms ·
-            窗口：最近 {windowPoints} 点 × {freq}
+            范围：最近 30 天
           </Typography.Text>
           <Table
             size="small"

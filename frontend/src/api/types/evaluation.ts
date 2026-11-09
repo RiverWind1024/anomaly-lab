@@ -123,6 +123,8 @@ export interface ProductionSample {
   source_name: string
   metric_id: number
   metric_name: string
+  /** 形态分类（stationary / periodic / ...）；老记录可能为空。 */
+  metric_class: string
   n: number
   n_alerts: number
   start_ts: string

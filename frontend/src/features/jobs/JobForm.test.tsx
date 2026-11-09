@@ -3,7 +3,13 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type { CatalogDetector, CatalogMetric } from '../../api/types'
 import { JobForm, buildJobPayload, type JobFormValues } from './JobForm'
-import { INTERVAL_SECONDS_MIN, WINDOW_POINTS_MAX, WINDOW_POINTS_MIN } from './limits'
+import {
+  INTERVAL_SECONDS_MIN,
+  WINDOW_SECONDS_MAX,
+  WINDOW_SECONDS_MIN,
+  WINDOW_UNIT_SECONDS,
+  splitWindow,
+} from './limits'
 
 const detector: CatalogDetector = {
   name: 'iqr',
@@ -21,7 +27,6 @@ const metric: CatalogMetric = {
   value_column: 'value',
   group_column: null,
   time_format: 'iso_utc',
-  freq: '5min',
   source_timezone: 'UTC',
   missing_policy: 'drop',
   created_at: '2026-10-30T00:00:00+00:00',
@@ -40,37 +45,42 @@ function renderJobForm(onSubmit = vi.fn()) {
   return onSubmit
 }
 
-describe('新建任务表单的数值下限提示', () => {
-  it('窗口点数与执行间隔由控件自己守住下限', async () => {
+describe('新建任务表单的时间窗口', () => {
+  it('窗口时长由控件守住下限，单位可选', async () => {
     renderJobForm()
-    // ⚠️ 不用一行小字去说下限 —— 控件自己钳制，用户超范围时当场就知道
-    const windowInput = screen.getByLabelText(/窗口点数/)
-    expect(windowInput).toHaveAttribute('aria-valuemin', String(WINDOW_POINTS_MIN))
-    expect(windowInput).toHaveAttribute('aria-valuemax', String(WINDOW_POINTS_MAX))
+    const valueInput = screen.getByLabelText('窗口时长')
+    expect(valueInput).toHaveAttribute('aria-valuemin', '1')
+    expect(screen.getAllByLabelText('窗口单位').length).toBeGreaterThan(0)
 
     const intervalInput = screen.getByLabelText(/执行间隔/)
     expect(intervalInput).toHaveAttribute('aria-valuemin', String(INTERVAL_SECONDS_MIN))
   })
 
-  it('下限常量与后端 validation.py 一致（3 / 100000 / 10）', () => {
-    expect(WINDOW_POINTS_MIN).toBe(3)
-    expect(WINDOW_POINTS_MAX).toBe(100_000)
-    expect(INTERVAL_SECONDS_MIN).toBe(10)
+  it('窗口按「数值 × 单位」换算成秒', () => {
+    expect(WINDOW_SECONDS_MIN).toBe(60)
+    expect(WINDOW_SECONDS_MAX).toBe(365 * 86400)
+    expect(WINDOW_UNIT_SECONDS.hour).toBe(3600)
+    // 回填：整天的秒数用「天」，否则退回分钟
+    expect(splitWindow(86400)).toEqual({ window_value: 1, window_unit: 'day' })
+    expect(splitWindow(1800)).toEqual({ window_value: 30, window_unit: 'minute' })
   })
 })
 
 describe('检测点数', () => {
-  it('缺省按 0 提交（0 = 检测整个窗口）', () => {
+  it('缺省按 0 提交，窗口换算成秒', () => {
     const base = {
       metric_id: 1,
       name: 'j',
       detector: 'iqr',
-      window_points: 60,
+      window_value: 1,
+      window_unit: 'day' as const,
       interval_seconds: 60,
       alert_rules: null,
       alert_direction: 'both' as const,
     }
-    expect(buildJobPayload({ ...base, detect_points: 3 }).detect_points).toBe(3)
+    const payload = buildJobPayload({ ...base, detect_points: 3 })
+    expect(payload.detect_points).toBe(3)
+    expect(payload.window_seconds).toBe(86400)
     // 旧草稿 / 清空输入：按 0 兜底，不能把 undefined 发给后端
     const legacy = { ...base, detect_points: undefined } as unknown as JobFormValues
     expect(buildJobPayload(legacy).detect_points).toBe(0)
@@ -78,17 +88,17 @@ describe('检测点数', () => {
 })
 
 describe('新建任务表单的即时校验', () => {
-  it('窗口点数低于下限时会被当场钳到下限', async () => {
+  it('窗口时长低于下限时会被当场钳到下限', async () => {
     renderJobForm()
     // delay: null —— AntD 的受控输入每次按键都要等一轮渲染，默认延迟会超时
     const user = userEvent.setup({ delay: null })
 
-    const windowInput = screen.getByLabelText(/窗口点数/)
-    await user.type(windowInput, '2')
+    const valueInput = screen.getByLabelText('窗口时长')
+    await user.clear(valueInput)
+    await user.type(valueInput, '0')
     await user.tab() // 失焦 → InputNumber 按 min 钳制
 
-    // InputNumber 的 input 是 type=text，值是字符串
-    await waitFor(() => expect(windowInput).toHaveValue(String(WINDOW_POINTS_MIN)))
+    await waitFor(() => expect(valueInput).toHaveValue('1'))
   })
 
   it('必填项没填时拦下提交，不等后端 400', async () => {

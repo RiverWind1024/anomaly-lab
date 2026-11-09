@@ -17,7 +17,6 @@ import {
 } from '../features/metrics/previewBridge'
 
 /** 没有任何告警任务时，预览用的默认窗口点数。 */
-const DEFAULT_WINDOW_POINTS = 60
 
 /**
  * 指标配置页 —— 新增与编辑共用。
@@ -110,7 +109,6 @@ export function MetricFormPage() {
             time_format: metric.time_format,
             source_timezone: metric.source_timezone,
             missing_policy: metric.missing_policy,
-            freq: metric.freq,
           }
         : {
             source_id: sourceIdParam ? Number(sourceIdParam) : undefined,
@@ -121,7 +119,6 @@ export function MetricFormPage() {
             time_format: 'iso_utc',
             source_timezone: 'UTC',
             missing_policy: 'drop',
-            freq: '5min',
             query: DEFAULT_METRIC_QUERY,
           },
     [metric, sourceIdParam],
@@ -162,18 +159,6 @@ export function MetricFormPage() {
    */
   const watched = Form.useWatch([], form)
 
-  /**
-   * 预览的窗口点数 —— 取该指标正在用的告警任务的设置。
-   *
-   * ⚠️ **指标本身没有「取多少数据」的字段** —— 那是告警任务的配置。
-   *    用户在这里会疑惑「为什么只这么多点」，所以下面要写清楚去哪改。
-   */
-  const metricJob = useMemo(
-    () => catalog.data?.jobs.find((item) => item.metric_id === metricId),
-    [catalog.data?.jobs, metricId],
-  )
-  const windowPoints = metricJob?.window_points ?? DEFAULT_WINDOW_POINTS
-
   /** 预览用的取数配置 —— 全取表单当前值。 */
   const previewConfig = useMemo(
     () => ({
@@ -187,7 +172,6 @@ export function MetricFormPage() {
     [watched, metric],
   )
   const previewSourceId = watched?.source_id ?? metric?.source_id
-  const previewFreq = watched?.freq ?? metric?.freq ?? '5min'
 
   const save = useMutation({
     mutationFn: (payload: Parameters<typeof createMetric>[0]) =>
@@ -284,31 +268,20 @@ export function MetricFormPage() {
                 预览数据
               </h2>
               <p className="panel__meta mono">
-                取最近 {windowPoints} 个点 × {previewFreq}
+                取最近 30 天
               </p>
             </div>
           </div>
           <MetricChartPanel
             sourceId={previewSourceId}
             config={previewConfig}
-            windowPoints={windowPoints}
-            freq={previewFreq}
             auto
           />
-          {/* ⚠️ **窗口在告警任务里设** —— 指标本身没有这个字段，
-              不说清楚用户会在这里找「取多少数据」的开关。 */}
+          {/* ⚠️ 预览固定取最近 30 天 —— 数据粒度由 SQL 决定。 */}
           <p className="muted metric-chart-panel__note">
-            这里取的是<strong>最近 {windowPoints} 个点</strong>
-            （× {previewFreq}）—— 与告警任务的「窗口点数」一致。
-            指标本身没有「取多少数据」的设置，
-            要改就去
-            {metricJob ? (
-              <Link to={`/jobs/${metricJob.id}`}>告警任务</Link>
-            ) : (
-              '告警任务'
-            )}
-            里改「窗口点数」
-            {metricJob ? '。' : '（这个指标还没有任务，先建一个）。'}
+            这里取的是<strong>最近 30 天</strong>的数据；
+            数据粒度由指标的 SQL 决定（如 GROUP BY time(1m)）。
+            告警任务的「时间窗口」是任务自己的配置，不影响这里的预览。
           </p>
         </section>
       ) : null}

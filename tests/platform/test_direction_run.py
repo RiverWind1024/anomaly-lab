@@ -50,7 +50,6 @@ def _seed(tmp_path):
         value_column="value",
         group_column=None,
         time_format="iso_utc",
-        freq="5min",
     )
     return store, metric, start
 
@@ -62,7 +61,7 @@ def _run_direction(store, metric, start, direction):
         detector="iqr",
         alert_threshold=2.5,
         critical_threshold=3.75,
-        window_points=N_POINTS,
+        window_seconds=N_POINTS * 300,
         interval_seconds=300,
         alert_direction=direction,
     )
@@ -136,7 +135,7 @@ def test_方向可以更新且非法值被拒绝(tmp_path):
         detector="iqr",
         alert_threshold=2.5,
         critical_threshold=3.75,
-        window_points=N_POINTS,
+        window_seconds=N_POINTS * 300,
         interval_seconds=300,
     )
     assert job.alert_direction == "both"

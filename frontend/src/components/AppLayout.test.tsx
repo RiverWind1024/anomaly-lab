@@ -168,22 +168,23 @@ describe('「告警」分组', () => {
 })
 
 describe('「评估与标注」分组', () => {
-  it('是分组，带评估报告、标注、检测记录三个子项', () => {
-    /* ⚠️ 三页是一个闭环：标注产真值 → 检测记录是预测 → 评估报告是对比。
-       平铺着放，用户得自己脑补这层关系。 */
+  it('是分组，带评估报告、标注、检测记录、归档四个子项', () => {
+    /* ⚠️ 这四页是一个闭环：标注产真值 → 检测记录是预测 → 评估报告是对比，
+       归档是人工挑出来长期保留的那部分。 */
     const group = NAV_ITEMS.find((item) => item.key === 'evaluation')
     expect(group?.label).toBe('评估与标注')
     expect(group?.children?.map((c) => c.key)).toEqual([
       '/evaluation',
       '/annotate',
       '/detections',
+      '/archives',
     ])
   })
 
-  it('分组本身不是路由，三个子项仍是可路由的叶子', () => {
+  it('分组本身不是路由，四个子项仍是可路由的叶子', () => {
     const keys = NAV_ROUTES.map((item) => item.key)
     expect(keys).not.toContain('evaluation')
-    for (const key of ['/evaluation', '/annotate', '/detections']) {
+    for (const key of ['/evaluation', '/annotate', '/detections', '/archives']) {
       expect(keys).toContain(key)
     }
   })

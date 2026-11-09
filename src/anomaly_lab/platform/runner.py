@@ -11,7 +11,7 @@ import json
 import threading
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -39,7 +39,7 @@ from anomaly_lab.platform.models import Metric
 from anomaly_lab.platform.sources import get_connector
 from anomaly_lab.platform.sources.base import series_from_frame
 from anomaly_lab.platform.store import PlatformStore
-from anomaly_lab.platform.timeutil import freq_delta, to_iso, utcnow
+from anomaly_lab.platform.timeutil import to_iso, utcnow
 
 # 正在执行的任务：job_id -> run_id。避免「手动触发」和「调度到点」重复跑同一个任务。
 _INFLIGHT: dict[int, int] = {}
@@ -292,7 +292,7 @@ def _compute_job(
     """
     metric = store.get_metric(job.metric_id)
     end_time = end or now or utcnow()
-    start_time = start or (end_time - freq_delta(metric.freq) * job.window_points)
+    start_time = start or (end_time - timedelta(seconds=job.window_seconds))
     obs = get_observability()
     load_started = time.perf_counter()
     series_list = load_series(store, metric, data_root, start_time, end_time)

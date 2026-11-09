@@ -24,7 +24,6 @@ from anomaly_lab.platform.sources import get_connector
 from anomaly_lab.platform.sources.base import TimeContext, parse_time_column, sql_literal
 from anomaly_lab.platform.sources.http_sql import ConfigError
 from anomaly_lab.platform.store import PlatformStore
-from anomaly_lab.platform.timeutil import freq_delta, utcnow
 from anomaly_lab.platform.validation import validate_readonly_sql, validate_timezone
 
 TimeFormat = Literal["iso_utc", "iso_naive", "epoch_s", "epoch_ms"]
@@ -45,31 +44,19 @@ class SourceQueryIn(BaseModel):
     time_column: str | None = None
     time_format: TimeFormat | None = None
     source_timezone: str | None = None
-    # ⚠️ **窗口语义**（给了 freq + window_points 就用它们算时间范围）——
-    #    与指标运行时**同一段代码**算（`freq_delta(freq) * window_points`），
-    #    否则「预览看到的」≠「跑出来的」。
-    freq: str | None = None
-    window_points: int | None = None
 
 
 def _resolve_window(payload: SourceQueryIn) -> tuple[datetime | None, datetime | None]:
     """定出这次查询的时间范围。
 
-    ⚠️ 优先级：`start`/`end` 显式给的 > `freq` + `window_points` 算的 > 都没有。
-
-    ⚠️ **算出来的范围必须与指标运行时一致** ——
-       指标每次按 `end - freq_delta(freq) * window_points` 取窗，
-       这里用**同一段代码**（`freq_delta`），否则预览会看到
-       「不是告警任务真正会取的那一段」。
+    ⚠️ 只认显式 `start` / `end`。数据粒度由 SQL 决定，
+       不再用「频率 × 点数」反推范围 —— 那会把配置误差带进预览。
     """
     if payload.start or payload.end:
         return (
             _parse_boundary(payload.start, _MIN_TIME),
             _parse_boundary(payload.end, _MAX_TIME),
         )
-    if payload.freq and payload.window_points and payload.window_points > 0:
-        end = utcnow()
-        return end - freq_delta(payload.freq) * payload.window_points, end
     return None, None
 
 

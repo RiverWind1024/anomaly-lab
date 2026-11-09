@@ -99,7 +99,6 @@ def _metric(**overrides) -> Metric:
         "value_column": "value",
         "group_column": None,
         "time_format": "iso_utc",
-        "freq": "5min",
         "created_at": "2026-10-30T00:00:00+00:00",
         "source_timezone": "UTC",
         "missing_policy": "drop",
@@ -271,7 +270,6 @@ def test_runner_load_series_works_with_http_source(http_server, tmp_path):
         value_column="value",
         group_column="host",
         time_format="iso_utc",
-        freq="1min",
     )
     series = load_series(
         store,

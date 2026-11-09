@@ -32,7 +32,8 @@
 
 .overview-primary {
   display: grid;
-  grid-template-columns: minmax(0, 1.9fr) minmax(0, 1fr);
+  /* 轨迹组件移除后这里只剩「告警事件」——单列占满 */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-6);
   align-items: start;
 }

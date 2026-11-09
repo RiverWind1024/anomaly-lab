@@ -32,7 +32,7 @@ def _make_job(tmp_path, *, name="job", detector="iqr"):
         detector=detector,
         alert_threshold=2.5,
         critical_threshold=4.0,
-        window_points=60,
+        window_seconds=60 * 300,
         interval_seconds=300,
     )
     return store, job.id
@@ -104,7 +104,7 @@ def test_按任务筛选与分页(tmp_path):
         detector="mad",
         alert_threshold=2.5,
         critical_threshold=4.0,
-        window_points=60,
+        window_seconds=60 * 300,
         interval_seconds=300,
     ).id
     _write_series(tmp_path, [10.0 + (i % 7) for i in range(60)])

@@ -29,7 +29,7 @@ def store_with_job(tmp_path: Path) -> PlatformStore:
         detector="iqr",
         alert_threshold=2.5,
         critical_threshold=4.0,
-        window_points=60,
+        window_seconds=60 * 300,
         interval_seconds=60,
     )
     return store

@@ -5,14 +5,23 @@ import { AlertRulesEditor } from './AlertRulesEditor'
 import { AlgorithmGuide } from './AlgorithmGuide'
 import { directionHint, directionOptions, normalizeDirection } from '../../lib/alertDirection'
 import { detectorLabel } from '../../lib/detectorLabels'
-import { DETECT_POINTS_MIN, INTERVAL_SECONDS_MIN, WINDOW_POINTS_MAX, WINDOW_POINTS_MIN } from './limits'
+import {
+  DETECT_POINTS_MIN,
+  INTERVAL_SECONDS_MIN,
+  WINDOW_UNIT_OPTIONS,
+  WINDOW_UNIT_SECONDS,
+  splitWindow,
+  type WindowUnit,
+} from './limits'
 import { defaultRuleList } from './rules'
 
 export interface JobFormValues {
   metric_id: number
   name: string
   detector: string
-  window_points: number
+  /** 时间窗口的数值部分 + 单位；提交时换算成秒。 */
+  window_value: number
+  window_unit: WindowUnit
   interval_seconds: number
   /** 只对窗口最后 N 个点判定告警；0 = 检测整个窗口。 */
   detect_points: number
@@ -29,12 +38,14 @@ export interface JobFormValues {
  */
 export type JobFormInitialValues = Omit<
   JobFormValues,
-  'alert_rules' | 'alert_direction' | 'detect_points'
+  'alert_rules' | 'alert_direction' | 'detect_points' | 'window_value' | 'window_unit'
 > & {
   alert_rules?: AlertRule[] | null
   alert_direction?: AlertDirection
   /** 旧草稿没有这个字段 —— 按 0（检测整个窗口）兜底。 */
   detect_points?: number
+  /** 后端 / 实验草稿给的是秒数，回填时再拆成「数值 + 单位」。 */
+  window_seconds?: number
 }
 
 export interface JobFormProps {
@@ -84,11 +95,14 @@ export function JobForm({
     if (!open) return
     form.resetFields()
     const draft = draftRef.current
+    // 时间窗口：后端给秒数，表单拆成「数值 + 单位」
+    const window = splitWindow(draft?.window_seconds ?? 86400)
     if (draft) {
       const { alert_rules: draftRules, ...fields } = draft
-      form.setFieldsValue(fields)
+      form.setFieldsValue({ ...fields, ...window })
       setRules(draftRules ?? null)
     } else {
+      form.setFieldsValue(window)
       setRules(null)
     }
   }, [open, form])
@@ -230,26 +244,28 @@ export function JobForm({
         </Form.Item>
 
         <Space size="large" wrap style={{ display: 'flex' }}>
-          <Form.Item
-            name="window_points"
-            label="窗口点数"
-            rules={[
-              { required: true, message: '请输入窗口点数' },
-              {
-                type: 'number',
-                min: WINDOW_POINTS_MIN,
-                max: WINDOW_POINTS_MAX,
-                message: `窗口点数需在 ${WINDOW_POINTS_MIN} ~ ${WINDOW_POINTS_MAX} 之间`,
-              },
-            ]}
-          >
-            <InputNumber
-              min={WINDOW_POINTS_MIN}
-              max={WINDOW_POINTS_MAX}
-              step={1}
-              placeholder="500"
-              style={{ width: 180 }}
-            />
+          <Form.Item label="时间窗口" required>
+            <Space.Compact>
+              <Form.Item
+                name="window_value"
+                noStyle
+                rules={[
+                  { required: true, message: '请输入窗口时长' },
+                  { type: 'number', min: 1, message: '至少为 1' },
+                ]}
+              >
+                <InputNumber
+                  aria-label="窗口时长"
+                  min={1}
+                  step={1}
+                  placeholder="1"
+                  style={{ width: 120 }}
+                />
+              </Form.Item>
+              <Form.Item name="window_unit" noStyle>
+                <Select aria-label="窗口单位" options={WINDOW_UNIT_OPTIONS} style={{ width: 96 }} />
+              </Form.Item>
+            </Space.Compact>
           </Form.Item>
           <Form.Item
             name="detect_points"
@@ -257,19 +273,15 @@ export function JobForm({
             initialValue={0}
             extra="0 = 检测整个窗口；填 N 则只对最近 N 个点判定告警，更早的点只用于统计基线"
             rules={[
-              ({ getFieldValue }) => ({
+              {
                 validator: (_, value) => {
                   if (value === undefined || value === null) return Promise.resolve()
                   if (value < DETECT_POINTS_MIN) {
                     return Promise.reject(new Error('检测点数不能为负数'))
                   }
-                  const windowPoints = getFieldValue('window_points')
-                  if (typeof windowPoints === 'number' && value > windowPoints) {
-                    return Promise.reject(new Error('检测点数不能超过窗口点数'))
-                  }
                   return Promise.resolve()
                 },
-              }),
+              },
             ]}
           >
             <InputNumber min={DETECT_POINTS_MIN} step={1} style={{ width: 180 }} />
@@ -308,7 +320,7 @@ export function buildJobPayload(values: JobFormValues) {
     metric_id: values.metric_id,
     name: values.name,
     detector: values.detector,
-    window_points: values.window_points,
+    window_seconds: values.window_value * WINDOW_UNIT_SECONDS[values.window_unit],
     interval_seconds: values.interval_seconds,
     detect_points: values.detect_points ?? 0,
     alert_rules: values.alert_rules,

@@ -231,7 +231,6 @@ def _job(store):
         value_column="value",
         group_column="host",
         time_format="iso_utc",
-        freq="5min",
     )
     return store.add_job(
         metric_id=metric.id,
@@ -239,7 +238,7 @@ def _job(store):
         detector="iqr",
         alert_threshold=2.5,
         critical_threshold=3.75,
-        window_points=100,
+        window_seconds=100 * 300,
         interval_seconds=300,
     )
 

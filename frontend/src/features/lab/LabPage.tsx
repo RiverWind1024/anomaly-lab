@@ -365,7 +365,7 @@ export function LabPage() {
                 value={metricId}
                 options={sourceMetrics.map((item) => ({
                   value: item.id,
-                  label: `${item.name} · ${item.freq}`,
+                  label: item.name,
                 }))}
                 onChange={(next) => {
                   setMetricId(next)
@@ -626,8 +626,7 @@ export function LabPage() {
         </div>
         {metric ? (
           <p className="panel__foot muted">
-            已选指标：<span className="mono">{metric.name}</span> · 频率{' '}
-            <span className="mono">{metric.freq}</span> · 查询{' '}
+            已选指标：<span className="mono">{metric.name}</span> · 查询{' '}
             <span className="mono">{metric.query}</span>
           </p>
         ) : null}

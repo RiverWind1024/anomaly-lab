@@ -6,7 +6,6 @@ import sqlite3
 from datetime import UTC, datetime, timedelta
 
 import numpy as np
-import pytest
 
 from anomaly_lab.lab.inspect import inspect
 from anomaly_lab.lab.spec import DataSpec, SamplingSpec
@@ -42,7 +41,6 @@ def _store(tmp_path, db_path) -> tuple[PlatformStore, object, object]:
         time_column="ts",
         value_column="value",
         group_column="host",
-        freq="1h",
     )
     return store, source, metric
 
@@ -108,17 +106,6 @@ def test_inspect_sql_kind_without_metric(tmp_path):
 
     assert [s["series_id"] for s in result["series"]] == ["lab"]
     assert len(result["series"][0]["windows"]) == 4
-
-
-def test_inspect_rejects_freq_mismatch(tmp_path):
-    db = tmp_path / "source.db"
-    _db(db)
-    store, _, metric = _store(tmp_path, db)
-    spec = _spec(metric.id)
-    spec = DataSpec(**{**spec.__dict__, "freq": "5min"})
-
-    with pytest.raises(ValueError, match="freq"):
-        inspect(store, tmp_path, spec)
 
 
 def test_inspect_caps_series_and_reports_warning(tmp_path):

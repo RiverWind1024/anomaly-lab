@@ -170,9 +170,9 @@ describe('MonitoringPage', () => {
     expect(screen.getAllByText('1').length).toBeGreaterThan(0)
   })
 
-  it('OTel 未启用时给出开启方式，而不是静默', async () => {
+  it('不再显示 OTel 接入提示（已按需求移除）', async () => {
     renderPage()
-    expect(await screen.findByText('指标目前只在本机。')).toBeInTheDocument()
-    expect(screen.getByText(/ANOMALY_OTEL_ENDPOINT/)).toBeInTheDocument()
+    await screen.findByText('流量与错误')
+    expect(screen.queryByText('指标目前只在本机。')).toBeNull()
   })
 })

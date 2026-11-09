@@ -82,18 +82,18 @@ def _seed_job(client):
     return source_id, metric_id, job
 
 
-def test_patch_job_updates_window_points(tmp_path):
+def test_patch_job_updates_window_seconds(tmp_path):
     client = _client(tmp_path)
     _, _, job = _seed_job(client)
-    resp = client.patch(f"/api/platform/jobs/{job['id']}", json={"window_points": 120})
+    resp = client.patch(f"/api/platform/jobs/{job['id']}", json={"window_seconds": 1800})
     assert resp.status_code == 200
-    assert resp.json()["window_points"] == 120
+    assert resp.json()["window_seconds"] == 1800
 
 
 def test_patch_job_keeps_untouched_fields(tmp_path):
     client = _client(tmp_path)
     _, _, job = _seed_job(client)
-    resp = client.patch(f"/api/platform/jobs/{job['id']}", json={"window_points": 120})
+    resp = client.patch(f"/api/platform/jobs/{job['id']}", json={"window_seconds": 1800})
     body = resp.json()
     assert body["name"] == "demo-job"
     assert body["detector"] == "iqr"
@@ -110,7 +110,7 @@ def test_patch_job_rejects_unknown_detector(tmp_path):
 def test_patch_job_rejects_invalid_window(tmp_path):
     client = _client(tmp_path)
     _, _, job = _seed_job(client)
-    resp = client.patch(f"/api/platform/jobs/{job['id']}", json={"window_points": 0})
+    resp = client.patch(f"/api/platform/jobs/{job['id']}", json={"window_seconds": 30})
     assert resp.status_code == 400
 
 
@@ -150,7 +150,7 @@ def test_patch_job_other_field_keeps_alert_rules(tmp_path):
     用户通过「应用建议」调好的规则会被冲掉。"""
     client = _client(tmp_path)
     _, _, job = _seed_job(client)
-    resp = client.patch(f"/api/platform/jobs/{job['id']}", json={"window_points": 120})
+    resp = client.patch(f"/api/platform/jobs/{job['id']}", json={"window_seconds": 1800})
     assert resp.json()["alert_rules"] == job["alert_rules"]
 
 
@@ -187,13 +187,6 @@ def test_patch_metric_validates_column_name(tmp_path):
     client = _client(tmp_path)
     _, metric_id = _seed(client)
     resp = client.patch(f"/api/platform/metrics/{metric_id}", json={"time_column": "ts; DROP"})
-    assert resp.status_code == 400
-
-
-def test_patch_metric_validates_freq(tmp_path):
-    client = _client(tmp_path)
-    _, metric_id = _seed(client)
-    resp = client.patch(f"/api/platform/metrics/{metric_id}", json={"freq": "5光年"})
     assert resp.status_code == 400
 
 

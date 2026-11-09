@@ -352,7 +352,7 @@ export interface LabJobDraft {
   metric_id: number
   name: string
   detector: string
-  window_points: number
+  window_seconds: number
   interval_seconds: number
   alert_threshold: number
   critical_threshold: number

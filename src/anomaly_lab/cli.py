@@ -99,6 +99,12 @@ def _load_rows(data_dir: Path) -> list[BacktestRow]:
 
 
 def _build_parser() -> argparse.ArgumentParser:
+    # 延迟导入：只有 mock-tsdb 相关命令才需要（避免 CLI 启动时拉 numpy）
+    from anomaly_lab.mock_tsdb.generator import (
+        DEFAULT_HISTORY_POINTS,
+        DEFAULT_RETENTION_HOURS,
+    )
+
     parser = argparse.ArgumentParser(prog="anomaly-lab")
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -166,8 +172,18 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--db-path", type=Path, default=Path("data/mock_tsdb/tsdb.db"), help="SQLite 文件路径"
     )
-    p.add_argument("--retention-hours", type=int, default=6, help="保留窗口（小时）")
-    p.add_argument("--history-points", type=int, default=360, help="启动时回填多少个历史点")
+    p.add_argument(
+        "--retention-hours",
+        type=int,
+        default=DEFAULT_RETENTION_HOURS,
+        help="保留窗口（小时，默认 7 天）",
+    )
+    p.add_argument(
+        "--history-points",
+        type=int,
+        default=DEFAULT_HISTORY_POINTS,
+        help="启动时回填多少个历史点（默认 7 天）",
+    )
     p.add_argument("--write-interval", type=int, default=10, help="后台写入间隔（秒）")
     p.add_argument("--no-writer", action="store_true", help="不启动后台写入线程")
 

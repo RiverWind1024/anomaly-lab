@@ -39,7 +39,6 @@ def _client_and_store(tmp_path):
         time_column="ts",
         value_column="value",
         group_column="series",
-        freq="1h",
     )
     client = TestClient(create_app(platform_store=store, platform_data_root=tmp_path))
     return client, store, source, metric
@@ -165,7 +164,7 @@ def test_job_draft_fills_form_fields(tmp_path):
     assert resp.status_code == 200
     draft = resp.json()
     assert draft["metric_id"] == metric.id
-    assert draft["window_points"] == 100
+    assert draft["window_seconds"] == 100 * 3600
     assert draft["interval_seconds"] == 3600
     assert draft["detector"] == "iqr"
     assert draft["alert_rules"]

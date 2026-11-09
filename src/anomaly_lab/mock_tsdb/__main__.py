@@ -12,7 +12,10 @@ import argparse
 import logging
 from pathlib import Path
 
-from anomaly_lab.mock_tsdb.generator import DEFAULT_RETENTION_HOURS
+from anomaly_lab.mock_tsdb.generator import (
+    DEFAULT_HISTORY_POINTS,
+    DEFAULT_RETENTION_HOURS,
+)
 from anomaly_lab.mock_tsdb.server import MockConfig, serve
 
 
@@ -37,8 +40,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--history-points",
         type=int,
-        default=360,
-        help="启动时回填多少个历史点（1 分钟一个）",
+        default=DEFAULT_HISTORY_POINTS,
+        help="启动时回填多少个历史点（1 分钟一个，默认 7 天）",
     )
     parser.add_argument(
         "--write-interval",

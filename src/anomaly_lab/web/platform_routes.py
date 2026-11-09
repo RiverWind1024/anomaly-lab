@@ -6,6 +6,7 @@ import json
 import shutil
 from collections.abc import Callable
 from dataclasses import asdict
+from datetime import timedelta
 from pathlib import Path
 
 import numpy as np
@@ -31,8 +32,9 @@ from anomaly_lab.platform.detectors import (
     resolve_detector,
 )
 from anomaly_lab.platform.store import PlatformStore
-from anomaly_lab.platform.timeutil import freq_delta, utcnow
+from anomaly_lab.platform.timeutil import infer_freq, utcnow
 from anomaly_lab.web.biz_state import biz_headers
+from anomaly_lab.web.platform_archive_routes import build_archive_router
 from anomaly_lab.web.platform_common import (
     MAX_PREVIEW_POINTS,
     JobIn,
@@ -55,6 +57,7 @@ def build_router(
     router = APIRouter()
     router.include_router(build_read_router(get_store, get_data_root))
     router.include_router(build_feedback_router(get_store, get_data_root))
+    router.include_router(build_archive_router(get_store, get_data_root))
 
     def _store() -> PlatformStore:
         return get_store()
@@ -99,7 +102,6 @@ def build_router(
                 value_column=payload.value_column,
                 group_column=payload.group_column,
                 time_format=payload.time_format,
-                freq=payload.freq,
                 source_timezone=payload.source_timezone,
                 missing_policy=payload.missing_policy,
             )
@@ -175,7 +177,7 @@ def build_router(
                 detector=payload.detector,
                 alert_threshold=alert,
                 critical_threshold=critical,
-                window_points=payload.window_points,
+                window_seconds=payload.window_seconds,
                 interval_seconds=payload.interval_seconds,
                 enabled=payload.enabled,
                 alert_rules=rule_dicts or None,
@@ -251,8 +253,6 @@ def build_router(
         detector_rationale = ""
         detector_fallback = False
         score_type = ""
-        # 能力探测的周期判定要用真实频率 —— 用错频率会把长周期误判成不存在
-        freq = store.get_metric(job.metric_id).freq
         for outcome in result.outcomes:
             entry = dict(outcome.entry)
             entry.pop("file", None)
@@ -262,7 +262,11 @@ def build_router(
             #    这个键，前端只在 `sufficient` 时读它。
             cap_payload: dict | None = None
             if arrays:
-                cap = probe(arrays["values"], freq)
+                # 周期判定要用**实际粒度** —— 从产物的时间戳推断，不依赖配置。
+                stamps = np.asarray(arrays["timestamps"], dtype="int64").astype(
+                    "datetime64[ns]"
+                )
+                cap = probe(arrays["values"], infer_freq(stamps))
                 cap_payload = {
                     "zero_ratio": cap.zero_ratio,
                     "n_nonzero": cap.n_nonzero,
@@ -578,7 +582,7 @@ def build_router(
                 create_detector(DEFAULT_DETECTOR).default_threshold
             )
         end_time = utcnow()
-        start_time = end_time - freq_delta(metric.freq) * job.window_points
+        start_time = end_time - timedelta(seconds=job.window_seconds)
         # ⚠️ 走连接器层 —— HTTP 数据源的 path 是空的，不能按本地文件解析
         series_list = runner_module.load_series(
             store, metric, get_data_root(), start_time, end_time
@@ -748,6 +752,35 @@ def build_router(
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         _delete_run_dirs(stats.pop("run_ids", []))
         return {"deleted": stats}
+
+    @router.delete("/api/platform/detections/{run_id}/{series_id}")
+    def delete_detection(run_id: int, series_id: str) -> dict:
+        """删除一条检测记录（run_series + 该序列的告警区间 + npz 产物）。
+
+        ⚠️ 归档副本是**独立目录**，不受这里影响。
+        """
+        store = _store()
+        try:
+            info = store.delete_run_series(run_id, series_id)
+        except ValueError as exc:
+            raise _not_found(exc) from exc
+        # 数据库外键管不到文件系统 —— 产物文件要单独删
+        file_name = info.get("file")
+        if file_name:
+            target = runner_module.run_dir(get_data_root(), run_id) / str(file_name)
+            target.unlink(missing_ok=True)
+        # index.json 也要同步剔除 —— 否则预览/对比仍会列出已删记录
+        index_path = runner_module.run_dir(get_data_root(), run_id) / "index.json"
+        if index_path.is_file():
+            index = json.loads(index_path.read_text(encoding="utf-8"))
+            series = index.get("series", [])
+            kept = [entry for entry in series if entry.get("series_id") != series_id]
+            if len(kept) != len(series):
+                index["series"] = kept
+                index_path.write_text(
+                    json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8"
+                )
+        return {"deleted": 1, "run_id": run_id, "series_id": series_id}
 
     @router.get("/api/platform/storage")
     def storage() -> dict:

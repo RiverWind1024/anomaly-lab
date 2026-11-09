@@ -77,6 +77,7 @@ export const NAV_ITEMS: NavItem[] = [
       { key: '/evaluation', label: '评估报告' },
       { key: '/annotate', label: '标注' },
       { key: '/detections', label: '检测记录' },
+      { key: '/archives', label: '归档' },
     ],
   },
   { key: '/monitoring', label: '服务监控' },
@@ -191,6 +192,13 @@ const NAV_ICON_PATHS: Record<string, ReactNode> = {
     <>
       <path d="M3 13l.6-3 7-7a1.4 1.4 0 0 1 2 2l-7 6.9L3 13Z" />
       <path d="M9.4 4.2 11.8 6.6" />
+    </>
+  ),
+  // 归档：盒子
+  '/archives': (
+    <>
+      <path d="M2.2 5.2h11.6v8.2H2.2z" />
+      <path d="M2.2 5.2 3.4 2.6h9.2l1.2 2.6M6.2 8.2h3.6" />
     </>
   ),
   // 服务监控：一条心率线
@@ -363,10 +371,9 @@ function sinceLabel(iso: string | null | undefined): string {
 }
 
 /**
- * 侧栏页脚 —— 这个工作区现在是什么状态。
+ * 侧栏页脚 —— 最近一次运行状态 + 主题切换。
  *
- * ⚠️ 只报**真实**的运行状态（最近一次运行的相对时间 + 成败），
- *    不放版本号、版权这类占位信息。
+ * ⚠️ 只报**真实**的运行状态，不放版本号、版权这类占位信息。
  */
 function WorkspaceFoot({
   themeMode,
@@ -384,10 +391,6 @@ function WorkspaceFoot({
   return (
     <div className="app-sider__footer">
       <dl className="app-scope">
-        <div className="app-scope__row">
-          <dt>工作区</dt>
-          <dd>本地 · SQLite</dd>
-        </div>
         <div className="app-scope__row">
           <dt>最近运行</dt>
           <dd>

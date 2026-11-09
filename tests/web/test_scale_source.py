@@ -30,7 +30,7 @@ def _make_job(tmp_path, *, detector="iqr", alert_direction="both"):
         detector=detector,
         alert_threshold=2.5,
         critical_threshold=4.0,
-        window_points=60,
+        window_seconds=60 * 300,
         interval_seconds=300,
         alert_direction=alert_direction,
     )

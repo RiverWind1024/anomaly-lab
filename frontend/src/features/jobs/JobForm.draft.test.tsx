@@ -27,7 +27,6 @@ const metric: CatalogMetric = {
   value_column: 'value',
   group_column: null,
   time_format: 'iso_utc',
-  freq: '5min',
   source_timezone: 'UTC',
   missing_policy: 'drop',
   created_at: '2026-10-30T00:00:00+00:00',
@@ -46,7 +45,7 @@ describe('JobForm 的草稿回填', () => {
           metric_id: 7,
           name: 'demo-metric 巡检',
           detector: 'iqr',
-          window_points: 200,
+          window_seconds: 200 * 300,
           interval_seconds: 300,
           alert_rules: [
             { multiplier: 2.5, level: 'P1' },
@@ -57,7 +56,7 @@ describe('JobForm 的草稿回填', () => {
     )
 
     await waitFor(() => expect(screen.getByLabelText(/任务名称/)).toHaveValue('demo-metric 巡检'))
-    expect(screen.getByLabelText(/窗口点数/)).toHaveValue('200')
+    expect(screen.getByLabelText('窗口时长')).toHaveValue('1000')
     expect(screen.getByLabelText(/执行间隔/)).toHaveValue('300')
     // 指标与算法是 AntD 的 Select —— 选中项的文本要出现在表单里
     expect(screen.getByTitle('demo-metric')).toBeInTheDocument()
@@ -78,7 +77,7 @@ describe('JobForm 的草稿回填', () => {
           metric_id: 7,
           name: 'demo-metric 巡检',
           detector: 'iqr',
-          window_points: 200,
+          window_seconds: 200 * 300,
           interval_seconds: 300,
           alert_rules: [{ multiplier: 2.5, level: 'P1' }],
         }}
@@ -90,7 +89,8 @@ describe('JobForm 的草稿回填', () => {
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalled())
     expect(onSubmit.mock.calls[0][0].alert_rules).toEqual([{ multiplier: 2.5, level: 'P1' }])
-    expect(onSubmit.mock.calls[0][0].window_points).toBe(200)
+    expect(onSubmit.mock.calls[0][0].window_value).toBe(1000)
+    expect(onSubmit.mock.calls[0][0].window_unit).toBe('minute')
   })
 
   it('没有草稿时表单是空的', async () => {

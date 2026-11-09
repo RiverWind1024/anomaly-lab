@@ -82,7 +82,7 @@ def _make_job(client, detector: str):
             "metric_id": metric["id"],
             "name": "j",
             "detector": detector,
-            "window_points": 60,
+            "window_seconds": 60 * 300,
             "interval_seconds": 300,
         },
     )

@@ -122,8 +122,10 @@ TanStack Query + ECharts），后端只提供 JSON API 并托管构建产物。
 | 概念 | 存哪 | 关键字段 |
 |---|---|---|
 | 数据源 Source | `data/platform.db` 的 `sources` | 名称、类型（`sqlite` / `http`）、路径（SQLite 源用：相对数据根目录或绝对路径）、类型专属配置（`config` JSON） |
-| 指标 Metric | `metrics` | 数据源、SQL、时间列、值列、分组列、时间格式、源时区、缺失值策略、采样频率 |
-| 告警任务 Job | `jobs` | 指标、算法（可填 `auto`）、告警规则表、告警方向（`both` / `above` / `below`，默认 `both`）、窗口点数（取多少历史数据）、检测点数（只对最近 N 点判定告警，`0` = 整个窗口）、执行间隔、启用状态 |
+| 指标 Metric | `metrics` | 数据源、SQL、时间列、值列、分组列、时间格式、源时区、缺失值策略（**没有频率** —— 粒度由 SQL 决定） |
+| 告警任务 Job | `jobs` | 指标、算法（可填 `auto`）、告警规则表、告警方向（`both` / `above` / `below`，默认 `both`）、时间窗口（取最近多长时间的数据）、检测点数（只对最近 N 点判定告警，`0` = 整个窗口）、执行间隔、启用状态 |
+
+⚠️ **数据粒度由指标 SQL 决定**（例如 `GROUP BY time(1m)` 就是 1 分钟一个点）。平台不要求用户填频率、也不重采样；取数后从时间戳推断实际粒度，用于周期识别与质量判断。告警任务只配**时间窗口**（如 1 小时 / 1 天），SQL 返回多少点就检测多少点。
 
 运行记录在 `runs`，人工反馈在 `feedback`。
 
@@ -133,6 +135,9 @@ TanStack Query + ECharts），后端只提供 JSON API 并托管构建产物。
 |---|---|
 | `run_series` | 每次运行 × 每条序列的摘要 —— `n_alerts` / `detector` / `metric_class` / `content_hash` |
 | `alert_events` | 每次运行报出的**告警区间** —— `level` / `start_ts` / `end_ts` / `n_points` / `max_score` |
+| `archive_sets` / `archive_records` | 手动归档的数据集与检测记录**副本**（元数据 + 独立 npz 文件） |
+
+⚠️ 库里的 `run_series` 只存摘要，**逐点数组仍在 run 目录的 npz**（画图 / 查看流程 / 标注都要读它）。归档之所以复制 npz，就是为了在原记录被删除或被保留策略清理后仍能查看。
 
 ⚠️ **但逐点数组仍在文件里**：`data/cache/platform/runs/<run_id>/`
 （`index.json` + 每条序列一个 npz）—— 那是图表回放与评估反算的原材料，
@@ -353,17 +358,7 @@ POST /api/platform/sources/{id}/query
           "total": 100, "truncated": true, "elapsed_ms": 12 }
 ```
 
-⚠️ 还可以给 `freq` + `window_points` —— **时间范围由平台算**：
-
-```
-  body: { "sql": "SELECT ts, value FROM t WHERE $timefilter",
-          "freq": "1min", "window_points": 60, ... }
-```
-
-范围 = `now - freq_delta(freq) × window_points` ——
-与**指标运行时同一段代码**（`runner.py` 里也是这个式子）。
-前端自己算会漂移，那样「预览看到的」就不是「跑出来的」。
-显式给了 `start`/`end` 时以显式的为准。
+⚠️ 时间范围只认显式 `start` / `end`（不传 = 不限）。数据粒度由 SQL 决定，平台不再用「频率 × 点数」反推范围。
 
 - `columns[].type` 由 pandas dtype 推断：`TIMESTAMP` / `INTEGER` / `REAL` / `TEXT`。
 - ⚠️ `limit` **下推**到发出去的 SQL（`SELECT * FROM (...) LIMIT n`）——
@@ -389,7 +384,7 @@ POST /api/platform/sources/{id}/query
 - ⚠️ **浏览时可以不写 `$timefilter`，自己写时间条件也行** ——
   浏览只要求「只读 + 单语句」，时间条件随你写。
   但 **指标里必须恰好有一个**（`validate_query` 强制）：指标是**滚动窗口**执行的
-  ——调度器每次按 `now - freq × window_points` 取一个窗口，
+  ——调度器每次按 `now - window_seconds` 取一个窗口，
   `$timefilter` 就是那个窗口的边界。写死时间条件 = 窗口永远不滚动，
   数据会一直是旧的。
 - ⚠️ **自己写时间条件时，日期选择器完全不生效** —— 它只替换 `$timefilter`。

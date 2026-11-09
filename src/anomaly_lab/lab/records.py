@@ -351,7 +351,8 @@ def _detector_rationale(result: dict[str, Any], chosen: str) -> str:
 def build_job_draft(record: dict[str, Any]) -> dict[str, Any]:
     """从实验记录生成任务草稿（**只回填表单，不创建任务**）。
 
-    ⚠️ 窗口点数必须与实验一致 —— 这是「实验所见 = 上线所得」的前提。
+    ⚠️ 时间窗口必须与实验一致 —— 这是「实验所见 = 上线所得」的前提。
+       实验记录里是「频率 × 窗口点数」，任务侧换算成秒。
     """
     spec = record.get("spec", {})
     result = record.get("result", {})
@@ -363,11 +364,13 @@ def build_job_draft(record: dict[str, Any]) -> dict[str, Any]:
     if not metric_id:
         raise ValueError("实验记录里没有 metric_id，无法建任务")
 
-    freq = spec.get("freq") or ""
+    # ⚠️ 优先用**实验结果里实际生效的**粒度 —— 指标来源的实验
+    #    spec.freq 可能是 None（已从指标继承），result 里才记着真值。
+    freq = str(result.get("freq") or spec.get("freq") or "")
     try:
-        interval = int(freq_seconds(freq)) if freq else 300
+        seconds_per_point = int(freq_seconds(freq)) if freq else 300
     except ValueError:
-        interval = 300
+        seconds_per_point = 300
 
     window_points = int(spec.get("sampling", {}).get("window_points", 500))
     primary = float(result.get("primary_multiplier", 2.5))
@@ -380,8 +383,9 @@ def build_job_draft(record: dict[str, Any]) -> dict[str, Any]:
         "metric_id": int(metric_id),
         "name": f"{metric_name} 巡检",
         "detector": chosen,
-        "window_points": window_points,
-        "interval_seconds": max(interval, 10),
+        "window_seconds": max(60, seconds_per_point * window_points),
+        # 实验里频率同时用作「执行间隔」的默认值
+        "interval_seconds": max(seconds_per_point, 10),
         "alert_threshold": primary,
         "critical_threshold": critical,
         "alert_rules": [

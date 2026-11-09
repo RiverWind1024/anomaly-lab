@@ -5,7 +5,8 @@
  * EXPECTED_PATHS，缺失即失败。
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { getCatalog, getOverview, createSource, createMetric, createJob, toggleJob, runJob, testRunJob, getRuns, getPreview, getCompare, createFeedback, getFeedback, getSuggestion, applySuggestion, getAlerts, getDetectionRecords, getObservability, deleteJob, deleteMetric, deleteSource, updateSource, updateMetric, querySource, getStorage, pruneData, inspectLab, runLab, saveLabExperiment, listLabExperiments, getLabExperiment, getLabJobDraft, getLabWindow, evaluateLab } from './platform'
+import { getCatalog, getOverview, createSource, createMetric, createJob, toggleJob, runJob, testRunJob, getRuns, getPreview, getCompare, createFeedback, getFeedback, getSuggestion, applySuggestion, getAlerts, getDetectionRecords, getObservability, deleteJob, deleteMetric, deleteSource, updateSource, updateMetric, querySource, getStorage, pruneData, inspectLab, runLab, saveLabExperiment, listLabExperiments, getLabExperiment, getLabJobDraft, getLabWindow, evaluateLab, deleteDetection } from './platform'
+import { listArchiveSets, createArchiveSet, deleteArchiveSet, getArchiveSet, archiveDetection, deleteArchiveRecord, getArchiveRecordDetail } from './archives'
 import { getSeries, getSeriesValues, getSummary, getBadcases, getExclusions, excludeEvaluationRow, restoreEvaluationRow, getProductionEvaluation, getProductionSamples, getRunSeriesDetail } from './series'
 import { getAnnotations, saveAnnotations } from './annotate'
 
@@ -25,6 +26,12 @@ const EXPECTED_PATHS = [
   '/api/platform/overview',
   '/api/platform/alerts',
   '/api/platform/detections',
+  '/api/platform/detections/{id}/{id}',
+  '/api/platform/archives',
+  '/api/platform/archives/{id}',
+  '/api/platform/archives/{id}/records',
+  '/api/platform/archives/{id}/records/{id}',
+  '/api/platform/archive-records/{id}',
   '/api/platform/observability',
   '/api/platform/sources',
   '/api/platform/sources/{id}',
@@ -91,6 +98,11 @@ function normalize(url: string): string {
     /\/api\/runs\/\d+\/series\/[^/]+$/,
     '/api/runs/{id}/series/{id}',
   )
+  // 删除检测记录也有两个动态段（run_id + 序列 id）
+  path = path.replace(
+    /\/api\/platform\/detections\/\d+\/[^/]+$/,
+    '/api/platform/detections/{id}/{id}',
+  )
   // 纯数字的路径段（job id 等）→ {id}
   path = path.replace(/\/\d+(?=\/|$)/g, '/{id}')
   return path
@@ -132,6 +144,14 @@ describe('端点封装层', () => {
     await applySuggestion(7, { multiplier: 2.5 })
     await getAlerts()
     await getAlerts({ jobId: 1, level: 'P0' })
+    await deleteDetection(1, 'demo-metric:web-api')
+    await listArchiveSets()
+    await createArchiveSet({ name: '复盘' })
+    await getArchiveSet(1)
+    await archiveDetection(1, { run_id: 1, series_id: 'demo-metric:web-api' })
+    await deleteArchiveRecord(1, 2)
+    await deleteArchiveSet(1)
+    await getArchiveRecordDetail(1)
     await deleteJob(7)
     await deleteMetric(1)
     await deleteSource(1)

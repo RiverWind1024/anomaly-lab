@@ -23,12 +23,15 @@ class Source:
 
 @dataclass(frozen=True)
 class Metric:
-    """一条指标定义：SQL + 时间列/值列/分组列 + 采样频率。
+    """一条指标定义：SQL + 时间列/值列/分组列。
 
     时间语义必须显式声明，不能猜：
     - `time_format` 说明时间列的存储形式；
     - `source_timezone` 说明无时区时间戳按哪个时区解释（对应 CloudWatch 的 MetricTimezone）；
     - `missing_policy` 说明缺失值怎么处理。
+
+    ⚠️ **没有「频率」字段** —— 数据粒度由 SQL 决定（如 `GROUP BY time(1m)`），
+       平台在取数后从时间戳自动推断实际粒度。
     """
 
     id: int
@@ -39,7 +42,6 @@ class Metric:
     value_column: str
     group_column: str | None
     time_format: str
-    freq: str
     created_at: str
     source_timezone: str = "UTC"
     missing_policy: str = "drop"
@@ -47,13 +49,16 @@ class Metric:
 
 @dataclass(frozen=True)
 class Job:
-    """一个检测任务：选指标、选算法、配告警规则与频率。
+    """一个检测任务：选指标、选算法、配告警规则与窗口。
 
     `alert_rules` 是「倍数 → 等级」的规则表，按倍数升序；判定以异常分数为准。
     `alert_threshold` / `critical_threshold` 是规则表的快捷视图（最低档/最高档倍数）。
 
     `alert_direction` 决定报哪一侧的异常（both / above / below）。
     方向按「值与检测器基线的比较」判断，不是按分数。
+
+    ⚠️ 窗口用**时间**表达（`window_seconds`），不用点数 ——
+       每次取最近这么长的一段数据，SQL 返回多少点就检测多少点。
     """
 
     id: int
@@ -62,7 +67,7 @@ class Job:
     detector: str
     alert_threshold: float
     critical_threshold: float
-    window_points: int
+    window_seconds: int
     interval_seconds: int
     enabled: bool
     last_run_at: str | None
@@ -71,8 +76,8 @@ class Job:
     alert_rules: list[dict] = field(default_factory=list)
     #: 告警方向：both / above / below
     alert_direction: str = "both"
-    #: 只对窗口最后 N 个点判定告警；0 = 检测整个窗口（旧行为）。
-    #: 前 `window_points - detect_points` 个点仍参与基线统计，但不产生告警。
+    #: 只对窗口最后 N 个点判定告警；0 = 检测整个窗口。
+    #: 更早的点仍参与基线统计，但不产生告警。
     detect_points: int = 0
 
 

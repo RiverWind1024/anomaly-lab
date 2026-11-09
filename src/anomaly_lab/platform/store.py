@@ -33,7 +33,7 @@ from anomaly_lab.platform.feedback import FEEDBACK_KINDS, normalize_ts
 from anomaly_lab.platform.models import Feedback, Job, Metric, Run, Source
 from anomaly_lab.platform.schema import SCHEMA as _SCHEMA
 from anomaly_lab.platform.schema import migrate
-from anomaly_lab.platform.timeutil import freq_delta, to_iso, utcnow
+from anomaly_lab.platform.timeutil import to_iso, utcnow
 from anomaly_lab.platform.validation import (
     validate_detect_points,
     validate_http_config,
@@ -46,7 +46,7 @@ from anomaly_lab.platform.validation import (
     validate_thresholds,
     validate_time_format,
     validate_timezone,
-    validate_window_points,
+    validate_window_seconds,
 )
 
 
@@ -528,7 +528,6 @@ class PlatformStore:
         value_column: str,
         group_column: str | None = None,
         time_format: str = "iso_utc",
-        freq: str = "5min",
         source_timezone: str = "UTC",
         missing_policy: str = "drop",
     ) -> Metric:
@@ -541,15 +540,14 @@ class PlatformStore:
         validate_time_format(time_format)
         validate_missing_policy(missing_policy)
         validate_timezone(source_timezone)
-        freq_delta(freq)  # 频率非法时立刻报错，而不是等到任务运行时才失败
         self.get_source(source_id)
         created_at = to_iso(utcnow())
         try:
             with self._conn() as conn:
                 cursor = conn.execute(
                     "INSERT INTO metrics (source_id, name, query, time_column, value_column,"
-                    " group_column, time_format, freq, source_timezone, missing_policy, created_at)"
-                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    " group_column, time_format, source_timezone, missing_policy, created_at)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         source_id,
                         name,
@@ -558,7 +556,6 @@ class PlatformStore:
                         value_column,
                         group_column or None,
                         time_format,
-                        freq,
                         source_timezone,
                         missing_policy,
                         created_at,
@@ -569,17 +566,24 @@ class PlatformStore:
             raise ValueError(f"该数据源下指标名称已存在: {name}") from exc
         return self.get_metric(metric_id)
 
+    @staticmethod
+    def _to_metric(row: sqlite3.Row) -> Metric:
+        data = dict(row)
+        # 老库还有 freq 列；数据粒度现在由 SQL 决定，模型不再有该字段。
+        data.pop("freq", None)
+        return Metric(**data)
+
     def get_metric(self, metric_id: int) -> Metric:
         with self._conn() as conn:
             row = conn.execute("SELECT * FROM metrics WHERE id = ?", (metric_id,)).fetchone()
         if row is None:
             raise ValueError(f"指标不存在: {metric_id}")
-        return Metric(**dict(row))
+        return self._to_metric(row)
 
     def update_metric(self, metric_id: int, **fields) -> Metric:
         """改指标。只传要改的字段，其余保持原样。
 
-        校验复用 add_metric 的那套（列名 / 时间格式 / 时区 / 频率）——
+        校验复用 add_metric 的那套（列名 / 时间格式 / 时区）——
         非法配置要在**保存时**被拦下，而不是等任务运行时才失败。
 
         ⚠️ 已经跑过的运行记录不受影响（结果早已落盘），
@@ -592,7 +596,6 @@ class PlatformStore:
         value_column = fields.get("value_column") or current.value_column
         group_column = fields.get("group_column", current.group_column)
         time_format = fields.get("time_format") or current.time_format
-        freq = fields.get("freq") or current.freq
         source_timezone = fields.get("source_timezone") or current.source_timezone
         missing_policy = fields.get("missing_policy") or current.missing_policy
         validate_identifier(time_column, "time_column")
@@ -602,12 +605,11 @@ class PlatformStore:
         validate_time_format(time_format)
         validate_missing_policy(missing_policy)
         validate_timezone(source_timezone)
-        freq_delta(freq)
         try:
             with self._conn() as conn:
                 conn.execute(
                     "UPDATE metrics SET name = ?, query = ?, time_column = ?, value_column = ?,"
-                    " group_column = ?, time_format = ?, freq = ?, source_timezone = ?,"
+                    " group_column = ?, time_format = ?, source_timezone = ?,"
                     " missing_policy = ? WHERE id = ?",
                     (
                         name,
@@ -616,7 +618,6 @@ class PlatformStore:
                         value_column,
                         group_column or None,
                         time_format,
-                        freq,
                         source_timezone,
                         missing_policy,
                         metric_id,
@@ -629,14 +630,14 @@ class PlatformStore:
     def list_metrics(self) -> list[Metric]:
         with self._conn() as conn:
             rows = conn.execute("SELECT * FROM metrics ORDER BY id").fetchall()
-        return [Metric(**dict(row)) for row in rows]
+        return [self._to_metric(row) for row in rows]
 
     def find_metric_by_name(self, source_id: int, name: str) -> Metric | None:
         with self._conn() as conn:
             row = conn.execute(
                 "SELECT * FROM metrics WHERE source_id = ? AND name = ?", (source_id, name)
             ).fetchone()
-        return Metric(**dict(row)) if row is not None else None
+        return self._to_metric(row) if row is not None else None
 
     # ---------- 检测任务 ----------
 
@@ -648,7 +649,7 @@ class PlatformStore:
         detector: str,
         alert_threshold: float,
         critical_threshold: float,
-        window_points: int,
+        window_seconds: int,
         interval_seconds: int,
         enabled: bool = True,
         alert_rules: list[dict] | None = None,
@@ -659,9 +660,9 @@ class PlatformStore:
         if detector != AUTO_DETECTOR and detector not in DETECTOR_FACTORIES:
             raise ValueError(f"不支持的检测器: {detector}")
         alert_direction = parse_direction(alert_direction)
-        window_points = validate_window_points(int(window_points))
+        window_seconds = validate_window_seconds(int(window_seconds))
         interval_seconds = validate_interval_seconds(int(interval_seconds))
-        detect_points = validate_detect_points(detect_points, window_points)
+        detect_points = validate_detect_points(detect_points)
         self.get_metric(metric_id)
         if alert_rules:
             # 规则表为准：阈值由规则推导（最低档/最高档的倍数）
@@ -679,7 +680,7 @@ class PlatformStore:
             with self._conn() as conn:
                 cursor = conn.execute(
                     "INSERT INTO jobs (metric_id, name, detector, alert_threshold,"
-                    " critical_threshold, window_points, interval_seconds, enabled,"
+                    " critical_threshold, window_seconds, interval_seconds, enabled,"
                     " last_run_at, next_run_at, alert_rules, alert_direction,"
                     " detect_points, created_at)"
                     " VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)",
@@ -689,7 +690,7 @@ class PlatformStore:
                         detector,
                         float(alert_threshold),
                         float(critical_threshold),
-                        window_points,
+                        window_seconds,
                         interval_seconds,
                         1 if enabled else 0,
                         created_at,
@@ -724,6 +725,8 @@ class PlatformStore:
     @staticmethod
     def _to_job(row: sqlite3.Row) -> Job:
         data = dict(row)
+        # 老库还有 window_points 列；窗口现在是时间，模型不再有该字段。
+        data.pop("window_points", None)
         data["enabled"] = bool(data["enabled"])
         data["alert_rules"] = rules_to_dicts(parse_rules(data.get("alert_rules") or "[]"))
         return Job(**data)
@@ -751,15 +754,14 @@ class PlatformStore:
             raise ValueError(f"不支持的检测器: {detector}")
         metric_id = int(_pick(fields, "metric_id", current.metric_id))
         self.get_metric(metric_id)
-        window_points = validate_window_points(
-            int(_pick(fields, "window_points", current.window_points))
+        window_seconds = validate_window_seconds(
+            int(_pick(fields, "window_seconds", current.window_seconds))
         )
         interval_seconds = validate_interval_seconds(
             int(_pick(fields, "interval_seconds", current.interval_seconds))
         )
         detect_points = validate_detect_points(
             int(_pick(fields, "detect_points", current.detect_points)),
-            window_points,
         )
         enabled = fields.get("enabled", current.enabled)
         direction = parse_direction(
@@ -872,7 +874,7 @@ class PlatformStore:
                 if rules_json is None:
                     conn.execute(
                         "UPDATE jobs SET name = ?, metric_id = ?, detector = ?,"
-                        " alert_threshold = ?, critical_threshold = ?, window_points = ?,"
+                        " alert_threshold = ?, critical_threshold = ?, window_seconds = ?,"
                         " interval_seconds = ?, enabled = ?, alert_direction = ?,"
                         " detect_points = ?"
                         " WHERE id = ?",
@@ -882,7 +884,7 @@ class PlatformStore:
                             detector,
                             alert,
                             critical,
-                            window_points,
+                            window_seconds,
                             interval_seconds,
                             1 if enabled else 0,
                             direction,
@@ -893,7 +895,7 @@ class PlatformStore:
                 else:
                     conn.execute(
                         "UPDATE jobs SET name = ?, metric_id = ?, detector = ?,"
-                        " alert_threshold = ?, critical_threshold = ?, window_points = ?,"
+                        " alert_threshold = ?, critical_threshold = ?, window_seconds = ?,"
                         " interval_seconds = ?, enabled = ?, alert_rules = ?,"
                         " alert_direction = ?, detect_points = ? WHERE id = ?",
                         (
@@ -902,7 +904,7 @@ class PlatformStore:
                             detector,
                             alert,
                             critical,
-                            window_points,
+                            window_seconds,
                             interval_seconds,
                             1 if enabled else 0,
                             rules_json,
@@ -1385,6 +1387,187 @@ class PlatformStore:
             detached = int(cursor.rowcount or 0)
             conn.execute(f"DELETE FROM runs WHERE id IN ({placeholders})", ids)
         return {"runs": len(ids), "feedback_detached": detached}
+
+    def delete_run_series(self, run_id: int, series_id: str) -> dict:
+        """删除某次运行里的一条检测记录，并重算运行的汇总数。
+
+        ⚠️ 同时删该序列的告警区间 —— 否则「告警记录」页还留着已删记录的事件。
+        ⚠️ `runs.n_alerts` 是**告警点数**之和（不是区间数），所以按
+           `run_series.n_alerts` 重新求和。
+        """
+        run_id = int(run_id)
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT file FROM run_series WHERE run_id = ? AND series_id = ?",
+                (run_id, series_id),
+            ).fetchone()
+            if row is None:
+                raise ValueError(f"检测记录不存在: run={run_id} series={series_id}")
+            conn.execute(
+                "DELETE FROM alert_events WHERE run_id = ? AND series_id = ?",
+                (run_id, series_id),
+            )
+            conn.execute(
+                "DELETE FROM run_series WHERE run_id = ? AND series_id = ?",
+                (run_id, series_id),
+            )
+            conn.execute(
+                "UPDATE runs SET"
+                " n_series = (SELECT COUNT(*) FROM run_series WHERE run_id = ?),"
+                " n_alerts = (SELECT COALESCE(SUM(n_alerts), 0) FROM run_series"
+                "             WHERE run_id = ?)"
+                " WHERE id = ?",
+                (run_id, run_id, run_id),
+            )
+        return {"run_id": run_id, "series_id": series_id, "file": str(row["file"])}
+
+    # ---------- 归档数据集 ----------
+
+    def get_detection_record(self, run_id: int, series_id: str) -> dict:
+        """单条检测记录（含任务 / 指标名）。"""
+        with self._conn() as conn:
+            row = detection_queries.get_detection_record(conn, run_id, series_id)
+        if row is None:
+            raise ValueError(f"检测记录不存在: run={run_id} series={series_id}")
+        return row
+
+    def create_archive_set(self, name: str, description: str = "") -> dict:
+        name = validate_name(name, "归档数据集名称")
+        created_at = to_iso(utcnow())
+        try:
+            with self._conn() as conn:
+                cursor = conn.execute(
+                    "INSERT INTO archive_sets (name, description, created_at)"
+                    " VALUES (?, ?, ?)",
+                    (name, description, created_at),
+                )
+                set_id = _last_row_id(cursor)
+        except sqlite3.IntegrityError as exc:
+            raise ValueError(f"归档数据集已存在: {name}") from exc
+        return self.get_archive_set(set_id)
+
+    def get_archive_set(self, set_id: int) -> dict:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT s.*,"
+                " (SELECT COUNT(*) FROM archive_records r"
+                "  WHERE r.archive_set_id = s.id) AS n_records"
+                " FROM archive_sets s WHERE s.id = ?",
+                (int(set_id),),
+            ).fetchone()
+        if row is None:
+            raise ValueError(f"归档数据集不存在: {set_id}")
+        return dict(row)
+
+    def list_archive_sets(self) -> list[dict]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT s.*,"
+                " (SELECT COUNT(*) FROM archive_records r"
+                "  WHERE r.archive_set_id = s.id) AS n_records"
+                " FROM archive_sets s ORDER BY s.id DESC"
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def delete_archive_set(self, set_id: int) -> dict:
+        """删除数据集及其中所有归档记录；返回需要清理的产物文件清单。"""
+        set_id = int(set_id)
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT id FROM archive_sets WHERE id = ?", (set_id,)
+            ).fetchone()
+            if row is None:
+                raise ValueError(f"归档数据集不存在: {set_id}")
+            files = [
+                str(item["file"])
+                for item in conn.execute(
+                    "SELECT file FROM archive_records WHERE archive_set_id = ?",
+                    (set_id,),
+                )
+            ]
+            conn.execute("DELETE FROM archive_sets WHERE id = ?", (set_id,))
+        return {"archive_set_id": set_id, "files": files}
+
+    def archive_detection(
+        self,
+        set_id: int,
+        run_id: int,
+        series_id: str,
+        file: str,
+        description: str = "",
+    ) -> dict:
+        """把一条检测记录复制归档到指定数据集。
+
+        `file` 是归档副本相对 `data_root` 的路径；记录元数据从 `run_series`
+        快照过来 —— 之后原记录被删或被保留策略清理，归档仍可独立查看。
+        `description` 是用户填写的归档原因。
+        """
+        record = self.get_detection_record(run_id, series_id)
+        self.get_archive_set(set_id)
+        try:
+            with self._conn() as conn:
+                cursor = conn.execute(
+                    "INSERT INTO archive_records ("
+                    " archive_set_id, run_id, series_id, group_name, job_name,"
+                    " metric_name, detector, n, n_valid, n_alerts, n_p0,"
+                    " start_ts, end_ts, description, file, decision_json,"
+                    " content_hash, archived_at)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        int(set_id),
+                        int(run_id),
+                        series_id,
+                        record.get("group_name"),
+                        str(record.get("job_name") or ""),
+                        str(record.get("metric_name") or ""),
+                        str(record.get("detector") or ""),
+                        int(record.get("n") or 0),
+                        int(record.get("n_valid") or 0),
+                        int(record.get("n_alerts") or 0),
+                        int(record.get("n_p0") or 0),
+                        str(record.get("start_ts") or ""),
+                        str(record.get("end_ts") or ""),
+                        description,
+                        file,
+                        str(record.get("decision_json") or ""),
+                        str(record.get("content_hash") or ""),
+                        to_iso(utcnow()),
+                    ),
+                )
+                record_id = _last_row_id(cursor)
+        except sqlite3.IntegrityError as exc:
+            raise ValueError("这条检测记录已经归档到该数据集") from exc
+        return self.get_archive_record(record_id)
+
+    def list_archive_records(self, set_id: int) -> list[dict]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM archive_records WHERE archive_set_id = ?"
+                " ORDER BY id DESC",
+                (int(set_id),),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_archive_record(self, record_id: int) -> dict:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM archive_records WHERE id = ?", (int(record_id),)
+            ).fetchone()
+        if row is None:
+            raise ValueError(f"归档记录不存在: {record_id}")
+        return dict(row)
+
+    def delete_archive_record(self, record_id: int) -> dict:
+        """从归档中移除一条记录；返回需要清理的副本文件。"""
+        record_id = int(record_id)
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT file FROM archive_records WHERE id = ?", (record_id,)
+            ).fetchone()
+            if row is None:
+                raise ValueError(f"归档记录不存在: {record_id}")
+            conn.execute("DELETE FROM archive_records WHERE id = ?", (record_id,))
+        return {"record_id": record_id, "file": str(row["file"])}
 
     def get_retention_state(self) -> dict:
         """清理状态（上次清理时间 / 上次删了多少）。"""

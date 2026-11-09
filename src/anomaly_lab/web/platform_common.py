@@ -59,7 +59,6 @@ class MetricPatchIn(BaseModel):
     value_column: str | None = None
     group_column: str | None = None
     time_format: TimeFormat | None = None
-    freq: str | None = None
     source_timezone: str | None = None
     missing_policy: MissingPolicy | None = None
 
@@ -72,7 +71,6 @@ class MetricIn(BaseModel):
     value_column: str
     group_column: str | None = None
     time_format: TimeFormat = "iso_utc"
-    freq: str = "5min"
     source_timezone: str = "UTC"
     missing_policy: MissingPolicy = "drop"
 
@@ -83,12 +81,14 @@ class JobIn(BaseModel):
     detector: str = "auto"
     alert_threshold: float | None = None
     critical_threshold: float | None = None
-    window_points: int = 500
+    #: 每次取最近多少秒的数据；SQL 返回多少点就检测多少点。
+    #: 默认 1 天 —— 小于一天时，5min 粒度的数据只有几十个点，形态推断不可靠。
+    window_seconds: int = 86400
     interval_seconds: int = 300
     enabled: bool = True
     alert_rules: list[AlertRuleIn] | None = None
     alert_direction: str | None = None
-    #: 只对窗口最后 N 个点判定告警；0 = 检测整个窗口（旧行为）。
+    #: 只对窗口最后 N 个点判定告警；0 = 检测整个窗口。
     detect_points: int = 0
 
 
@@ -121,7 +121,7 @@ class JobToggleIn(BaseModel):
     detector: str | None = None
     alert_threshold: float | None = None
     critical_threshold: float | None = None
-    window_points: int | None = None
+    window_seconds: int | None = None
     interval_seconds: int | None = None
     alert_rules: list[AlertRuleIn] | None = None
     alert_direction: str | None = None

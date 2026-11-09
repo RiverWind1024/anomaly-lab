@@ -107,13 +107,6 @@ export const querySource = (
     time_column?: string
     time_format?: string
     source_timezone?: string
-    /**
-     * ⚠️ **窗口语义** —— 给了 freq + window_points 就由**后端**算时间范围，
-     * 与指标运行时同一段代码（`freq_delta`）。
-     * ⚠️ 前端自己算会漂移 —— 那样「预览看到的」就不是「跑出来的」。
-     */
-    freq?: string
-    window_points?: number
   },
 ) => postJson<SourceQueryResult>(`/api/platform/sources/${sourceId}/query`, payload)
 
@@ -141,7 +134,6 @@ export const createMetric = (payload: {
   value_column: string
   group_column?: string | null
   time_format?: string
-  freq?: string
   source_timezone?: string
   missing_policy?: string
 }) => postJson<{ id: number }>('/api/platform/metrics', payload)
@@ -168,7 +160,7 @@ export const createJob = (payload: {
   detector?: string
   alert_threshold?: number
   critical_threshold?: number
-  window_points?: number
+  window_seconds?: number
   interval_seconds?: number
   detect_points?: number
   enabled?: boolean
@@ -194,7 +186,7 @@ export const updateJob = (
     detector?: string
     alert_threshold?: number
     critical_threshold?: number
-    window_points?: number
+    window_seconds?: number
     interval_seconds?: number
     detect_points?: number
     alert_rules?: AlertRule[]
@@ -291,6 +283,13 @@ export const deleteMetric = (metricId: number) =>
 
 export const deleteSource = (sourceId: number) =>
   request<{ deleted: DeleteStats }>(`/api/platform/sources/${sourceId}`, { method: 'DELETE' })
+
+/** 删除一条检测记录（不可恢复；归档副本不受影响）。 */
+export const deleteDetection = (runId: number, seriesId: string) =>
+  request<{ deleted: number; run_id: number; series_id: string }>(
+    `/api/platform/detections/${runId}/${encodeURIComponent(seriesId)}`,
+    { method: 'DELETE' },
+  )
 
 /**
  * 存储占用与保留策略。

@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import sqlite3
 
+from anomaly_lab.platform.timeutil import freq_delta
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS sources (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -25,6 +27,8 @@ CREATE TABLE IF NOT EXISTS metrics (
   value_column TEXT NOT NULL,
   group_column TEXT,
   time_format TEXT NOT NULL DEFAULT 'iso',
+  -- ⚠️ 已弃用：数据粒度由 SQL 决定，平台从时间戳推断。
+  --    保留列只为兼容老库，代码不再读写（新库写入默认值）。
   freq TEXT NOT NULL DEFAULT '5min',
   created_at TEXT NOT NULL,
   UNIQUE(source_id, name)
@@ -36,7 +40,11 @@ CREATE TABLE IF NOT EXISTS jobs (
   detector TEXT NOT NULL,
   alert_threshold REAL NOT NULL,
   critical_threshold REAL NOT NULL,
-  window_points INTEGER NOT NULL,
+  -- ⚠️ 已弃用：窗口改为时间（window_seconds）。保留列只为兼容老库，
+  --    新任务写 0。
+  window_points INTEGER NOT NULL DEFAULT 0,
+  -- 每次取最近多少秒的数据；SQL 返回多少点就检测多少点。
+  window_seconds INTEGER NOT NULL DEFAULT 0,
   interval_seconds INTEGER NOT NULL,
   enabled INTEGER NOT NULL DEFAULT 1,
   last_run_at TEXT,
@@ -128,6 +136,41 @@ CREATE TABLE IF NOT EXISTS alert_events (
 );
 CREATE INDEX IF NOT EXISTS idx_alert_events_run ON alert_events(run_id);
 CREATE INDEX IF NOT EXISTS idx_alert_events_span ON alert_events(series_id, start_ts);
+-- 归档数据集：手动收藏的检测记录容器。
+CREATE TABLE IF NOT EXISTS archive_sets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  description TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+);
+-- 归档记录：检测记录的**独立副本**（含 npz 产物），
+-- ⚠️ 不复用 run_series —— 原记录可能被删除或被保留策略清理。
+CREATE TABLE IF NOT EXISTS archive_records (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  archive_set_id INTEGER NOT NULL REFERENCES archive_sets(id) ON DELETE CASCADE,
+  run_id INTEGER NOT NULL,
+  series_id TEXT NOT NULL,
+  group_name TEXT,
+  job_name TEXT NOT NULL DEFAULT '',
+  metric_name TEXT NOT NULL DEFAULT '',
+  detector TEXT NOT NULL DEFAULT '',
+  n INTEGER NOT NULL DEFAULT 0,
+  n_valid INTEGER NOT NULL DEFAULT 0,
+  n_alerts INTEGER NOT NULL DEFAULT 0,
+  n_p0 INTEGER NOT NULL DEFAULT 0,
+  start_ts TEXT NOT NULL DEFAULT '',
+  end_ts TEXT NOT NULL DEFAULT '',
+  -- 用户填写 / 归档时补充的原因
+  description TEXT NOT NULL DEFAULT '',
+  -- 归档目录里的 npz 相对路径（相对 data_root）
+  file TEXT NOT NULL DEFAULT '',
+  decision_json TEXT NOT NULL DEFAULT '',
+  content_hash TEXT NOT NULL DEFAULT '',
+  archived_at TEXT NOT NULL,
+  UNIQUE(archive_set_id, run_id, series_id)
+);
+CREATE INDEX IF NOT EXISTS idx_archive_records_set
+  ON archive_records(archive_set_id, id DESC);
 """
 
 
@@ -156,6 +199,28 @@ def migrate(conn: sqlite3.Connection) -> None:
         conn.execute(
             "ALTER TABLE jobs ADD COLUMN detect_points INTEGER NOT NULL DEFAULT 0"
         )
+    if "window_seconds" not in job_columns:
+        conn.execute(
+            "ALTER TABLE jobs ADD COLUMN window_seconds INTEGER NOT NULL DEFAULT 0"
+        )
+        # ⚠️ 旧任务：把「窗口点数 × 指标频率」换算成时间窗口，
+        #    保证升级后告警范围不变（不是让用户重填）。
+        rows = conn.execute(
+            "SELECT j.id, j.window_points, m.freq FROM jobs j"
+            " JOIN metrics m ON m.id = j.metric_id"
+        ).fetchall()
+        for row in rows:
+            points = int(row["window_points"] or 0)
+            seconds = 300 * points
+            try:
+                seconds = int(freq_delta(str(row["freq"])).total_seconds()) * points
+            except ValueError:
+                # 频率列是脏数据时按 5min 兜底，至少不要让窗口变成 0
+                pass
+            conn.execute(
+                "UPDATE jobs SET window_seconds = ? WHERE id = ?",
+                (max(60, seconds), row["id"]),
+            )
     source_columns = {
         row["name"] for row in conn.execute("PRAGMA table_info(sources)")
     }
@@ -174,3 +239,11 @@ def migrate(conn: sqlite3.Connection) -> None:
                 conn.execute(
                     f"ALTER TABLE run_series ADD COLUMN {column} TEXT NOT NULL DEFAULT ''"
                 )
+    # 归档记录的「说明」是后加的列
+    archive_columns = {
+        row["name"] for row in conn.execute("PRAGMA table_info(archive_records)")
+    }
+    if archive_columns and "description" not in archive_columns:
+        conn.execute(
+            "ALTER TABLE archive_records ADD COLUMN description TEXT NOT NULL DEFAULT ''"
+        )

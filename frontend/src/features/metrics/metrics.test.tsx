@@ -26,7 +26,6 @@ const metric: CatalogMetric = {
   value_column: 'value',
   group_column: 'host',
   time_format: 'iso_utc',
-  freq: '5min',
   source_timezone: 'UTC',
   missing_policy: 'drop',
   created_at: '2026-10-30T00:00:00+00:00',

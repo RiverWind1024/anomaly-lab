@@ -49,7 +49,7 @@ export function JobsPage() {
             metric_id: draft.data.metric_id,
             name: draft.data.name,
             detector: draft.data.detector,
-            window_points: draft.data.window_points,
+            window_seconds: draft.data.window_seconds,
             interval_seconds: draft.data.interval_seconds,
             alert_rules: draft.data.alert_rules,
           }

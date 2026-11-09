@@ -6,6 +6,7 @@
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -129,15 +130,19 @@ function renderWithProviders(node: ReactNode) {
 }
 
 describe('ResultView', () => {
-  it('展示警告、汇总、周期可识别性与窗口明细', () => {
+  it('展示警告、汇总、周期可识别性；窗口明细默认收起', async () => {
     renderWithProviders(<ResultView result={RESULT} />)
 
     expect(screen.getByText(/未纳入/)).toBeInTheDocument()
     expect(screen.getByText('m:a')).toBeInTheDocument()
     expect(screen.getAllByText('周期型').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('季节性分组 / IQR 围栏').length).toBeGreaterThan(0)
     // 日周期 24 点、50 点窗口 → 看不到
     expect(screen.getByText(/需要 24 点/)).toBeInTheDocument()
+
+    // ⚠️ 窗口明细默认收起 —— 几十条序列时全展开就是几十张表格
+    expect(screen.getByText(/窗口明细/)).toBeInTheDocument()
+    expect(screen.queryByText('不足')).toBeNull()
+    await userEvent.click(screen.getByText(/窗口明细/))
     expect(screen.getByText('不足')).toBeInTheDocument()
   })
 })

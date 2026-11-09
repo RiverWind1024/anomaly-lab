@@ -31,7 +31,6 @@ def _metric(**overrides):
         "value_column": "value",
         "group_column": "host",
         "time_format": "iso_utc",
-        "freq": "1min",
         "created_at": "",
     }
     base.update(overrides)

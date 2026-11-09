@@ -179,7 +179,6 @@ def test_端到端_指标来源能贴上标注(tmp_path):
         query="SELECT ts, value FROM metrics WHERE $timefilter ORDER BY ts",
         time_column="ts",
         value_column="value",
-        freq="1h",
     )
     start_ms = int(BASE.timestamp() * 1000)
     _write_annotations(

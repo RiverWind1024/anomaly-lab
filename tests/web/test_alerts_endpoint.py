@@ -104,7 +104,6 @@ def _run_job(client) -> int:
             "value_column": "value",
             "group_column": "host",
             "time_format": "iso_utc",
-            "freq": "5min",
         },
     ).json()
     job = client.post(
@@ -113,7 +112,7 @@ def _run_job(client) -> int:
             "metric_id": metric["id"],
             "name": "demo-job",
             "detector": "iqr",
-            "window_points": 61,
+            "window_seconds": 61 * 300,
             "alert_rules": [{"multiplier": 2.5, "level": "P1"}],
         },
     ).json()

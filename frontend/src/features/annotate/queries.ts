@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { getAnnotations, saveAnnotations } from '../../api/annotate'
 import { getProductionSamples, getRunSeriesDetail, getSeriesValues } from '../../api/series'
+import type { ProductionSampleFilters } from '../../api/series'
 
 export function useSeriesValues(seriesId: string | undefined) {
   return useQuery({
@@ -48,11 +49,14 @@ export function useSaveAnnotations(seriesId: string | undefined, runId?: number)
   })
 }
 
-/** 可标注的生产检测记录清单。 */
-export function useProductionSamples(limit = 50) {
+/** 可标注的生产检测记录清单 —— 筛选在抽样之前生效。 */
+export function useProductionSamples(
+  filters: ProductionSampleFilters = {},
+  limit = 50,
+) {
   return useQuery({
-    queryKey: ['productionSamples', limit],
-    queryFn: () => getProductionSamples(limit),
+    queryKey: ['productionSamples', limit, filters],
+    queryFn: () => getProductionSamples(limit, filters),
   })
 }
 

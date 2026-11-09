@@ -157,7 +157,7 @@ make serve           # 打开 http://127.0.0.1:8000/jobs 配置与预览
 带「远端」的完整演示 —— 假远端时序数据库（照 InfluxDB 3 的 API 形状，持续造数）：
 
 ```bash
-make mock-tsdb       # 假远端 → http://127.0.0.1:8181/api/v3/query_sql
+make mock-tsdb       # 假远端 → http://127.0.0.1:8181/api/v3/query_sql（持续造数，默认保留最近 7 天）
 make mock-demo       # 平台侧建好 HTTP 数据源 + 指标 + 检测任务
 make serve           # 在「数据源 → mock-tsdb」里浏览数据、跑检测
 # 或者一条命令全起（前端 + 后端 + 假远端）：
@@ -175,7 +175,7 @@ MOCK_TSDB=1 make dev
 测试（CI 每次推送都跑，见 `.github/workflows/ci.yml`）：
 
 ```bash
-.venv/bin/python -m pytest -p no:warnings   # 后端 939 passed
+.venv/bin/python -m pytest -p no:warnings   # 后端 941 passed
 .venv/bin/python -m mypy                     # 类型检查（src/anomaly_lab）
 cd frontend && npx tsc --noEmit              # 前端类型检查
 cd frontend && npx vitest run                # 前端 478 passed / 57 files

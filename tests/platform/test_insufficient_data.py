@@ -31,7 +31,6 @@ def _store_and_client(tmp_path: Path, rows):
         value_column="v",
         group_column="g",
         time_format="iso_utc",
-        freq="1min",
         missing_policy="drop",
     )
     job = store.add_job(
@@ -40,7 +39,7 @@ def _store_and_client(tmp_path: Path, rows):
         detector="iqr",
         alert_threshold=2.5,
         critical_threshold=4.0,
-        window_points=60,
+        window_seconds=60 * 60,
         interval_seconds=60,
     )
     app = create_app(platform_store=store, platform_data_root=tmp_path)

@@ -36,7 +36,7 @@ from anomaly_lab.platform.models import Metric
 from anomaly_lab.platform.sources import get_connector
 from anomaly_lab.platform.sources.base import series_from_frame
 from anomaly_lab.platform.store import PlatformStore
-from anomaly_lab.platform.timeutil import to_iso
+from anomaly_lab.platform.timeutil import infer_freq, to_iso
 
 
 @dataclass
@@ -79,10 +79,6 @@ def _resolve_metric(store: PlatformStore, spec: DataSpec) -> Metric:
     """
     if spec.kind == "metric":
         metric = store.get_metric(spec.metric_id)  # type: ignore[arg-type]
-        if spec.freq is not None and spec.freq != metric.freq:
-            raise ValueError(
-                f"freq 与指标不一致：实验给的是 {spec.freq!r}，指标是 {metric.freq!r}"
-            )
         if spec.missing_policy is not None and spec.missing_policy != metric.missing_policy:
             raise ValueError(
                 "missing_policy 与指标不一致："
@@ -100,7 +96,6 @@ def _resolve_metric(store: PlatformStore, spec: DataSpec) -> Metric:
         value_column=spec.value_column,  # type: ignore[arg-type]
         group_column=spec.group_column,
         time_format=spec.time_format,
-        freq=spec.freq,  # type: ignore[arg-type]
         created_at="",
         source_timezone=spec.source_timezone,
         missing_policy=spec.missing_policy or "drop",
@@ -299,7 +294,7 @@ def _cover_span(bundles: list[SeriesBundle]) -> tuple[datetime, datetime] | None
     )
 
 
-def _placeholder_metric(spec: DataSpec, freq: str) -> Metric:
+def _placeholder_metric(spec: DataSpec) -> Metric:
     """合成 / 公开集的占位指标。
 
     ⚠️ 它们**没有指标实体** —— 但 `Prepared` 里要有一个 `Metric` 槽位，
@@ -314,7 +309,6 @@ def _placeholder_metric(spec: DataSpec, freq: str) -> Metric:
         value_column="value",
         group_column=None,
         time_format=spec.time_format,
-        freq=freq,
         created_at="",
         source_timezone=spec.source_timezone,
         missing_policy="drop",
@@ -386,18 +380,18 @@ def prepare(
     if spec.kind == "synthetic":
         bundles = _fetch_synthetic(spec)
         freq = spec.freq or "5min"
-        metric = _placeholder_metric(spec, freq)
+        metric = _placeholder_metric(spec)
     elif spec.kind == "public":
         bundles = _fetch_public(spec, data_root)
         freq = spec.freq or (bundles[0].freq if bundles else "5min")
-        metric = _placeholder_metric(spec, freq)
+        metric = _placeholder_metric(spec)
         # ⚠️ 公开集的时间范围是**数据自己定的**（NAB 是 2014 年的真实数据）。
         #    让用户去猜范围没有意义 —— 直接按数据实际覆盖区间切窗，
         #    并把 spec 改成实际生效的范围（复现要靠它）。
         span = _cover_span(bundles)
         if span is not None:
             spec = replace(spec, start=span[0], end=span[1])
-            metric = _placeholder_metric(spec, freq)
+            metric = _placeholder_metric(spec)
             warnings.append(
                 f"公开集按数据实际覆盖区间切窗：{span[0].isoformat()} ~ {span[1].isoformat()}"
             )
@@ -411,8 +405,13 @@ def prepare(
             )
     else:
         metric = _resolve_metric(store, spec)
-        freq = metric.freq
         bundles = _fetch_series(store, metric, data_root, spec.start, spec.end)
+        # 粒度由 SQL 决定 —— 从实际数据推断（没数据时退回 spec.freq）
+        freq = (
+            infer_freq(bundles[0].timestamps)
+            if bundles
+            else (spec.freq or "5min")
+        )
 
     capability = period_capability(spec.sampling.window_points, freq)
 

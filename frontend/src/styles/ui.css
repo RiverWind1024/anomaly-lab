@@ -434,15 +434,23 @@
   background: var(--surface-raised);
 }
 
-/* 固定列（操作列）要是不透明底，横向滚动时会透出下层内容 */
+/* 固定列（操作列）要是不透明底，横向滚动时会透出下层内容。
+   ⚠️ 必须 !important —— AntD 的 CSS-in-JS 也会写固定列背景，且优先级更高；
+      少了它，滚动时能直接看到下面的列穿过来。 */
 .ant-table-cell-fix-right,
 .ant-table-cell-fix-left {
-  background: var(--surface-panel);
+  background: var(--surface-panel) !important;
+  z-index: 2;
+}
+
+.ant-table-thead > tr > th.ant-table-cell-fix-right,
+.ant-table-thead > tr > th.ant-table-cell-fix-left {
+  background: var(--surface-panel) !important;
 }
 
 .ant-table-tbody > tr.ant-table-row:hover > td.ant-table-cell-fix-right,
 .ant-table-tbody > tr.ant-table-row:hover > td.ant-table-cell-fix-left {
-  background: var(--surface-raised);
+  background: var(--surface-raised) !important;
 }
 
 /* ---------- 分页器 ---------- */

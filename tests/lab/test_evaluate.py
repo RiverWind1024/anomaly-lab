@@ -206,7 +206,6 @@ def test_无真值时给出警告而不是假装能评估(tmp_path):
         query="SELECT ts, value FROM t WHERE $timefilter",
         time_column="ts",
         value_column="value",
-        freq="1h",
     )
     # 数据源不存在 → 取数会失败，这里只看 spec 校验本身
     assert spec.truth == "none"

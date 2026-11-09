@@ -305,12 +305,10 @@ def build_lab_router(
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
         metric_name: str | None = None
-        metric_freq: str | None = None
         try:
             if spec.kind == "metric":
                 metric = store.get_metric(spec.metric_id)  # type: ignore[arg-type]
                 metric_name = metric.name
-                metric_freq = metric.freq
             elif spec.kind == "sql":
                 store.get_source_raw(spec.source_id)  # type: ignore[arg-type]
         except ValueError as exc:
@@ -331,7 +329,7 @@ def build_lab_router(
             detectors=detectors,
             multipliers=multipliers,
             metric_name=metric_name,
-            freq=metric_freq,
+            freq=payload.freq,
         )
 
     @router.get("/api/lab/experiments")

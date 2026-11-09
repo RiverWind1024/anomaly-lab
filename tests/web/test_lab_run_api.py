@@ -38,7 +38,6 @@ def _client_and_store(tmp_path):
         time_column="ts",
         value_column="value",
         group_column="series",
-        freq="1h",
     )
     client = TestClient(create_app(platform_store=store, platform_data_root=tmp_path))
     return client, store, source, metric

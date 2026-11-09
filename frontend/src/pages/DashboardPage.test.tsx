@@ -2,7 +2,7 @@
  * 概览页：展示整个系统的运行情况。
  *
  * 这一屏回答一个问题：**现在哪里有异常？**
- * 所以最大的那块是异常分数轨迹，数字在下面的 KPI 条里。
+ * 先给告警规模，再列告警事件，其余是任务与回测。
  */
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -333,15 +333,10 @@ describe('DashboardPage', () => {
     )
   })
 
-  it('画异常分数轨迹，并给出可切换的序列', async () => {
+  it('不再渲染异常分数轨迹（已按需求移除）', async () => {
     renderPage()
-    const chart = await screen.findByRole('img', { name: /异常分数轨迹/ })
-    expect(chart.getAttribute('aria-label')).toContain('demo-metric:web-api')
-    // 序列切换：两条序列，告警多的那条排在前面
-    await waitFor(() =>
-      expect(screen.getByRole('tab', { name: /web-api/ })).toBeTruthy(),
-    )
-    expect(screen.getByRole('tab', { name: /web-worker/ })).toBeTruthy()
+    await screen.findByText('告警事件')
+    expect(screen.queryByRole('img', { name: /异常分数轨迹/ })).toBeNull()
   })
 
   it('告警事件列出当前序列的事件', async () => {
@@ -368,12 +363,12 @@ describe('DashboardPage', () => {
     expect(screen.getByText(/sparse_event/)).toBeTruthy()
   })
 
-  it('只查一次任务详情，不逐个任务查', async () => {
+  it('只查一次概况，不逐个任务查运行记录', async () => {
     renderPage()
     await screen.findByText('数据源 / 指标')
-    // ⚠️ 轨迹只查**一个**任务的最近一次运行 —— 不能每个任务都查一遍
+    // 概览不再加载轨迹 → 不应该有 /preview 请求
     const previewCalls = calls.filter((url) => url.includes('/preview'))
-    expect(previewCalls.length).toBeLessThanOrEqual(1)
+    expect(previewCalls.length).toBe(0)
     expect(calls.some((url) => url.includes('/api/platform/jobs/') && url.includes('/runs'))).toBe(
       false,
     )

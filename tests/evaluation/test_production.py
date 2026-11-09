@@ -14,6 +14,8 @@ import pytest
 from anomaly_lab.evaluation.production import (
     OUTCOME_ALERT,
     OUTCOME_NORMAL,
+    Candidate,
+    _candidate_matches,
     evaluate_production,
     list_candidates,
     list_samples,
@@ -34,7 +36,6 @@ def _store(tmp_path: Path) -> tuple[PlatformStore, int]:
         query="SELECT ts, value FROM t WHERE $timefilter",
         time_column="ts",
         value_column="value",
-        freq="5min",
     )
     job = store.add_job(
         metric_id=metric.id,
@@ -42,7 +43,7 @@ def _store(tmp_path: Path) -> tuple[PlatformStore, int]:
         detector="iqr",
         alert_threshold=2.5,
         critical_threshold=3.75,
-        window_points=100,
+        window_seconds=100 * 300,
         interval_seconds=300,
     )
     return store, job.id
@@ -602,3 +603,97 @@ def test_一条标注覆盖多条重叠检测_权重各算各的(tmp_path):
     assert result["overall"]["tp"] == pytest.approx(2.5, abs=1e-4)
     assert result["overall"]["fn"] == pytest.approx(7.5, abs=1e-4)
     assert result["overall"]["recall"] == pytest.approx(0.25, abs=1e-4)
+
+
+def _candidate(**overrides) -> Candidate:
+    data = {
+        "run_id": 1,
+        "series_id": "生产指标:web-api",
+        "group": "web-api",
+        "job_id": 1,
+        "detector": "iqr",
+        "metric_id": 1,
+        "metric_name": "生产指标",
+        "source_id": 1,
+        "source_name": "生产源",
+        "n": 10,
+        "n_alerts": 1,
+        "start_ts": "2026-01-01T00:00:00",
+        "end_ts": "2026-01-01T01:00:00",
+        "metric_class": "periodic",
+    }
+    data.update(overrides)
+    return Candidate(**data)
+
+
+def test_标注筛选_维度条件():
+    """数据源 / 指标 / 算法 / 形态 —— 任一不匹配都排除。"""
+    item = _candidate()
+    ok = {
+        "source_id": 1,
+        "metric_id": 1,
+        "detector": "iqr",
+        "metric_class": "periodic",
+        "start": None,
+        "end": None,
+    }
+    assert _candidate_matches(item, **ok)
+    assert not _candidate_matches(item, **{**ok, "source_id": 2})
+    assert not _candidate_matches(item, **{**ok, "metric_id": 2})
+    assert not _candidate_matches(item, **{**ok, "detector": "mad"})
+    assert not _candidate_matches(item, **{**ok, "metric_class": "trending"})
+    # 空条件 = 不筛
+    assert _candidate_matches(
+        item,
+        source_id=None,
+        metric_id=None,
+        detector=None,
+        metric_class=None,
+        start=None,
+        end=None,
+    )
+
+
+def test_标注筛选_时间按区间重叠判断():
+    """⚠️ 是「有重叠」而不是「完全包含」—— 检测记录跨几小时也要能筛出来。"""
+    item = _candidate()
+    base = {
+        "source_id": None,
+        "metric_id": None,
+        "detector": None,
+        "metric_class": None,
+    }
+    # 完全重叠 / 部分重叠 / 端点相接 → 都算命中
+    assert _candidate_matches(item, **base, start="2026-01-01T00:30:00", end="2026-01-01T02:00:00")
+    assert _candidate_matches(item, **base, start="2025-12-31T23:00:00", end="2026-01-01T00:30:00")
+    assert _candidate_matches(item, **base, start="2026-01-01T01:00:00", end=None)
+    # 完全在候选之外 → 排除
+    assert not _candidate_matches(item, **base, start="2026-01-01T01:00:01", end=None)
+    assert not _candidate_matches(item, **base, start=None, end="2025-12-31T23:59:59")
+    # 候选缺时间范围时，按时间筛一律排除
+    empty = _candidate(start_ts="", end_ts="")
+    assert not _candidate_matches(empty, **base, start="2026-01-01T00:00:00", end=None)
+
+
+def test_list_samples_筛选在抽样之前生效(tmp_path):
+    """筛掉的记录不进入分层抽样 —— 否则得到的是一份比例失真的残片。"""
+    store, job_id = _store(tmp_path)
+    _make_run(store, tmp_path, job_id=job_id)
+
+    matched = list_samples(
+        store, tmp_path, rate_alert=1.0, max_per_layer=None, detector="iqr"
+    )
+    assert matched
+
+    assert (
+        list_samples(store, tmp_path, rate_alert=1.0, max_per_layer=None, detector="mad")
+        == []
+    )
+    assert (
+        list_samples(store, tmp_path, rate_alert=1.0, max_per_layer=None, source_id=999)
+        == []
+    )
+    assert (
+        list_samples(store, tmp_path, rate_alert=1.0, max_per_layer=None, metric_class="trending")
+        == []
+    )

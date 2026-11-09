@@ -27,8 +27,11 @@ SAMPLE_SECONDS = 60
 #: 一天有多少个采样点（1 分钟采样 → 1440）。
 POINTS_PER_DAY = 24 * 60
 
-#: 默认保留窗口（小时）—— 假远端只保留最近这些小时的数据。
-DEFAULT_RETENTION_HOURS = 6
+#: 默认保留窗口（小时）—— 假远端只保留最近 7 天的数据。
+DEFAULT_RETENTION_HOURS = 7 * 24
+
+#: 默认启动回填的历史点数 —— 与保留窗口一致（7 天 × 1440 点）。
+DEFAULT_HISTORY_POINTS = DEFAULT_RETENTION_HOURS * 60
 
 
 def _stable_seed(name: str) -> int:
